@@ -1,8 +1,9 @@
+# TODO: Delete this file one this is implemented https://github.com/cowprotocol/composable-cow/issues/51
 account_id: 4edfc3a8-de04-463e-8408-34302bfa01e0
 provider: ""
 
 actions:
-  gp-v2/watch-tower-dev:
+  gp-v2/watch-tower-prod:
     runtime: v1
     sources: actions
     specs:
