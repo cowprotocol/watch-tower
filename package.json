@@ -1,16 +1,10 @@
 {
-  "name": "composable-cow",
+  "name": "tenderly-watch-tower",
   "version": "0.0.1",
-  "description": "Repository showcasing the power of composable cows 🐮",
+  "description": "A tenderly watch tower, keeping an eye on Composable Cows 👀🐮",
   "author": {
-    "name": "mfw78",
-    "email": "mfw78@rndlabs.xyz"
+    "name": "Cow Protocol"
   },
-  "contributors": [
-    {
-      "name": "Cow Protocol"
-    }
-  ],
   "license": "MIT",
   "devDependencies": {
     "eslint": "8.39.0",
@@ -20,19 +14,14 @@
     "solhint-plugin-prettier": "^0.0.5"
   },
   "scripts": {
-    "fmt": "yarn fmt:contracts && yarn fmt:actions && yarn fmt:cli",
-    "lint": "yarn lint:contracts && yarn lint:actions && yarn lint:cli",
-    "build": "forge build && yarn build:actions && yarn build:cli",
-    "fmt:contracts": "forge fmt",
-    "lint:contracts": "solhint 'src/**/*.sol' 'test/**/*.sol'",
+    "fmt": "yarn fmt:actions",
+    "lint": "yarn lint:actions",
+    "build": "yarn build:actions",
     "fmt:actions": "prettier ./actions -w",
     "build:actions": "cd actions && npm ci && yarn run build",
     "lint:actions": "eslint && prettier --check ./actions",
     "test:actions": "yarn build:actions && yarn ts-node actions/test/test_register.ts",
     "start:actions": "yarn ts-node actions/test/run_local.ts",
-    "fmt:cli": "prettier ./cli -w",
-    "lint:cli": "eslint && prettier --check ./cli",
-    "build:cli": "cd cli && npm ci && yarn run build",
     "check-deployment": "yarn build:actions && yarn start:actions"
   },
   "dependencies": {
