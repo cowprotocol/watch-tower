@@ -1,0 +1,13 @@
+# Coverage
+coverage/
+lcov.info
+
+# Dotenv file
+.env
+
+# JS dependencies
+node_modules/
+
+# Typechain generated and artifacts
+/actions/artifacts/
+/actions/types/
