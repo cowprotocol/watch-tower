@@ -2,9 +2,8 @@
   "name": "actions",
   "license": "MIT",
   "scripts": {
-    "artifacts": "mkdir -p artifacts && cp ../out/GPv2Settlement.sol/GPv2Settlement.json artifacts/ && cp ../out/ERC20.sol/ERC20.json artifacts/ && cp ../out/ComposableCoW.sol/ComposableCoW.json artifacts/",
     "typechain": "typechain --target ethers-v5 --out-dir types/ \"artifacts/*.json\"",
-    "prepare": "npm run artifacts && npm run typechain",
+    "prepare": "npm run typechain",
     "build": "tsc"
   },
   "devDependencies": {
