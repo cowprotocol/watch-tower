@@ -354,7 +354,7 @@ export async function checkInterface(code: string): Promise<boolean> {
   const composableCow = ComposableCoW__factory.createInterface();
   for (const signature of signatures) {
     const sighash = composableCow.getSighash(signature);
-    if (!code.includes(sighash)) {
+    if (!code.includes(sighash.slice(2))) {
       return false;
     }
   }

@@ -2,7 +2,7 @@
   "name": "actions",
   "license": "MIT",
   "scripts": {
-    "test": "npm run build && jest",
+    "test": "npm run build && jest ./out",
     "typechain": "typechain --target ethers-v5 --out-dir types/ \"artifacts/*.json\"",
     "prepare": "npm run typechain",
     "build": "rm -rf out && rm -rf types && npm run typechain && tsc"
