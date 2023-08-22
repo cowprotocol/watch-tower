@@ -49,12 +49,12 @@ export type ConditionalOrder = {
   proof: Proof | null;
   // a map of discrete order hashes to their status
   orders: Map<OrderUid, OrderStatus>;
-  // the address to poll for orders
-  composableCow: string;
+  // the address to poll for orders (may, or **may not** be `ComposableCoW`)
+  address: string;
 };
 
 /**
- * Models the state beteween executions.
+ * Models the state between executions.
  * Contains a map of owners to conditional orders and the last time we sent an error.
  */
 export class Registry {

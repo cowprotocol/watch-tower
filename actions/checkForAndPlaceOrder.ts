@@ -72,7 +72,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
         conditionalOrder.params
       );
       const contract = ComposableCoW__factory.connect(
-        conditionalOrder.composableCow,
+        conditionalOrder.address,
         chainContext.provider
       );
 
