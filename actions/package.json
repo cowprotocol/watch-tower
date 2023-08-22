@@ -4,7 +4,7 @@
   "scripts": {
     "test": "jest",
     "typechain": "typechain --target ethers-v5 --out-dir types/ \"abi/*.json\"",
-    "prepare": "npx ts-node prepublish.ts && npm run typechain",
+    "prepare": "npm run typechain",
     "build": "tsc"
   },
   "devDependencies": {
