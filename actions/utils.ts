@@ -18,6 +18,12 @@ import { ComposableCoW__factory } from "./types";
 // const TENDERLY_LOG_LIMIT = 3800; // 4000 is the limit, we just leave some margin for printing the chunk index
 const NOTIFICATION_WAIT_PERIOD = 1000 * 60 * 60 * 2; // 2h - Don't send more than one notification every 2h
 
+// Selectors that are required to be part of the contract's bytecode in order to be considered compatible
+const REQUIRED_SELECTORS = [
+  'cabinet(address,bytes32)',
+  'getTradeableOrderWithSignature(address,(address,bytes32,bytes),bytes,bytes32[])'
+]
+
 let executionContext: ExecutionContext | undefined;
 
 export async function init(
@@ -346,18 +352,10 @@ export function sendSlack(message: string): boolean {
  * @returns A boolean indicating if the contract likely implements the interface
  */
 export function isCompatible(code: string): boolean {
-  const signatures = [
-    'cabinet(address,bytes32)',
-    'getTradeableOrderWithSignature(address,(address,bytes32,bytes),bytes,bytes32[])'
-  ]
-
   const composableCow = ComposableCoW__factory.createInterface();
-  for (const signature of signatures) {
-    const sighash = composableCow.getSighash(signature);
-    if (!code.includes(sighash.slice(2))) {
-      return false;
-    }
-  }
 
-  return true;
+  return REQUIRED_SELECTORS.every((signature) => {
+    const sighash = composableCow.getSighash(signature);
+    return code.includes(sighash.slice(2));
+  });
 }
