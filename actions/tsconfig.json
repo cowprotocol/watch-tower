@@ -9,6 +9,6 @@
     "target": "es2020",
     "resolveJsonModule": true
   },
-  "exclude": ["**/*.spec.ts"],
+  // "exclude": ["**/*.spec.ts"],
   "include": ["**/*"]
 }
