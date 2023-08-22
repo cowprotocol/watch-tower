@@ -8,6 +8,6 @@ lcov.info
 # JS dependencies
 node_modules/
 
-# Typechain generated and artifacts
-/actions/artifacts/
+# Typechain generated and source abi
+/actions/abi/
 /actions/types/

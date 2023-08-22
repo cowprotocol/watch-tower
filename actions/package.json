@@ -2,8 +2,8 @@
   "name": "actions",
   "license": "MIT",
   "scripts": {
-    "typechain": "typechain --target ethers-v5 --out-dir types/ \"artifacts/*.json\"",
-    "prepare": "npm run typechain",
+    "typechain": "typechain --target ethers-v5 --out-dir types/ \"abi/*.json\"",
+    "prepare": "npx ts-node prepublish.ts && npm run typechain",
     "build": "tsc"
   },
   "devDependencies": {
