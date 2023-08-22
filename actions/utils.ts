@@ -345,7 +345,7 @@ export function sendSlack(message: string): boolean {
  * @param code the contract's deployed bytecode as a hex string
  * @returns A boolean indicating if the contract likely implements the interface
  */
-export async function checkInterface(code: string): Promise<boolean> {
+export function compatCheck(code: string): boolean {
   const signatures = [
     'cabinet(address,bytes32)',
     'getTradeableOrderWithSignature(address,(address,bytes32,bytes),bytes,bytes32[])'
