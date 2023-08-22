@@ -2,10 +2,10 @@
   "name": "actions",
   "license": "MIT",
   "scripts": {
-    "test": "jest",
-    "typechain": "typechain --target ethers-v5 --out-dir types/ \"abi/*.json\"",
+    "test": "npm run build && jest",
+    "typechain": "typechain --target ethers-v5 --out-dir types/ \"artifacts/*.json\"",
     "prepare": "npm run typechain",
-    "build": "tsc"
+    "build": "rm -rf out && rm -rf types && npm run typechain && tsc"
   },
   "devDependencies": {
     "@tenderly/actions-test": "^0.0.13",
