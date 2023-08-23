@@ -422,12 +422,12 @@ function _handleGetTradableOrderCall(
     // Assumptions:
     // - `error.data` exists for all tested RPC nodes.
     // - All revert reasons in the code base are expected to return a non-zero `error.data`
-    // - Nethermind, irrespective of the revert reason, returns a non-zero `error.data`
+    // - Nethermind, irrespective of the revert reason, returns a zero-bytes `error.data`
     // Therefore:
     // - Nethermind: `error.data` in a revert case is `0x` (empty string), with the revert reason buried in
     //               `error.error.error.data`
     // - Other nodes: `error.data` in a revert case we expect the revert reason / custom error selector
-    // Therefore, if it's a nethermind reversion, it takes the format `Reverted 0x01234567` where `01234567` is
+    // Therefore, if it's a Nethermind reversion, it takes the format `Reverted 0x01234567` where `01234567` is
     // the error selector. We can therefore check if the `error.data` is `0x` and if so, we can extract the
     // error selector from `error.error.error.data` and use that to determine the error.
     let parsedError = "";
