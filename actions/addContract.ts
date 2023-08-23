@@ -136,7 +136,7 @@ export async function _registerNewOrder(
  * @param owner to add the conditional order to
  * @param params for the conditional order
  * @param proof for the conditional order (if it is part of a merkle root)
- * @param address address of the contract that emitted the event
+ * @param composableCow address of the contract that emitted the event
  * @param registry of all conditional orders
  */
 export const add = async (
@@ -144,7 +144,7 @@ export const add = async (
   owner: Owner,
   params: IConditionalOrder.ConditionalOrderParamsStruct,
   proof: Proof | null,
-  address: string,
+  composableCow: string,
   registry: Registry
 ) => {
   const { handler, salt, staticInput } = params;
@@ -171,7 +171,7 @@ export const add = async (
         params,
         proof,
         orders: new Map(),
-        address,
+        composableCow,
       });
     }
   } else {
@@ -181,7 +181,7 @@ export const add = async (
     );
     registry.ownerOrders.set(
       owner,
-      new Set([{ tx, params, proof, orders: new Map(), address }])
+      new Set([{ tx, params, proof, orders: new Map(), composableCow }])
     );
   }
 };
