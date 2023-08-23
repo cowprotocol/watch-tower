@@ -9,5 +9,7 @@ lcov.info
 node_modules/
 
 # Typechain generated and artifacts
-/actions/artifacts/
 /actions/types/
+
+# Compiled production code
+/actions/out/

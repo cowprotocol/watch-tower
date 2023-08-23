@@ -13,9 +13,16 @@ import {
 import { CaptureConsole as CaptureConsoleIntegration } from "@sentry/integrations";
 
 import { ExecutionContext, OrderStatus, Registry } from "./model";
+import { ComposableCoW__factory } from "./types";
 
 // const TENDERLY_LOG_LIMIT = 3800; // 4000 is the limit, we just leave some margin for printing the chunk index
 const NOTIFICATION_WAIT_PERIOD = 1000 * 60 * 60 * 2; // 2h - Don't send more than one notification every 2h
+
+// Selectors that are required to be part of the contract's bytecode in order to be considered compatible
+const REQUIRED_SELECTORS = [
+  'cabinet(address,bytes32)',
+  'getTradeableOrderWithSignature(address,(address,bytes32,bytes),bytes,bytes32[])'
+]
 
 let executionContext: ExecutionContext | undefined;
 
@@ -327,4 +334,28 @@ export function sendSlack(message: string): boolean {
     text: message,
   });
   return true;
+}
+
+/**
+ * Attempts to verify that the contract at the given address implements the interface of the `ComposableCoW`
+ * contract. This is done by checking that the contract contains the selectors of the functions that are
+ * required to be implemented by the interface.
+ * 
+ * @remarks This is not a foolproof way of verifying that the contract implements the interface, but it is
+ * a good enough heuristic to filter out most of the contracts that do not implement the interface.
+ * 
+ * @dev The selectors are:
+ * - `cabinet(address,bytes32)`: `1c7662c8`
+ * - `getTradeableOrderWithSignature(address,(address,bytes32,bytes),bytes,bytes32[])`: `26e0a196`
+ * 
+ * @param code the contract's deployed bytecode as a hex string
+ * @returns A boolean indicating if the contract likely implements the interface
+ */
+export function isCompatible(code: string): boolean {
+  const composableCow = ComposableCoW__factory.createInterface();
+
+  return REQUIRED_SELECTORS.every((signature) => {
+    const sighash = composableCow.getSighash(signature);
+    return code.includes(sighash.slice(2));
+  });
 }

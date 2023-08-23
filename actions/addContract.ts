@@ -14,8 +14,8 @@ import type {
 } from "./types/ComposableCoW";
 import { ComposableCoW__factory } from "./types/factories/ComposableCoW__factory";
 
-import { handleExecutionError, init, writeRegistry } from "./utils";
-import { Owner, Proof, Registry } from "./model";
+import { isCompatible, handleExecutionError, init, writeRegistry } from "./utils";
+import { ChainContext, Owner, Proof, Registry } from "./model";
 
 /**
  * Listens to these events on the `ComposableCoW` contract:
@@ -32,6 +32,7 @@ const _addContract: ActionFn = async (context: Context, event: Event) => {
   const transactionEvent = event as TransactionEvent;
   const tx = transactionEvent.hash;
   const composableCow = ComposableCoW__factory.createInterface();
+  const { provider } = await ChainContext.create(context, transactionEvent.network);
   const { registry } = await init(
     "addContract",
     transactionEvent.network,
@@ -41,6 +42,12 @@ const _addContract: ActionFn = async (context: Context, event: Event) => {
   // Process the logs
   let hasErrors = false;
   for (const log of transactionEvent.logs) {
+    // Do not process logs that are not from a `ComposableCoW`-compatible contract
+    // This is a *normal* case, if the contract is not `ComposableCoW`-compatible
+    // then we do not need to do anything, and therefore don't flag as an error.
+    if (!isCompatible(await provider.getCode(log.address))) {
+      continue;
+    }
     const { error } = await _registerNewOrder(tx, log, composableCow, registry);
     hasErrors ||= error;
   }
@@ -129,7 +136,7 @@ export async function _registerNewOrder(
  * @param owner to add the conditional order to
  * @param params for the conditional order
  * @param proof for the conditional order (if it is part of a merkle root)
- * @param composableCow address of the ComposableCoW contract that emitted the event
+ * @param address address of the contract that emitted the event
  * @param registry of all conditional orders
  */
 export const add = async (
@@ -137,7 +144,7 @@ export const add = async (
   owner: Owner,
   params: IConditionalOrder.ConditionalOrderParamsStruct,
   proof: Proof | null,
-  composableCow: string,
+  address: string,
   registry: Registry
 ) => {
   const { handler, salt, staticInput } = params;
@@ -164,7 +171,7 @@ export const add = async (
         params,
         proof,
         orders: new Map(),
-        composableCow,
+        address,
       });
     }
   } else {
@@ -174,7 +181,7 @@ export const add = async (
     );
     registry.ownerOrders.set(
       owner,
-      new Set([{ tx, params, proof, orders: new Map(), composableCow }])
+      new Set([{ tx, params, proof, orders: new Map(), address }])
     );
   }
 };
