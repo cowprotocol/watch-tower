@@ -50,7 +50,7 @@ export type ConditionalOrder = {
   // a map of discrete order hashes to their status
   orders: Map<OrderUid, OrderStatus>;
   // the address to poll for orders (may, or **may not** be `ComposableCoW`)
-  address: string;
+  composableCow: string;
 };
 
 /**
