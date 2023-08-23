@@ -351,7 +351,7 @@ export function sendSlack(message: string): boolean {
  * @param code the contract's deployed bytecode as a hex string
  * @returns A boolean indicating if the contract likely implements the interface
  */
-export function isCompatible(code: string): boolean {
+export function isComposableCowCompatible(code: string): boolean {
   const composableCow = ComposableCoW__factory.createInterface();
 
   return REQUIRED_SELECTORS.every((signature) => {

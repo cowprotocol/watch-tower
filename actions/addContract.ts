@@ -14,7 +14,7 @@ import type {
 } from "./types/ComposableCoW";
 import { ComposableCoW__factory } from "./types/factories/ComposableCoW__factory";
 
-import { isCompatible, handleExecutionError, init, writeRegistry } from "./utils";
+import { isComposableCowCompatible, handleExecutionError, init, writeRegistry } from "./utils";
 import { ChainContext, Owner, Proof, Registry } from "./model";
 
 /**
@@ -45,7 +45,7 @@ const _addContract: ActionFn = async (context: Context, event: Event) => {
     // Do not process logs that are not from a `ComposableCoW`-compatible contract
     // This is a *normal* case, if the contract is not `ComposableCoW`-compatible
     // then we do not need to do anything, and therefore don't flag as an error.
-    if (!isCompatible(await provider.getCode(log.address))) {
+    if (!isComposableCowCompatible(await provider.getCode(log.address))) {
       continue;
     }
     const { error } = await _registerNewOrder(tx, log, composableCow, registry);
