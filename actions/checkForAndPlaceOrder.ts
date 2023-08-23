@@ -415,15 +415,46 @@ function _handleGetTradableOrderCall(
   if (error.code === Logger.errors.CALL_EXCEPTION) {
     const errorMessagePrefix =
       "[getTradeableOrderWithSignature] Call Exception";
-    switch (error.errorName) {
+
+    // TODO: When Nethermind hopefully uses the same error format as other nodes, we can remove this hack
+    //
+    // Nethermind does some weird stuff with the error message, so we need to do some magic 💫
+    // Assumptions:
+    // - `error.data` exists for all tested RPC nodes.
+    // - All revert reasons in the code base are expected to return a non-zero `error.data`
+    // - Nethermind, irrespective of the revert reason, returns a non-zero `error.data`
+    // Therefore:
+    // - Nethermind: `error.data` in a revert case is `0x` (empty string), with the revert reason buried in
+    //               `error.error.error.data`
+    // - Other nodes: `error.data` in a revert case we expect the revert reason / custom error selector
+    // Therefore, if it's a nethermind reversion, it takes the format `Reverted 0x01234567` where `01234567` is
+    // the error selector. We can therefore check if the `error.data` is `0x` and if so, we can extract the
+    // error selector from `error.error.error.data` and use that to determine the error.
+    const parsedError = error.data === '0x' ? 
+      String(error.error.error.data).slice(9, 19) // 9 skips the `Reverted ` prefix, and 19 is the end of the error selector
+      :
+      error.errorName; // If it's not nethermind, we can use the error name
+
+    switch (parsedError) {
       case "OrderNotValid":
+      case "0xc8fc2725":
         // The conditional order has not expired, or been cancelled, but the order is not valid
         // For example, with TWAPs, this may be after `span` seconds have passed in the epoch.
+
+        // As the `OrderNotValid` is parameterized, we can retrieve the reason. This is an abi encoded string,
+        // so we need to decode it.
+        // TODO: use the `OrderNotValid` reason?
+        const reason = ethers.utils.defaultAbiCoder.decode(
+          ["string"],
+          String(error.error.error.data).slice(19)
+        )[0];
+
         return {
           result: ValidationResult.FailedButIsExpected,
           deleteConditionalOrder: false,
         };
       case "SingleOrderNotAuthed":
+      case "0x7a933234":
         // If there's no authorization we delete the order
         // - One reason could be, because the user CANCELLED the order
         // - for now it doesn't support more advanced cases where the order is auth during a pre-interaction
@@ -436,6 +467,7 @@ function _handleGetTradableOrderCall(
           deleteConditionalOrder: true,
         };
       case "ProofNotAuthed":
+      case "0x4a821464":
         // If there's no authorization we delete the order
         // - One reason could be, because the user CANCELLED the order
         // - for now it doesn't support more advanced cases where the order is auth during a pre-interaction
