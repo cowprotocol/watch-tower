@@ -430,10 +430,22 @@ function _handleGetTradableOrderCall(
     // Therefore, if it's a nethermind reversion, it takes the format `Reverted 0x01234567` where `01234567` is
     // the error selector. We can therefore check if the `error.data` is `0x` and if so, we can extract the
     // error selector from `error.error.error.data` and use that to determine the error.
-    const parsedError = error.data === '0x' ? 
-      String(error.error.error.data).slice(9, 19) // 9 skips the `Reverted ` prefix, and 19 is the end of the error selector
-      :
-      error.errorName; // If it's not nethermind, we can use the error name
+    let parsedError = "";
+    if (error.data === "0x") {
+      // Verify that `error.error.error.data` is defined and is a string, otherwise it
+      // could be a different error
+      // TODO: Is there a better way to do this?
+      if (
+        error.error &&
+        error.error.error &&
+        typeof error.error.error.data === "string"
+      ) {
+        // 9 skips the `Reverted ` prefix, and 19 is the end of the error selector
+        parsedError = String(error.error.error.data).slice(9, 19);
+      }
+    } else {
+      parsedError = error.errorName; // If it's not nethermind, we can use the error name
+    }
 
     switch (parsedError) {
       case "OrderNotValid":
