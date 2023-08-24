@@ -4,16 +4,15 @@ import {
   PollResult,
   PollResultCode,
 } from "@cowprotocol/cow-sdk";
-import { utils } from "ethers";
 
-import { ValidateOrderParams } from "./model";
+import { PollingParams } from "./model";
 
 const ordersFactory = new ConditionalOrderFactory(
   DEFAULT_CONDITIONAL_ORDER_REGSTRY
 );
 
 export async function pollConditionalOrder(
-  params: ValidateOrderParams
+  params: PollingParams
 ): Promise<PollResult | undefined> {
   const { owner, chainId, conditionalOrderParams, provider } = params;
 

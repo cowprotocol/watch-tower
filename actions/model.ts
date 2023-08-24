@@ -189,13 +189,7 @@ export function replacer(_key: any, value: any) {
   }
 }
 
-export enum ValidationResult {
-  Success,
-  Failed,
-  FailedButIsExpected,
-}
-
-export interface ValidateOrderParams {
+export interface PollingParams {
   owner: string;
   chainId: SupportedChainId;
   conditionalOrderParams: ConditionalOrderParams;
