@@ -416,57 +416,24 @@ function _handleGetTradableOrderCall(
     const errorMessagePrefix =
       "[getTradeableOrderWithSignature] Call Exception";
 
-    // TODO: When Nethermind hopefully uses the same error format as other nodes, we can remove this hack
-    //
-    // Nethermind does some weird stuff with the error message, so we need to do some magic 💫
-    // Assumptions:
-    // - `error.data` exists for all tested RPC nodes.
-    // - All revert reasons in the code base are expected to return a non-zero `error.data`
-    // - Nethermind, irrespective of the revert reason, returns a zero-bytes `error.data`
-    // Therefore:
-    // - Nethermind: `error.data` in a revert case is `0x` (empty string), with the revert reason buried in
-    //               `error.error.error.data`
-    // - Other nodes: `error.data` in a revert case we expect the revert reason / custom error selector
-    // Therefore, if it's a Nethermind reversion, it takes the format `Reverted 0x01234567` where `01234567` is
-    // the error selector. We can therefore check if the `error.data` is `0x` and if so, we can extract the
-    // error selector from `error.error.error.data` and use that to determine the error.
-    let parsedError = "";
-    if (error.data === "0x") {
-      // Verify that `error.error.error.data` is defined and is a string, otherwise it
-      // could be a different error
-      // TODO: Is there a better way to do this?
-      if (
-        error.error &&
-        error.error.error &&
-        typeof error.error.error.data === "string"
-      ) {
-        // 9 skips the `Reverted ` prefix, and 19 is the end of the error selector
-        parsedError = String(error.error.error.data).slice(9, 19);
-      }
-    } else {
-      parsedError = error.errorName; // If it's not nethermind, we can use the error name
-    }
-
-    switch (parsedError) {
+    // Support raw errors (nethermind issue), and parameterised errors (ethers issue)
+    const { errorNameOrSelector, message } = parseCustomError(error);
+    switch (errorNameOrSelector) {
       case "OrderNotValid":
-      case "0xc8fc2725":
+      case ORDER_NOT_VALID_SELECTOR:
         // The conditional order has not expired, or been cancelled, but the order is not valid
         // For example, with TWAPs, this may be after `span` seconds have passed in the epoch.
 
-        // As the `OrderNotValid` is parameterized, we can retrieve the reason. This is an abi encoded string,
-        // so we need to decode it.
-        // TODO: use the `OrderNotValid` reason?
-        const reason = ethers.utils.defaultAbiCoder.decode(
-          ["string"],
-          String(error.error.error.data).slice(19)
-        )[0];
+        // As the `OrderNotValid` is parameterized, we expect `message` to have the reason
+        // TODO: Make use of `message` ?
+        // console.log(message)
 
         return {
           result: ValidationResult.FailedButIsExpected,
           deleteConditionalOrder: false,
         };
       case "SingleOrderNotAuthed":
-      case "0x7a933234":
+      case SINGLE_ORDER_NOT_AUTHED_SELECTOR:
         // If there's no authorization we delete the order
         // - One reason could be, because the user CANCELLED the order
         // - for now it doesn't support more advanced cases where the order is auth during a pre-interaction
@@ -479,7 +446,7 @@ function _handleGetTradableOrderCall(
           deleteConditionalOrder: true,
         };
       case "ProofNotAuthed":
-      case "0x4a821464":
+      case PROOF_NOT_AUTHED_SELECTOR:
         // If there's no authorization we delete the order
         // - One reason could be, because the user CANCELLED the order
         // - for now it doesn't support more advanced cases where the order is auth during a pre-interaction
@@ -560,3 +527,105 @@ export const balanceToString = (balance: string) => {
     throw new Error(`Unknown balance type: ${balance}`);
   }
 };
+
+// These are the `sighash` of the custom errors, with sighashes being calculated the same way for custom
+// errors as they are for functions in solidity.
+const ORDER_NOT_VALID_SELECTOR = "0xc8fc2725";
+const SINGLE_ORDER_NOT_AUTHED_SELECTOR = "0x7a933234";
+const PROOF_NOT_AUTHED_SELECTOR = "0x4a821464";
+
+type ParsedError = {
+  errorNameOrSelector?: string;
+  message?: string;
+}
+
+/**
+ * Given a raw ABI-encoded custom error returned from a revert, extract the selector and optionally a message.
+ * @param abi of the custom error, which may or may not be parameterised.
+ * @returns an empty parsed error if assumptions don't hold, otherwise the selector and message if applicable.
+ */
+const rawErrorDecode = (abi: string): ParsedError  => {
+  if (abi.length == 10) {
+    return { errorNameOrSelector: abi }
+  } else {
+    try {
+      const selector = String(abi).substring(0, 10);
+      const message = ethers.utils.defaultAbiCoder.decode(
+        ["string"],
+        abi.slice(10) // trim off the selector
+      )[0];
+      return { errorNameOrSelector: selector, message };
+    } catch {
+      // some weird parameter, just return and let the caller deal with it
+      return {};
+    }  
+  }
+}
+
+/**
+ * Parse custom reversion errors, irrespective of the RPC node's software
+ * 
+ * Background: `ComposableCoW` makes extensive use of `revert` to provide custom error messages. Unfortunately,
+ *             different RPC nodes handle these errors differently. For example, Nethermind returns a zero-bytes
+ *             `error.data` in all cases, and the error selector is buried in `error.error.error.data`. Other 
+ *             nodes return the error selector in `error.data`.
+ * 
+ *             In all cases, if the error selector contains a parameterised error message, the error message is
+ *             encoded in the `error.data` field. For example, `OrderNotValid` contains a parameterised error
+ *             message, and the error message is encoded in `error.data`.
+ * 
+ * Assumptions:
+ * - `error.data` exists for all tested RPC nodes, and parameterised / non-parameterised custom errors.
+ * - All calls to the smart contract if they revert, return a non-zero result at **EVM** level.
+ * - Nethermind, irrespective of the revert reason, returns a zero-bytes `error.data` due to odd message
+ *   padding on the RPC return value from Nethermind.
+ * Therefore:
+ * - Nethermind: `error.data` in a revert case is `0x` (empty string), with the revert reason buried in
+ *   `error.error.error.data`.
+ * - Other nodes: `error.data` in a revert case we expected the revert reason / custom error selector.
+ * @param error returned by ethers
+ */
+const parseCustomError = (error: any): ParsedError => {
+  const { errorName, data } = error;
+
+  // In all cases, data must be defined. If it isn't, return early - bad assumptions.
+  if (!data) {
+    return {};
+  }
+
+  // If error.errorName is defined:
+  // - The node has formatted the error message in a way that ethers can parse
+  // - It's not a parameterised custom error - no message
+  // - We can return early
+  if (errorName) {
+    return { errorNameOrSelector: errorName };
+  }
+
+  // If error.data is not zero-bytes, then it's not a Nethermind node, assume it's a string parameterised
+  // custom error. Attempt to decode and return.
+  if (data !== "0x") {
+    return rawErrorDecode(data)
+  } else {
+    // This is a Nethermind node, as `data` *must* be equal to `0x`, but we know we always revert with an
+    // message, so - we have to go digging ⛏️🙄
+    //
+    // Verify our assumption that `error.error.error.data` is defined and is a string.
+    // TODO: Is there a better way to do this?
+    if (
+      error.error &&
+      error.error.error &&
+      typeof error.error.error.data === "string"
+    ) {
+      const rawNethermind = error.error.error.data // readable, too much inception-level nesting otherwise
+
+      // For some reason, Nethermind pad their message with `Reverted `, so, we need to slice off the 
+      // extraneous part of the message, and just get the data - that we wanted in the first place!
+      const nethermindData = rawNethermind.slice(9)
+      return rawErrorDecode(nethermindData)
+    } else {
+      // the nested error-ception for some reason failed and our assumptions are therefore incorrect.
+      // return the unknown state to the caller.
+      return {}
+    }
+  }
+}
