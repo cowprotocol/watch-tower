@@ -380,12 +380,14 @@ async function _getTradeableOrderWithSignature(
 ): Promise<TradableOrderWithSignatureResult> {
   const proof = conditionalOrder.proof ? conditionalOrder.proof.path : [];
   const offchainInput = "0x";
-  const { to, data } =
-    await contract.populateTransaction.getTradeableOrderWithSignature(
-      owner,
-      conditionalOrder.params,
-      offchainInput,
-      proof
+
+  // as we going to use multicall, with `aggregate3Value`, there is no need to do any simulation as the
+  // calls are guaranteed to pass, and will return the results, or the reversion within the ABI-encoded data.
+  // By not using `populateTransaction`, we avoid an `eth_estimateGas` RPC call.
+  const to = contract.address;
+  const data = contract.interface.encodeFunctionData(
+      "getTradeableOrderWithSignature",
+      [owner, conditionalOrder.params, offchainInput, proof]
     );
 
   console.log(
@@ -393,16 +395,27 @@ async function _getTradeableOrderWithSignature(
   );
 
   try {
-    const data = await contract.callStatic.getTradeableOrderWithSignature(
-      owner,
-      conditionalOrder.params,
-      offchainInput,
-      proof
-    );
+    const lowLevelCall = await multicall.callStatic.aggregate3Value([
+      {
+        target: to,
+        value: 0,
+        allowFailure: true,
+        callData: data,
+      }
+    ])
 
+    const [{ success, returnData}] = lowLevelCall;
+
+    // If the call failed, we throw an error and wrap the returnData as it is done by erigon / geth 🦦
+    if (!success) {
+      throw new LowLevelError('low-level call failed', returnData);
+    }
+    
+    // Decode the result to get the order and signature
+    const { order, signature } = contract.interface.decodeFunctionResult("getTradeableOrderWithSignature", returnData);
     return {
       result: ValidationResult.Success,
-      data,
+      data: { order, signature },
     };
   } catch (error: any) {
     // Print and handle the error

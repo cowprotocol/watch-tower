@@ -465,3 +465,12 @@ export const parseCustomError = (error: any): ParsedError => {
     }
   }
 }
+
+export class LowLevelError extends Error {
+  data: string;
+  constructor(msg: string, data: string) {
+    super(msg);
+    this.data = data;
+    Object.setPrototypeOf(this, LowLevelError.prototype);
+  }
+}
