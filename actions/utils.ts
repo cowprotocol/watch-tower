@@ -377,20 +377,17 @@ type ParsedError = {
  * @returns an empty parsed error if assumptions don't hold, otherwise the selector and message if applicable.
  */
 const rawErrorDecode = (abi: string): ParsedError  => {
-  if (abi.length == 10) {
+  if (abi.length === 10) {
     return { errorNameOrSelector: abi }
   } else {
     try {
-      const selector = String(abi).substring(0, 10);
-      console.log('selector', selector)
-      console.log('message', abi.slice(10))
+      const selector = abi.slice(0, 10);
       const message = ethers.utils.defaultAbiCoder.decode(
         ["string"],
         '0x' + abi.slice(10) // trim off the selector
       )[0];
       return { errorNameOrSelector: selector, message };
     } catch {
-      console.log('decode failed')
       // some weird parameter, just return and let the caller deal with it
       return {};
     }  
@@ -447,16 +444,12 @@ export const parseCustomError = (error: any): ParsedError => {
     //
     // Verify our assumption that `error.error.error.data` is defined and is a string.
     // TODO: Is there a better way to do this?
-    if (
-      error.error &&
-      error.error.error &&
-      typeof error.error.error.data === "string"
-    ) {
+    if (typeof error?.error?.error?.data === "string") {
       const rawNethermind = error.error.error.data // readable, too much inception-level nesting otherwise
 
       // For some reason, Nethermind pad their message with `Reverted `, so, we need to slice off the 
       // extraneous part of the message, and just get the data - that we wanted in the first place!
-      const nethermindData = rawNethermind.slice(9)
+      const nethermindData = rawNethermind.slice('Reverted '.length)
       return rawErrorDecode(nethermindData)
     } else {
       // the nested error-ception for some reason failed and our assumptions are therefore incorrect.

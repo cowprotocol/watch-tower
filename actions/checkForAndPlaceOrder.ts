@@ -398,8 +398,8 @@ async function _getTradeableOrderWithSignature(
     const lowLevelCall = await multicall.callStatic.aggregate3Value([
       {
         target: to,
-        value: 0,
         allowFailure: true,
+        value: 0,
         callData: data,
       }
     ])
@@ -444,7 +444,7 @@ function _handleGetTradableOrderCall(
       "[getTradeableOrderWithSignature] Call Exception";
 
     // Support raw errors (nethermind issue), and parameterised errors (ethers issue)
-    const { errorNameOrSelector, message } = parseCustomError(error);
+    const { errorNameOrSelector } = parseCustomError(error);
     switch (errorNameOrSelector) {
       case "OrderNotValid":
       case ORDER_NOT_VALID_SELECTOR:
@@ -452,8 +452,7 @@ function _handleGetTradableOrderCall(
         // For example, with TWAPs, this may be after `span` seconds have passed in the epoch.
 
         // As the `OrderNotValid` is parameterized, we expect `message` to have the reason
-        // TODO: Make use of `message` ?
-        // console.log(message)
+        // TODO: Make use of `message` returned by parseCustomError ?
 
         return {
           result: ValidationResult.FailedButIsExpected,
