@@ -11,8 +11,9 @@ import axios from "axios";
 import { ethers } from "ethers";
 import { BytesLike, Logger } from "ethers/lib/utils";
 
-import { ComposableCoW, ComposableCoW__factory } from "./types";
+import { ComposableCoW, ComposableCoW__factory, Multicall3, Multicall3__factory } from "./types";
 import {
+  LowLevelError,
   ORDER_NOT_VALID_SELECTOR,
   PROOF_NOT_AUTHED_SELECTOR,
   SINGLE_ORDER_NOT_AUTHED_SELECTOR,
@@ -33,6 +34,7 @@ import { GPv2Order } from "./types/ComposableCoW";
 import { validateOrder } from "./handlers";
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
+const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 /**
  * Watch for new blocks and check for orders to place
@@ -79,12 +81,17 @@ const _checkForAndPlaceOrder: ActionFn = async (
         conditionalOrder.composableCow,
         chainContext.provider
       );
+      const multicall = Multicall3__factory.connect(
+        MULTICALL3,
+        chainContext.provider
+      );
 
       const { deleteConditionalOrder, error } = await _processConditionalOrder(
         owner,
         network,
         conditionalOrder,
         contract,
+        multicall,
         chainContext,
         context
       );
@@ -128,6 +135,7 @@ async function _processConditionalOrder(
   network: string,
   conditionalOrder: ConditionalOrder,
   contract: ComposableCoW,
+  multicall: Multicall3,
   chainContext: ChainContext,
   context: Context
 ): Promise<{ deleteConditionalOrder: boolean; error: boolean }> {
@@ -182,7 +190,8 @@ async function _processConditionalOrder(
       owner,
       network,
       conditionalOrder,
-      contract
+      contract,
+      multicall
     );
 
     // Return early if the simulation fails
@@ -366,7 +375,8 @@ async function _getTradeableOrderWithSignature(
   owner: string,
   network: string,
   conditionalOrder: ConditionalOrder,
-  contract: ComposableCoW
+  contract: ComposableCoW,
+  multicall: Multicall3
 ): Promise<TradableOrderWithSignatureResult> {
   const proof = conditionalOrder.proof ? conditionalOrder.proof.path : [];
   const offchainInput = "0x";
