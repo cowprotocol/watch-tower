@@ -442,10 +442,8 @@ export const parseCustomError = (error: any): ParsedError => {
     // message, so - we have to go digging ⛏️🙄
     //
     // Verify our assumption that `error.error.error.data` is defined and is a string.
-    // TODO: Is there a better way to do this?
-    if (typeof error?.error?.error?.data === "string") {
-      const rawNethermind = error.error.error.data // readable, too much inception-level nesting otherwise
-
+    const rawNethermind = error?.error?.error?.data
+    if (typeof rawNethermind === "string") {
       // For some reason, Nethermind pad their message with `Reverted `, so, we need to slice off the 
       // extraneous part of the message, and just get the data - that we wanted in the first place!
       const nethermindData = rawNethermind.slice('Reverted '.length)
