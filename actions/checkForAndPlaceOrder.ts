@@ -98,30 +98,36 @@ const _checkForAndPlaceOrder: ActionFn = async (
       );
       const error = pollResult !== undefined;
 
-      console.log(
+      // Specific handling for each error
+      if (pollResult) {
+        // Dont try again the same order
+        if (pollResult.result === PollResultCode.DONT_TRY_AGAIN) {
+          ordersPendingDelete.push(conditionalOrder);
+        }
+
+        // Unexpected error
+        if (pollResult.result === PollResultCode.UNEXPECTED_ERROR) {
+          console.error(
+            `[checkForAndPlaceOrder] Unexpected error`,
+            pollResult.error
+          );
+        }
+
+        // TODO: Handle the other errors :) --> Store them in the registry and ignore blocks until the moment is right
+        //  TRY_ON_BLOCK
+        //  TRY_AT_EPOCH
+      }
+      console[error ? "error" : "log"](
         `[checkForAndPlaceOrder] Check conditional order result: ${
           pollResult !== undefined
-            ? `❌ Result: ${pollResult.result}` + pollResult.reason
-              ? `. Reason: ${pollResult.reason}`
-              : ""
+            ? `❌ Result: ${pollResult.result} " ${
+                pollResult.reason ? `. Reason: ${pollResult.reason}` : ""
+              }`
             : "✅ SUCCESS"
         }`
       );
 
       hasErrors ||= error;
-
-      if (pollResult) {
-        if (pollResult.result === PollResultCode.DONT_TRY_AGAIN) {
-          ordersPendingDelete.push(conditionalOrder);
-        }
-
-        // TODO: Handle the other errors :) --> Store them in the registry and ignore blocks until the moment is right
-        //  SUCCESS
-        //  UNEXPECTED_ERROR
-        //  TRY_NEXT_BLOCK
-        //  TRY_ON_BLOCK
-        //  TRY_AT_EPOCH
-      }
     }
 
     for (const conditionalOrder of ordersPendingDelete) {
@@ -160,6 +166,14 @@ async function _processConditionalOrder(
       const { handler, salt, staticInput } = conditionalOrder.params;
       return Promise.all([handler, salt, staticInput]);
     })();
+
+    console.log("TODO: Why now this parameters seem broken????? ", {
+      handler,
+      salt,
+      staticInput,
+      params: conditionalOrder.params,
+    });
+
     let pollResult = await pollConditionalOrder({
       owner,
       chainId,

@@ -119,7 +119,7 @@ async function processBlock(
   // Block watcher for creating new orders
   const testBlockEvent = new TestBlockEvent();
   testBlockEvent.blockNumber = blockNumber;
-  testBlockEvent.blockDifficulty = block.difficulty.toString();
+  testBlockEvent.blockDifficulty = block.difficulty?.toString();
   testBlockEvent.blockHash = block.hash;
   testBlockEvent.network = chainId.toString();
 
