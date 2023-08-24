@@ -436,7 +436,6 @@ export const parseCustomError = (error: any): ParsedError => {
   // If error.data is not zero-bytes, then it's not a Nethermind node, assume it's a string parameterised
   // custom error. Attempt to decode and return.
   if (data !== "0x") {
-    console.log(data);
     return rawErrorDecode(data)
   } else {
     // This is a Nethermind node, as `data` *must* be equal to `0x`, but we know we always revert with an
