@@ -14,7 +14,13 @@ import type {
 } from "./types/ComposableCoW";
 import { ComposableCoW__factory } from "./types/factories/ComposableCoW__factory";
 
-import { isComposableCowCompatible, handleExecutionError, init, writeRegistry } from "./utils";
+import {
+  isComposableCowCompatible,
+  handleExecutionError,
+  init,
+  writeRegistry,
+  toChainId,
+} from "./utils";
 import { ChainContext, Owner, Proof, Registry } from "./model";
 
 /**
@@ -32,12 +38,10 @@ const _addContract: ActionFn = async (context: Context, event: Event) => {
   const transactionEvent = event as TransactionEvent;
   const tx = transactionEvent.hash;
   const composableCow = ComposableCoW__factory.createInterface();
-  const { provider } = await ChainContext.create(context, transactionEvent.network);
-  const { registry } = await init(
-    "addContract",
-    transactionEvent.network,
-    context
-  );
+
+  const chainId = toChainId(transactionEvent.network);
+  const { provider } = await ChainContext.create(context, chainId);
+  const { registry } = await init("addContract", chainId, context);
 
   // Process the logs
   let hasErrors = false;

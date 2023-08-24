@@ -13,3 +13,5 @@ node_modules/
 
 # Compiled production code
 /actions/out/
+.yalc
+yalc.lock

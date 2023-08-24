@@ -14,15 +14,20 @@ import { CaptureConsole as CaptureConsoleIntegration } from "@sentry/integration
 
 import { ExecutionContext, OrderStatus, Registry } from "./model";
 import { ComposableCoW__factory } from "./types";
+import {
+  ALL_SUPPORTED_CHAIN_IDS,
+  SupportedChainId,
+} from "@cowprotocol/cow-sdk";
 
-// const TENDERLY_LOG_LIMIT = 3800; // 4000 is the limit, we just leave some margin for printing the chunk index
+type LocalChainId = 31337;
+const LOCAL_CHAIN_ID = 31337;
 const NOTIFICATION_WAIT_PERIOD = 1000 * 60 * 60 * 2; // 2h - Don't send more than one notification every 2h
 
 // Selectors that are required to be part of the contract's bytecode in order to be considered compatible
 const REQUIRED_SELECTORS = [
-  'cabinet(address,bytes32)',
-  'getTradeableOrderWithSignature(address,(address,bytes32,bytes),bytes,bytes32[])'
-]
+  "cabinet(address,bytes32)",
+  "getTradeableOrderWithSignature(address,(address,bytes32,bytes),bytes,bytes32[])",
+];
 
 // These are the `sighash` of the custom errors, with sighashes being calculated the same way for custom
 // errors as they are for functions in solidity.
@@ -34,11 +39,11 @@ let executionContext: ExecutionContext | undefined;
 
 export async function init(
   transactionName: string,
-  network: string,
+  chainId: SupportedChainId,
   context: Context
 ): Promise<ExecutionContext> {
   // Init registry
-  const registry = await Registry.load(context, network);
+  const registry = await Registry.load(context, chainId.toString());
 
   // Get notifications config (enabled by default)
   const notificationsEnabled = await _getNotificationsEnabled(context);
@@ -47,7 +52,7 @@ export async function init(
   const slack = await _getSlack(notificationsEnabled, context);
 
   // Init Sentry
-  const sentryTransaction = await _getSentry(transactionName, network, context);
+  const sentryTransaction = await _getSentry(transactionName, chainId, context);
   if (!sentryTransaction) {
     console.warn("SENTRY_DSN secret is not set. Sentry will be disabled");
   }
@@ -99,7 +104,7 @@ async function _getSlack(
 
 async function _getSentry(
   transactionName: string,
-  network: string,
+  chainId: SupportedChainId,
   context: Context
 ): Promise<SentryTransaction | undefined> {
   // Init Sentry
@@ -116,7 +121,7 @@ async function _getSentry(
       ],
       initialScope: {
         tags: {
-          network,
+          network: chainId,
         },
       },
     });
@@ -138,15 +143,15 @@ async function getSecret(key: string, context: Context): Promise<string> {
 
 export async function getProvider(
   context: Context,
-  network: string
+  chainId: SupportedChainId
 ): Promise<ethers.providers.Provider> {
   Logger.setLogLevel(Logger.levels.DEBUG);
 
-  const url = await getSecret(`NODE_URL_${network}`, context);
-  const user = await getSecret(`NODE_USER_${network}`, context).catch(
+  const url = await getSecret(`NODE_URL_${chainId}`, context);
+  const user = await getSecret(`NODE_USER_${chainId}`, context).catch(
     () => undefined
   );
-  const password = await getSecret(`NODE_PASSWORD_${network}`, context).catch(
+  const password = await getSecret(`NODE_PASSWORD_${chainId}`, context).catch(
     () => undefined
   );
   const providerConfig: ConnectionInfo =
@@ -169,15 +174,16 @@ function getAuthHeader({ user, password }: { user: string; password: string }) {
   return "Basic " + Buffer.from(`${user}:${password}`).toString("base64");
 }
 
-export function apiUrl(network: string): string {
-  switch (network) {
-    case "1":
+// TODO: If we use the Ordebook  API a lot of code will be deleted. Out of the scope of this PR (a lot has to be cleaned)
+export function apiUrl(chainId: SupportedChainId | LocalChainId): string {
+  switch (chainId) {
+    case SupportedChainId.MAINNET:
       return "https://api.cow.fi/mainnet";
-    case "5":
+    case SupportedChainId.GOERLI:
       return "https://api.cow.fi/goerli";
-    case "100":
+    case SupportedChainId.GNOSIS_CHAIN:
       return "https://api.cow.fi/xdai";
-    case "31337":
+    case LOCAL_CHAIN_ID:
       return "http://localhost:3000";
     default:
       throw "Unsupported network";
@@ -248,6 +254,15 @@ export async function writeRegistry(): Promise<boolean> {
   }
 
   return true;
+}
+
+export function toChainId(network: string): SupportedChainId {
+  const neworkId = Number(network);
+  const chainId = ALL_SUPPORTED_CHAIN_IDS.find((chain) => chain === neworkId);
+  if (!chainId) {
+    throw new Error(`Invalid network: ${network}`);
+  }
+  return chainId;
 }
 
 var consoleOriginal = {
@@ -346,14 +361,14 @@ export function sendSlack(message: string): boolean {
  * Attempts to verify that the contract at the given address implements the interface of the `ComposableCoW`
  * contract. This is done by checking that the contract contains the selectors of the functions that are
  * required to be implemented by the interface.
- * 
+ *
  * @remarks This is not a foolproof way of verifying that the contract implements the interface, but it is
  * a good enough heuristic to filter out most of the contracts that do not implement the interface.
- * 
+ *
  * @dev The selectors are:
  * - `cabinet(address,bytes32)`: `1c7662c8`
  * - `getTradeableOrderWithSignature(address,(address,bytes32,bytes),bytes,bytes32[])`: `26e0a196`
- * 
+ *
  * @param code the contract's deployed bytecode as a hex string
  * @returns A boolean indicating if the contract likely implements the interface
  */

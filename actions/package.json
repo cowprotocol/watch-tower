@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@cowprotocol/contracts": "^1.4.0",
-    "@cowprotocol/cow-sdk": "^2.4.0-rc.0",
+    "@cowprotocol/cow-sdk": "file:.yalc/@cowprotocol/cow-sdk",
     "@sentry/integrations": "^7.64.0",
     "@sentry/node": "^7.64.0",
     "@tenderly/actions": "^0.0.13",

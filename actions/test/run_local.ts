@@ -7,9 +7,10 @@ import { checkForAndPlaceOrder } from "../checkForAndPlaceOrder";
 import { addContract } from "../addContract";
 import { ethers } from "ethers";
 import assert = require("assert");
-import { getProvider } from "../utils";
+import { getProvider, toChainId } from "../utils";
 import { getOrdersStorageKey } from "../model";
 import { exit } from "process";
+import { SupportedChainId } from "@cowprotocol/cow-sdk";
 
 require("dotenv").config();
 
@@ -18,11 +19,12 @@ const main = async () => {
   const network = process.env.NETWORK;
   assert(network, "network is required");
 
-  const testRuntime = await _getRunTime(network);
+  const chainId = toChainId(network);
+  const testRuntime = await _getRunTime(chainId);
 
   // Get provider
-  const provider = await getProvider(testRuntime.context, network);
-  const { chainId } = await provider.getNetwork();
+  const provider = await getProvider(testRuntime.context, chainId);
+  await provider.getNetwork();
 
   // Run one of the 2 Execution modes (single block, or watch mode)
   if (process.env.BLOCK_NUMBER) {
@@ -145,14 +147,14 @@ async function processBlock(
   }
 }
 
-async function _getRunTime(network: string): Promise<TestRuntime> {
+async function _getRunTime(chainId: SupportedChainId): Promise<TestRuntime> {
   const testRuntime = new TestRuntime();
 
   // Add secrets from local env (.env) for current network
   const envNames = [
-    `NODE_URL_${network}`,
-    `NODE_USER_${network}`,
-    `NODE_PASSWORD_${network}`,
+    `NODE_URL_${chainId}`,
+    `NODE_USER_${chainId}`,
+    `NODE_PASSWORD_${chainId}`,
     "SLACK_WEBHOOK_URL",
     "NOTIFICATIONS_ENABLED",
     "SENTRY_DSN",
@@ -170,7 +172,7 @@ async function _getRunTime(network: string): Promise<TestRuntime> {
     const storageFormatted = JSON.stringify(JSON.parse(storage), null, 2);
     console.log("[run_local] Loading storage from env", storageFormatted);
     await testRuntime.context.storage.putStr(
-      getOrdersStorageKey(network),
+      getOrdersStorageKey(chainId.toString()),
       storage
     );
   }

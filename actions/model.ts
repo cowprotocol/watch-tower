@@ -2,10 +2,11 @@ import Slack = require("node-slack");
 
 import { Context, Storage } from "@tenderly/actions";
 import { Transaction as SentryTransaction } from "@sentry/node";
-import { BytesLike, ethers } from "ethers";
+import { BytesLike, ethers, providers } from "ethers";
 
 import { apiUrl, getProvider } from "./utils";
 import type { IConditionalOrder } from "./types/ComposableCoW";
+import { ConditionalOrderParams, SupportedChainId } from "@cowprotocol/cow-sdk";
 
 // Standardise the storage key
 const LAST_NOTIFIED_ERROR_STORAGE_KEY = "LAST_NOTIFIED_ERROR";
@@ -138,21 +139,26 @@ export class Registry {
 
 export class ChainContext {
   provider: ethers.providers.Provider;
-  api_url: string;
+  apiUrl: string;
+  chainId: SupportedChainId;
 
-  constructor(provider: ethers.providers.Provider, api_url: string) {
+  constructor(
+    provider: ethers.providers.Provider,
+    apiUrl: string,
+    chainId: SupportedChainId
+  ) {
     this.provider = provider;
-    this.api_url = api_url;
+    this.apiUrl = apiUrl;
+    this.chainId = chainId;
   }
 
   public static async create(
     context: Context,
-    network: string
+    chainId: SupportedChainId
   ): Promise<ChainContext> {
-    const provider = await getProvider(context, network);
-
-    const providerNetwork = await provider.getNetwork();
-    return new ChainContext(provider, apiUrl(network));
+    const provider = await getProvider(context, chainId);
+    await provider.getNetwork();
+    return new ChainContext(provider, apiUrl(chainId), chainId);
   }
 }
 
@@ -183,31 +189,15 @@ export function replacer(_key: any, value: any) {
   }
 }
 
-export type SmartOrderValidationResult<T> =
-  | SmartOrderValidationSuccess<T>
-  | SmartOrderValidationError;
-
 export enum ValidationResult {
   Success,
   Failed,
   FailedButIsExpected,
 }
 
-export type SmartOrderValidationSuccess<T> = {
-  result: ValidationResult.Success;
-  data: T;
-};
-export type SmartOrderValidationError = {
-  result: ValidationResult.Failed | ValidationResult.FailedButIsExpected;
-  deleteConditionalOrder: boolean;
-  errorObj: any;
-};
-
-export type SmartOrderValidator = (
-  params: ValidateOrderParams
-) => Promise<SmartOrderValidationResult<void>>;
 export interface ValidateOrderParams {
-  handler: string;
-  salt: BytesLike;
-  staticInput: BytesLike;
+  owner: string;
+  chainId: SupportedChainId;
+  conditionalOrderParams: ConditionalOrderParams;
+  provider: providers.Provider;
 }
