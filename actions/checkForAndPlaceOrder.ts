@@ -11,11 +11,16 @@ import axios from "axios";
 import { ethers } from "ethers";
 import { BytesLike, Logger } from "ethers/lib/utils";
 
-import { ComposableCoW, ComposableCoW__factory } from "./types";
+import { ComposableCoW, ComposableCoW__factory, Multicall3, Multicall3__factory } from "./types";
 import {
+  LowLevelError,
+  ORDER_NOT_VALID_SELECTOR,
+  PROOF_NOT_AUTHED_SELECTOR,
+  SINGLE_ORDER_NOT_AUTHED_SELECTOR,
   formatStatus,
   handleExecutionError,
   init,
+  parseCustomError,
   writeRegistry,
 } from "./utils";
 import {
@@ -29,6 +34,7 @@ import { GPv2Order } from "./types/ComposableCoW";
 import { validateOrder } from "./handlers";
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
+const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 /**
  * Watch for new blocks and check for orders to place
@@ -75,12 +81,17 @@ const _checkForAndPlaceOrder: ActionFn = async (
         conditionalOrder.composableCow,
         chainContext.provider
       );
+      const multicall = Multicall3__factory.connect(
+        MULTICALL3,
+        chainContext.provider
+      );
 
       const { deleteConditionalOrder, error } = await _processConditionalOrder(
         owner,
         network,
         conditionalOrder,
         contract,
+        multicall,
         chainContext,
         context
       );
@@ -124,6 +135,7 @@ async function _processConditionalOrder(
   network: string,
   conditionalOrder: ConditionalOrder,
   contract: ComposableCoW,
+  multicall: Multicall3,
   chainContext: ChainContext,
   context: Context
 ): Promise<{ deleteConditionalOrder: boolean; error: boolean }> {
@@ -178,7 +190,8 @@ async function _processConditionalOrder(
       owner,
       network,
       conditionalOrder,
-      contract
+      contract,
+      multicall
     );
 
     // Return early if the simulation fails
@@ -362,16 +375,19 @@ async function _getTradeableOrderWithSignature(
   owner: string,
   network: string,
   conditionalOrder: ConditionalOrder,
-  contract: ComposableCoW
+  contract: ComposableCoW,
+  multicall: Multicall3
 ): Promise<TradableOrderWithSignatureResult> {
   const proof = conditionalOrder.proof ? conditionalOrder.proof.path : [];
   const offchainInput = "0x";
-  const { to, data } =
-    await contract.populateTransaction.getTradeableOrderWithSignature(
-      owner,
-      conditionalOrder.params,
-      offchainInput,
-      proof
+
+  // as we going to use multicall, with `aggregate3Value`, there is no need to do any simulation as the
+  // calls are guaranteed to pass, and will return the results, or the reversion within the ABI-encoded data.
+  // By not using `populateTransaction`, we avoid an `eth_estimateGas` RPC call.
+  const to = contract.address;
+  const data = contract.interface.encodeFunctionData(
+      "getTradeableOrderWithSignature",
+      [owner, conditionalOrder.params, offchainInput, proof]
     );
 
   console.log(
@@ -379,16 +395,27 @@ async function _getTradeableOrderWithSignature(
   );
 
   try {
-    const data = await contract.callStatic.getTradeableOrderWithSignature(
-      owner,
-      conditionalOrder.params,
-      offchainInput,
-      proof
-    );
+    const lowLevelCall = await multicall.callStatic.aggregate3Value([
+      {
+        target: to,
+        allowFailure: true,
+        value: 0,
+        callData: data,
+      }
+    ])
 
+    const [{ success, returnData}] = lowLevelCall;
+
+    // If the call failed, we throw an error and wrap the returnData as it is done by erigon / geth 🦦
+    if (!success) {
+      throw new LowLevelError('low-level call failed', returnData);
+    }
+    
+    // Decode the result to get the order and signature
+    const { order, signature } = contract.interface.decodeFunctionResult("getTradeableOrderWithSignature", returnData);
     return {
       result: ValidationResult.Success,
-      data,
+      data: { order, signature },
     };
   } catch (error: any) {
     // Print and handle the error
@@ -415,15 +442,24 @@ function _handleGetTradableOrderCall(
   if (error.code === Logger.errors.CALL_EXCEPTION) {
     const errorMessagePrefix =
       "[getTradeableOrderWithSignature] Call Exception";
-    switch (error.errorName) {
+
+    // Support raw errors (nethermind issue), and parameterised errors (ethers issue)
+    const { errorNameOrSelector } = parseCustomError(error);
+    switch (errorNameOrSelector) {
       case "OrderNotValid":
+      case ORDER_NOT_VALID_SELECTOR:
         // The conditional order has not expired, or been cancelled, but the order is not valid
         // For example, with TWAPs, this may be after `span` seconds have passed in the epoch.
+
+        // As the `OrderNotValid` is parameterized, we expect `message` to have the reason
+        // TODO: Make use of `message` returned by parseCustomError ?
+
         return {
           result: ValidationResult.FailedButIsExpected,
           deleteConditionalOrder: false,
         };
       case "SingleOrderNotAuthed":
+      case SINGLE_ORDER_NOT_AUTHED_SELECTOR:
         // If there's no authorization we delete the order
         // - One reason could be, because the user CANCELLED the order
         // - for now it doesn't support more advanced cases where the order is auth during a pre-interaction
@@ -436,6 +472,7 @@ function _handleGetTradableOrderCall(
           deleteConditionalOrder: true,
         };
       case "ProofNotAuthed":
+      case PROOF_NOT_AUTHED_SELECTOR:
         // If there's no authorization we delete the order
         // - One reason could be, because the user CANCELLED the order
         // - for now it doesn't support more advanced cases where the order is auth during a pre-interaction
