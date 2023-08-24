@@ -100,7 +100,11 @@ const _checkForAndPlaceOrder: ActionFn = async (
 
       console.log(
         `[checkForAndPlaceOrder] Check conditional order result: ${
-          error ? "❌" : "✅"
+          pollResult !== undefined
+            ? `❌ Result: ${pollResult.result}` + pollResult.reason
+              ? `. Reason: ${pollResult.reason}`
+              : ""
+            : "✅ SUCCESS"
         }`
       );
 
@@ -216,9 +220,10 @@ async function _processConditionalOrder(
     }
   } catch (e: any) {
     return {
-      result: PollResultCode.TRY_NEXT_BLOCK,
+      result: PollResultCode.UNEXPECTED_ERROR,
+      error: e,
       reason:
-        "UnexpectedErrorName: Unspected error" +
+        "Unhandled error processing conditional order" +
         (e.message ? `: ${e.message}` : ""),
     };
   }

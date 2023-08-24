@@ -170,7 +170,6 @@ async function _getRunTime(chainId: SupportedChainId): Promise<TestRuntime> {
   const storage = process.env.STORAGE;
   if (storage) {
     const storageFormatted = JSON.stringify(JSON.parse(storage), null, 2);
-    console.log("[run_local] Loading storage from env", storageFormatted);
     await testRuntime.context.storage.putStr(
       getOrdersStorageKey(chainId.toString()),
       storage
