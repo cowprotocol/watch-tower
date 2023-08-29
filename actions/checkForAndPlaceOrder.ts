@@ -70,13 +70,24 @@ const _checkForAndPlaceOrder: ActionFn = async (
 
   // enumerate all the owners
   let hasErrors = false;
-  console.log(`[checkForAndPlaceOrder] New Block ${blockEvent.blockNumber}`);
+  let ownerCount = 0;
+  let orderCount = 0;
+
+  if (ownerOrders.size > 0) {
+    console.log(`[checkForAndPlaceOrder] New Block ${blockEvent.blockNumber}`);
+  }
   for (const [owner, conditionalOrders] of ownerOrders.entries()) {
+    ownerCount++;
     const ordersPendingDelete = [];
     // enumerate all the `ConditionalOrder`s for a given owner
+    console.log(
+      `[checkForAndPlaceOrder::${ownerCount}] Process owner ${owner} (${conditionalOrders.size} orders)`
+    );
     for (const conditionalOrder of conditionalOrders) {
+      orderCount++;
+      const logPrefix = `[checkForAndPlaceOrder::${ownerCount}.${orderCount}]`;
       console.log(
-        `[checkForAndPlaceOrder] Check conditional order created in TX ${conditionalOrder.tx} with params:`,
+        `${logPrefix} Check conditional order created in TX ${conditionalOrder.tx} with params:`,
         conditionalOrder.params
       );
       const contract = ComposableCoW__factory.connect(
@@ -105,31 +116,32 @@ const _checkForAndPlaceOrder: ActionFn = async (
           ordersPendingDelete.push(conditionalOrder);
         }
 
-        // Unexpected error
-        if (pollResult.result === PollResultCode.UNEXPECTED_ERROR) {
-          console.error(
-            `[checkForAndPlaceOrder] Unexpected error`,
-            pollResult.error
-          );
-        }
-
         // TODO: Handle the other errors :) --> Store them in the registry and ignore blocks until the moment is right
         //  TRY_ON_BLOCK
         //  TRY_AT_EPOCH
       }
+
+      // Log the result
+      const resultDescription =
+        pollResult !== undefined
+          ? `❌ ${pollResult.result}${
+              pollResult.reason ? `. Reason: ${pollResult.reason}` : ""
+            }`
+          : "✅ SUCCESS";
       console[error ? "error" : "log"](
-        `[checkForAndPlaceOrder] Check conditional order result: ${
-          pollResult !== undefined
-            ? `❌ Result: ${pollResult.result} " ${
-                pollResult.reason ? `. Reason: ${pollResult.reason}` : ""
-              }`
-            : "✅ SUCCESS"
-        }`
+        `${logPrefix} Check conditional order result: ${resultDescription}`
       );
+      if (pollResult?.result === PollResultCode.UNEXPECTED_ERROR) {
+        console.error(
+          `${logPrefix} UNEXPECTED_ERROR Details:`,
+          pollResult.error
+        );
+      }
 
       hasErrors ||= error;
     }
 
+    // Delete orders we don't want to keep watching
     for (const conditionalOrder of ordersPendingDelete) {
       const deleted = conditionalOrders.delete(conditionalOrder);
       const action = deleted ? "Deleted" : "Fail to delete";
@@ -140,13 +152,20 @@ const _checkForAndPlaceOrder: ActionFn = async (
     }
   }
 
+  // Delete owners with no orders
+  for (const [owner, conditionalOrders] of Array.from(ownerOrders.entries())) {
+    if (conditionalOrders.size === 0) {
+      ownerOrders.delete(owner);
+    }
+  }
+
   // Update the registry
   hasErrors ||= await !writeRegistry();
 
   // Throw execution error if there was at least one error
   if (hasErrors) {
     throw Error(
-      "[checkForAndPlaceOrder] Error while checking if conditional orders are ready to be placed in Orderbook API"
+      "[checkForAndPlaceOrder] At least one unexpected error processing conditional orders"
     );
   }
 };
@@ -162,25 +181,30 @@ async function _processConditionalOrder(
   let error = false;
   try {
     // Do custom Conditional Order checks
-    const [handler, salt, staticInput] = await (() => {
-      const { handler, salt, staticInput } = conditionalOrder.params;
-      return Promise.all([handler, salt, staticInput]);
-    })();
+    // const [handler, salt, staticInput] = await (() => {
+    //   const [handler, salt, staticInput ] = conditionalOrder.params;
+    //   return Promise.all([handler, salt, staticInput]);
+    // })();
+    // console.log("TODO: Why now this parameters seem broken????? ", {
+    //   handler,
+    //   salt,
+    //   staticInput,
+    //   params: conditionalOrder.params,
+    // });
 
-    console.log("TODO: Why now this parameters seem broken????? ", {
-      handler,
-      salt,
-      staticInput,
-      params: conditionalOrder.params,
-    });
+    const [handler, salt, staticInput] = conditionalOrder.params as any as [
+      string,
+      string,
+      string
+    ];
 
     let pollResult = await pollConditionalOrder({
       owner,
       chainId,
       conditionalOrderParams: {
-        handler: handler,
-        staticInput: utils.toUtf8String(staticInput),
-        salt: utils.toUtf8String(salt),
+        handler,
+        staticInput,
+        salt,
       },
       provider: chainContext.provider,
     });
@@ -393,7 +417,7 @@ async function _pollLegacy(
   );
 
   console.log(
-    `[getTradeableOrderWithSignature] Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${to}&rawFunctionInput=${data}`
+    `[pollLegacy] Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${to}&rawFunctionInput=${data}`
   );
 
   try {
@@ -435,8 +459,7 @@ function _handleGetTradableOrderCall(
   owner: string
 ): PollResultErrors {
   if (error.code === Logger.errors.CALL_EXCEPTION) {
-    const errorMessagePrefix =
-      "[getTradeableOrderWithSignature] Call Exception";
+    const errorMessagePrefix = "[pollLegacy] Call Exception";
 
     // Support raw errors (nethermind issue), and parameterised errors (ethers issue)
     const { errorNameOrSelector } = parseCustomError(error);
@@ -497,7 +520,7 @@ function _handleGetTradableOrderCall(
     }
   }
 
-  console.error("[getTradeableOrderWithSignature] Unexpected error", error);
+  console.error("[pollLegacy] Unexpected error", error);
   // If we don't know the reason, is better to not delete the order
   return {
     result: PollResultCode.TRY_NEXT_BLOCK,

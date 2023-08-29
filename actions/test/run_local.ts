@@ -130,10 +130,7 @@ async function processBlock(
     .then(() => true)
     .catch((e) => {
       hasErrors = true;
-      console.log(
-        `[run_local] Error running "checkForAndPlaceOrder" action`,
-        e
-      );
+      console.log(`[run_local] Error running "checkForAndPlaceOrder" action`);
       return false;
     });
   console.log(
