@@ -133,22 +133,27 @@ const _checkForAndPlaceOrder: ActionFn = async (
       }
 
       // Log the result
+      const unexpectedError =
+        pollError?.result === PollResultCode.UNEXPECTED_ERROR;
+
       const resultDescription = error
-        ? `❌ ${pollError.result}${
+        ? `${pollError.result}${
             pollError.reason ? `. Reason: ${pollError.reason}` : ""
           }`
-        : "✅ SUCCESS";
+        : "SUCCESS";
       console[error ? "error" : "log"](
-        `${logPrefix} Check conditional order result: ${resultDescription}`
+        `${logPrefix} Check conditional order result: ${getEmojiByPollError(
+          pollError?.result
+        )} ${resultDescription}`
       );
-      if (pollError?.result === PollResultCode.UNEXPECTED_ERROR) {
+      if (unexpectedError) {
         console.error(
           `${logPrefix} UNEXPECTED_ERROR Details:`,
           pollError.error
         );
       }
 
-      hasErrors ||= error;
+      hasErrors ||= unexpectedError;
     }
 
     // Delete orders we don't want to keep watching
@@ -585,3 +590,26 @@ export const balanceToString = (balance: string) => {
     throw new Error(`Unknown balance type: ${balance}`);
   }
 };
+function getEmojiByPollError(result?: PollResultCode) {
+  if (!result) {
+    return "";
+  }
+
+  switch (result) {
+    case PollResultCode.SUCCESS:
+      return "✅";
+
+    case PollResultCode.DONT_TRY_AGAIN:
+      return "✋";
+
+    case PollResultCode.TRY_AT_EPOCH:
+    case PollResultCode.TRY_ON_BLOCK:
+      return "🕣";
+
+    case PollResultCode.TRY_NEXT_BLOCK:
+      return "👀";
+
+    default:
+      return "❌";
+  }
+}
