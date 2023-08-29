@@ -22,6 +22,8 @@
     "lint:actions": "eslint && prettier --check ./actions",
     "test:actions": "yarn build:actions && yarn ts-node actions/test/test_register.ts",
     "start:actions": "yarn ts-node actions/test/run_local.ts",
+    "deploy:dev": " tenderly actions deploy --project-config tenderly",
+    "deploy:prod": " tenderly actions deploy --project-config tenderly-prod",
     "check-deployment": "yarn build:actions && yarn start:actions"
   },
   "dependencies": {
