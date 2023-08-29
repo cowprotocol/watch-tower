@@ -295,16 +295,17 @@
   "resolved" "https://registry.npmjs.org/@cowprotocol/contracts/-/contracts-1.4.0.tgz"
   "version" "1.4.0"
 
-"@cowprotocol/cow-sdk@^3.0.0-rc.3":
-  "integrity" "sha512-XaUm5xLoR6sKHYoTF9eUkvIErzLMJ9k3sQFnDdc95WlkJ4fn8BNfcwcbecakmCp9N26QTTv3S585GTh+rVPABw=="
-  "resolved" "https://registry.npmjs.org/@cowprotocol/cow-sdk/-/cow-sdk-3.0.0-rc.3.tgz"
-  "version" "3.0.0-rc.3"
+"@cowprotocol/cow-sdk@^3.0.0-rc.5":
+  "integrity" "sha512-lw9ppOWSuste893Rtd+OVTTIMN7D1VlUE0HZo64197fOctcYXMCx3pTh9AqJi5qgqoiIUFWILJJ0tGy0PARmXw=="
+  "resolved" "https://registry.npmjs.org/@cowprotocol/cow-sdk/-/cow-sdk-3.0.0-rc.5.tgz"
+  "version" "3.0.0-rc.5"
   dependencies:
     "@cowprotocol/contracts" "^1.4.0"
     "@ethersproject/abstract-signer" "^5.7.0"
     "@openzeppelin/merkle-tree" "^1.0.5"
     "cross-fetch" "^3.1.5"
     "exponential-backoff" "^3.1.1"
+    "graphql" "^16.3.0"
     "graphql-request" "^4.3.0"
     "limiter" "^2.1.0"
 
@@ -2147,7 +2148,7 @@
     "@graphql-typed-document-node/core" "^3.2.0"
     "cross-fetch" "^3.1.5"
 
-"graphql@^0.8.0 || ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0", "graphql@14 - 16":
+"graphql@^0.8.0 || ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0", "graphql@^16.3.0", "graphql@14 - 16":
   "integrity" "sha512-0oKGaR+y3qcS5mCu1vb7KG+a89vjn06C7Ihq/dDl3jA+A8B3TKomvi3CiEcVLJQGalbu8F52LxkOym7U5sSfbg=="
   "resolved" "https://registry.npmjs.org/graphql/-/graphql-16.8.0.tgz"
   "version" "16.8.0"
