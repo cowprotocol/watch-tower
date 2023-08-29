@@ -184,6 +184,7 @@ async function _processConditionalOrder(
 ): Promise<PollResultErrors | undefined> {
   let error = false;
   try {
+    // TODO: Fix model https://github.com/cowprotocol/tenderly-watch-tower/issues/18
     // Do custom Conditional Order checks
     // const [handler, salt, staticInput] = await (() => {
     //   const [handler, salt, staticInput ] = conditionalOrder.params;
@@ -196,6 +197,7 @@ async function _processConditionalOrder(
     //   params: conditionalOrder.params,
     // });
 
+    // TODO: Fix model and delete the explicit cast: https://github.com/cowprotocol/tenderly-watch-tower/issues/18
     const [handler, salt, staticInput] = conditionalOrder.params as any as [
       string,
       string,

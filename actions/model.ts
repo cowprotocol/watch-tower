@@ -44,7 +44,7 @@ export type ConditionalOrder = {
   tx: string; // the transaction hash that created the conditional order (useful for debugging purposes)
 
   // the parameters of the conditional order
-  params: IConditionalOrder.ConditionalOrderParamsStruct;
+  params: IConditionalOrder.ConditionalOrderParamsStruct; // TODO: We should not use the raw `ConditionalOrderParamsStruct` instead we should do some plain object `ConditionalOrderParams` with the handler,salt,staticInput as properties. See https://github.com/cowprotocol/tenderly-watch-tower/issues/18
   // the merkle proof if the conditional order is belonging to a merkle root
   // otherwise, if the conditional order is a single order, this is null
   proof: Proof | null;
