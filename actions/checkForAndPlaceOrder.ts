@@ -190,21 +190,7 @@ async function _processConditionalOrder(
   multicall: Multicall3,
   chainContext: ChainContext
 ): Promise<PollResultErrors | undefined> {
-  let error = false;
   try {
-    // TODO: Fix model https://github.com/cowprotocol/tenderly-watch-tower/issues/18
-    // Do custom Conditional Order checks
-    // const [handler, salt, staticInput] = await (() => {
-    //   const [handler, salt, staticInput ] = conditionalOrder.params;
-    //   return Promise.all([handler, salt, staticInput]);
-    // })();
-    // console.log("TODO: Why now this parameters seem broken????? ", {
-    //   handler,
-    //   salt,
-    //   staticInput,
-    //   params: conditionalOrder.params,
-    // });
-
     // TODO: Fix model and delete the explicit cast: https://github.com/cowprotocol/tenderly-watch-tower/issues/18
     const [handler, salt, staticInput] = conditionalOrder.params as any as [
       string,
