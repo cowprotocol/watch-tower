@@ -24,7 +24,6 @@ const main = async () => {
 
   // Get provider
   const provider = await getProvider(testRuntime.context, chainId);
-  await provider.getNetwork();
 
   // Run one of the 2 Execution modes (single block, or watch mode)
   if (process.env.BLOCK_NUMBER) {
