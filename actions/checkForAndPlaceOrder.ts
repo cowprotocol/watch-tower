@@ -133,12 +133,11 @@ const _checkForAndPlaceOrder: ActionFn = async (
       }
 
       // Log the result
-      const resultDescription =
-        pollError !== undefined
-          ? `❌ ${pollError.result}${
-              pollError.reason ? `. Reason: ${pollError.reason}` : ""
-            }`
-          : "✅ SUCCESS";
+      const resultDescription = error
+        ? `❌ ${pollError.result}${
+            pollError.reason ? `. Reason: ${pollError.reason}` : ""
+          }`
+        : "✅ SUCCESS";
       console[error ? "error" : "log"](
         `${logPrefix} Check conditional order result: ${resultDescription}`
       );
