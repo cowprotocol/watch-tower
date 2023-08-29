@@ -188,10 +188,3 @@ export function replacer(_key: any, value: any) {
     return value;
   }
 }
-
-export interface PollingParams {
-  owner: string;
-  chainId: SupportedChainId;
-  conditionalOrderParams: ConditionalOrderParams;
-  provider: providers.Provider;
-}

@@ -62,7 +62,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
   event: Event
 ) => {
   const blockEvent = event as BlockEvent;
-  const { network } = blockEvent;
+  const { network, blockNumber } = blockEvent;
   const chainId = toChainId(network);
   const chainContext = await ChainContext.create(context, chainId);
   const { registry } = await initContext(
@@ -78,8 +78,13 @@ const _checkForAndPlaceOrder: ActionFn = async (
   let orderCount = 0;
 
   if (ownerOrders.size > 0) {
-    console.log(`[checkForAndPlaceOrder] New Block ${blockEvent.blockNumber}`);
+    console.log(`[checkForAndPlaceOrder] New Block ${blockNumber}`);
   }
+
+  const { timestamp: blockTimestamp } = await chainContext.provider.getBlock(
+    blockNumber
+  );
+
   for (const [owner, conditionalOrders] of ownerOrders.entries()) {
     ownerCount++;
     const ordersPendingDelete = [];
@@ -107,6 +112,8 @@ const _checkForAndPlaceOrder: ActionFn = async (
         owner,
         chainId,
         conditionalOrder,
+        blockTimestamp,
+        blockNumber,
         contract,
         multicall,
         chainContext
@@ -178,6 +185,8 @@ async function _processConditionalOrder(
   owner: string,
   chainId: SupportedChainId,
   conditionalOrder: ConditionalOrder,
+  blockTimestamp: number,
+  blockNumber: number,
   contract: ComposableCoW,
   multicall: Multicall3,
   chainContext: ChainContext
@@ -204,16 +213,24 @@ async function _processConditionalOrder(
       string
     ];
 
-    let pollResult = await pollConditionalOrder({
+    const pollParams = {
       owner,
       chainId,
-      conditionalOrderParams: {
-        handler,
-        staticInput,
-        salt,
+      blockInfo: {
+        blockTimestamp,
+        blockNumber,
       },
       provider: chainContext.provider,
-    });
+    };
+    const conditionalOrderParams = {
+      handler,
+      staticInput,
+      salt,
+    };
+    let pollResult = await pollConditionalOrder(
+      pollParams,
+      conditionalOrderParams
+    );
 
     if (!pollResult) {
       // Unsupported Order Type (unknown handler)
