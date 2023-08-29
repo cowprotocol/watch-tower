@@ -4,8 +4,8 @@ import {
   SupportedChainId,
 } from "@cowprotocol/cow-sdk";
 
-type LocalChainId = 31337;
 const LOCAL_CHAIN_ID = 31337;
+type LocalChainId = typeof LOCAL_CHAIN_ID;
 
 export function toChainId(network: string): SupportedChainId {
   const neworkId = Number(network);
