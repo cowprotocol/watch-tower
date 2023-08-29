@@ -108,7 +108,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
         chainContext.provider
       );
 
-      const pollResult = await _processConditionalOrder(
+      const pollError = await _processConditionalOrder(
         owner,
         chainId,
         conditionalOrder,
@@ -118,12 +118,12 @@ const _checkForAndPlaceOrder: ActionFn = async (
         multicall,
         chainContext
       );
-      const error = pollResult !== undefined;
+      const error = pollError !== undefined;
 
       // Specific handling for each error
-      if (pollResult) {
+      if (pollError) {
         // Dont try again the same order
-        if (pollResult.result === PollResultCode.DONT_TRY_AGAIN) {
+        if (pollError.result === PollResultCode.DONT_TRY_AGAIN) {
           ordersPendingDelete.push(conditionalOrder);
         }
 
@@ -134,18 +134,18 @@ const _checkForAndPlaceOrder: ActionFn = async (
 
       // Log the result
       const resultDescription =
-        pollResult !== undefined
-          ? `❌ ${pollResult.result}${
-              pollResult.reason ? `. Reason: ${pollResult.reason}` : ""
+        pollError !== undefined
+          ? `❌ ${pollError.result}${
+              pollError.reason ? `. Reason: ${pollError.reason}` : ""
             }`
           : "✅ SUCCESS";
       console[error ? "error" : "log"](
         `${logPrefix} Check conditional order result: ${resultDescription}`
       );
-      if (pollResult?.result === PollResultCode.UNEXPECTED_ERROR) {
+      if (pollError?.result === PollResultCode.UNEXPECTED_ERROR) {
         console.error(
           `${logPrefix} UNEXPECTED_ERROR Details:`,
-          pollResult.error
+          pollError.error
         );
       }
 
