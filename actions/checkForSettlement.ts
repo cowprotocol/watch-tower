@@ -12,7 +12,12 @@ import { BigNumber } from "ethers";
 import { GPv2Settlement__factory } from "./types";
 import { GPv2SettlementInterface } from "./types/GPv2Settlement";
 
-import { handleExecutionError, init, toChainId, writeRegistry } from "./utils";
+import {
+  handleExecutionError,
+  initContext,
+  toChainId,
+  writeRegistry,
+} from "./utils";
 import { OrderStatus, Registry } from "./model";
 
 /**
@@ -38,7 +43,11 @@ const _checkForSettlement: ActionFn = async (
   const settlement = GPv2Settlement__factory.createInterface();
 
   const chainId = toChainId(transactionEvent.network);
-  const { registry } = await init("checkForSettlement", chainId, context);
+  const { registry } = await initContext(
+    "checkForSettlement",
+    chainId,
+    context
+  );
 
   let hasErrors = false;
   for (const log of transactionEvent.logs) {

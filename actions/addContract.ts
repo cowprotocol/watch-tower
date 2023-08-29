@@ -17,7 +17,7 @@ import { ComposableCoW__factory } from "./types/factories/ComposableCoW__factory
 import {
   isComposableCowCompatible,
   handleExecutionError,
-  init,
+  initContext,
   writeRegistry,
   toChainId,
 } from "./utils";
@@ -41,10 +41,11 @@ const _addContract: ActionFn = async (context: Context, event: Event) => {
 
   const chainId = toChainId(transactionEvent.network);
   const { provider } = await ChainContext.create(context, chainId);
-  const { registry } = await init("addContract", chainId, context);
+  const { registry } = await initContext("addContract", chainId, context);
 
   // Process the logs
   let hasErrors = false;
+  let numContractsAdded = 0;
   for (const log of transactionEvent.logs) {
     // Do not process logs that are not from a `ComposableCoW`-compatible contract
     // This is a *normal* case, if the contract is not `ComposableCoW`-compatible
@@ -52,10 +53,19 @@ const _addContract: ActionFn = async (context: Context, event: Event) => {
     if (!isComposableCowCompatible(await provider.getCode(log.address))) {
       continue;
     }
-    const { error } = await _registerNewOrder(tx, log, composableCow, registry);
+    const { error, added } = await _registerNewOrder(
+      tx,
+      log,
+      composableCow,
+      registry
+    );
+    if (added) {
+      numContractsAdded++;
+    }
     hasErrors ||= error;
   }
 
+  console.log(`[addContract] Added ${numContractsAdded} contracts`);
   hasErrors ||= !(await writeRegistry());
   // Throw execution error if there was at least one error
   if (hasErrors) {
@@ -70,7 +80,8 @@ export async function _registerNewOrder(
   log: Log,
   composableCow: ComposableCoWInterface,
   registry: Registry
-): Promise<{ error: boolean }> {
+): Promise<{ error: boolean; added: boolean }> {
+  let added = false;
   try {
     // Check if the log is a ConditionalOrderCreated event
     if (
@@ -84,6 +95,7 @@ export async function _registerNewOrder(
 
       // Attempt to add the conditional order to the registry
       await add(tx, owner, params, null, log.address, registry);
+      added = true;
     } else if (log.topics[0] == composableCow.getEventTopic("MerkleRootSet")) {
       const [owner, root, proof] = composableCow.decodeEventLog(
         "MerkleRootSet",
@@ -120,6 +132,7 @@ export async function _registerNewOrder(
             log.address,
             registry
           );
+          added = true;
         }
       }
     }
@@ -128,10 +141,10 @@ export async function _registerNewOrder(
       "[addContract] Error handling ConditionalOrderCreated/MerkleRootSet event" +
         error
     );
-    return { error: true };
+    return { error: true, added };
   }
 
-  return { error: false };
+  return { error: false, added };
 }
 
 /**

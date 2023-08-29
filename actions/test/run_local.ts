@@ -7,7 +7,7 @@ import { checkForAndPlaceOrder } from "../checkForAndPlaceOrder";
 import { addContract } from "../addContract";
 import { ethers } from "ethers";
 import assert = require("assert");
-import { getProvider, toChainId } from "../utils";
+import { toChainId, getProvider } from "../utils";
 import { getOrdersStorageKey } from "../model";
 import { exit } from "process";
 import { SupportedChainId } from "@cowprotocol/cow-sdk";

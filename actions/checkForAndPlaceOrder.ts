@@ -24,13 +24,13 @@ import {
   SINGLE_ORDER_NOT_AUTHED_SELECTOR,
   formatStatus,
   handleExecutionError,
-  init,
+  initContext,
   parseCustomError,
   toChainId,
   writeRegistry,
 } from "./utils";
 import { ChainContext, ConditionalOrder, OrderStatus } from "./model";
-import { pollConditionalOrder } from "./poll";
+import { pollConditionalOrder } from "./utils/poll";
 import {
   PollResult,
   PollResultCode,
@@ -65,7 +65,11 @@ const _checkForAndPlaceOrder: ActionFn = async (
   const { network } = blockEvent;
   const chainId = toChainId(network);
   const chainContext = await ChainContext.create(context, chainId);
-  const { registry } = await init("checkForAndPlaceOrder", chainId, context);
+  const { registry } = await initContext(
+    "checkForAndPlaceOrder",
+    chainId,
+    context
+  );
   const { ownerOrders } = registry;
 
   // enumerate all the owners
