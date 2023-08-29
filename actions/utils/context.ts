@@ -125,7 +125,7 @@ export async function handleExecutionError(e: any) {
       await writeRegistry();
     }
   } catch (error) {
-    consoleOriginal.error("Error sending slack notification", error);
+    console.error("Error sending slack notification", error);
   }
 
   // Re-throws the original error
@@ -134,7 +134,7 @@ export async function handleExecutionError(e: any) {
 
 export function sendSlack(message: string): boolean {
   if (!executionContext) {
-    consoleOriginal.warn(
+    console.warn(
       "[sendSlack] Slack not initialized, ignoring message",
       message
     );
@@ -203,10 +203,3 @@ function handlePromiseErrors<T>(
       return false;
     });
 }
-
-var consoleOriginal = {
-  log: console.log,
-  error: console.error,
-  warn: console.warn,
-  debug: console.debug,
-};
