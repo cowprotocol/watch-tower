@@ -8,10 +8,15 @@ import {
 
 import axios from "axios";
 
-import { ethers } from "ethers";
-import { BytesLike, Logger } from "ethers/lib/utils";
+import { ethers, utils } from "ethers";
+import { BytesLike, Logger, hexlify } from "ethers/lib/utils";
 
-import { ComposableCoW, ComposableCoW__factory, Multicall3, Multicall3__factory } from "./types";
+import {
+  ComposableCoW,
+  ComposableCoW__factory,
+  Multicall3,
+  Multicall3__factory,
+} from "./types";
 import {
   LowLevelError,
   ORDER_NOT_VALID_SELECTOR,
@@ -19,19 +24,20 @@ import {
   SINGLE_ORDER_NOT_AUTHED_SELECTOR,
   formatStatus,
   handleExecutionError,
-  init,
+  initContext,
   parseCustomError,
+  toChainId,
   writeRegistry,
 } from "./utils";
+import { ChainContext, ConditionalOrder, OrderStatus } from "./model";
+import { pollConditionalOrder } from "./utils/poll";
 import {
-  ChainContext,
-  ConditionalOrder,
-  OrderStatus,
-  SmartOrderValidationResult,
-  ValidationResult,
-} from "./model";
-import { GPv2Order } from "./types/ComposableCoW";
-import { validateOrder } from "./handlers";
+  PollParams,
+  PollResult,
+  PollResultCode,
+  PollResultErrors,
+  SupportedChainId,
+} from "@cowprotocol/cow-sdk";
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
@@ -57,24 +63,40 @@ const _checkForAndPlaceOrder: ActionFn = async (
   event: Event
 ) => {
   const blockEvent = event as BlockEvent;
-  const { network } = blockEvent;
-  const chainContext = await ChainContext.create(context, network);
-  const { registry } = await init(
+  const { network, blockNumber } = blockEvent;
+  const chainId = toChainId(network);
+  const chainContext = await ChainContext.create(context, chainId);
+  const { registry } = await initContext(
     "checkForAndPlaceOrder",
-    blockEvent.network,
+    chainId,
     context
   );
   const { ownerOrders } = registry;
 
-  // enumerate all the owners
   let hasErrors = false;
-  console.log(`[checkForAndPlaceOrder] New Block ${blockEvent.blockNumber}`);
+  let ownerCounter = 0;
+  let orderCounter = 0;
+
+  if (ownerOrders.size > 0) {
+    console.log(`[checkForAndPlaceOrder] Processing Block ${blockNumber}`);
+  }
+
+  const { timestamp: blockTimestamp } = await chainContext.provider.getBlock(
+    blockNumber
+  );
+
   for (const [owner, conditionalOrders] of ownerOrders.entries()) {
+    ownerCounter++;
     const ordersPendingDelete = [];
     // enumerate all the `ConditionalOrder`s for a given owner
+    console.log(
+      `[checkForAndPlaceOrder::${ownerCounter}] Process owner ${owner} (${conditionalOrders.size} orders)`
+    );
     for (const conditionalOrder of conditionalOrders) {
+      orderCounter++;
+      const logPrefix = `[checkForAndPlaceOrder::${ownerCounter}.${orderCounter}]`;
       console.log(
-        `[checkForAndPlaceOrder] Check conditional order created in TX ${conditionalOrder.tx} with params:`,
+        `${logPrefix} Check conditional order created in TX ${conditionalOrder.tx} with params:`,
         conditionalOrder.params
       );
       const contract = ComposableCoW__factory.connect(
@@ -86,29 +108,55 @@ const _checkForAndPlaceOrder: ActionFn = async (
         chainContext.provider
       );
 
-      const { deleteConditionalOrder, error } = await _processConditionalOrder(
+      const pollError = await _processConditionalOrder(
         owner,
-        network,
+        chainId,
         conditionalOrder,
+        blockTimestamp,
+        blockNumber,
         contract,
         multicall,
-        chainContext,
-        context
+        chainContext
       );
+      const error = pollError !== undefined;
 
-      console.log(
-        `[checkForAndPlaceOrder] Check conditional order result: ${
-          error ? "❌" : "✅"
-        }`
-      );
+      // Specific handling for each error
+      if (pollError) {
+        // Dont try again the same order
+        if (pollError.result === PollResultCode.DONT_TRY_AGAIN) {
+          ordersPendingDelete.push(conditionalOrder);
+        }
 
-      hasErrors ||= error;
-
-      if (deleteConditionalOrder) {
-        ordersPendingDelete.push(conditionalOrder);
+        // TODO: Handle the other errors :) --> Store them in the registry and ignore blocks until the moment is right
+        //  TRY_ON_BLOCK
+        //  TRY_AT_EPOCH
       }
+
+      // Log the result
+      const unexpectedError =
+        pollError?.result === PollResultCode.UNEXPECTED_ERROR;
+
+      const resultDescription = error
+        ? `${pollError.result}${
+            pollError.reason ? `. Reason: ${pollError.reason}` : ""
+          }`
+        : "SUCCESS";
+      console[error ? "error" : "log"](
+        `${logPrefix} Check conditional order result: ${getEmojiByPollResult(
+          pollError?.result
+        )} ${resultDescription}`
+      );
+      if (unexpectedError) {
+        console.error(
+          `${logPrefix} UNEXPECTED_ERROR Details:`,
+          pollError.error
+        );
+      }
+
+      hasErrors ||= unexpectedError;
     }
 
+    // Delete orders we don't want to keep watching
     for (const conditionalOrder of ordersPendingDelete) {
       const deleted = conditionalOrders.delete(conditionalOrder);
       const action = deleted ? "Deleted" : "Fail to delete";
@@ -119,91 +167,90 @@ const _checkForAndPlaceOrder: ActionFn = async (
     }
   }
 
+  // TODO: Decide if we want to delete owners with no orders
+  //    - One one hand, we don't want to keep growing our registry forever
+  //    - On the other hand, it might be handy to know this owner has been verified before
+  // // Delete owners with no orders
+  // for (const [owner, conditionalOrders] of Array.from(ownerOrders.entries())) {
+  //   if (conditionalOrders.size === 0) {
+  //     ownerOrders.delete(owner);
+  //   }
+  // }
+
   // Update the registry
   hasErrors ||= await !writeRegistry();
 
   // Throw execution error if there was at least one error
   if (hasErrors) {
     throw Error(
-      "[checkForAndPlaceOrder] Error while checking if conditional orders are ready to be placed in Orderbook API"
+      "[checkForAndPlaceOrder] At least one unexpected error processing conditional orders"
     );
   }
 };
 
 async function _processConditionalOrder(
   owner: string,
-  network: string,
+  chainId: SupportedChainId,
   conditionalOrder: ConditionalOrder,
+  blockTimestamp: number,
+  blockNumber: number,
   contract: ComposableCoW,
   multicall: Multicall3,
-  chainContext: ChainContext,
-  context: Context
-): Promise<{ deleteConditionalOrder: boolean; error: boolean }> {
-  let error = false;
+  chainContext: ChainContext
+): Promise<PollResultErrors | undefined> {
   try {
-    // Do a basic auth check (for singleOrders) // TODO: Check also Merkle auth
-    // Check in case the user invalidated it (this reduces errors in logs)
-    if (!conditionalOrder.proof) {
-      const ctx = await contract.callStatic.hash(conditionalOrder.params);
-      const authorised = await contract.callStatic
-        .singleOrders(owner, ctx)
-        .catch((error) => {
-          console.log(
-            "[processConditionalOrder] Error checking singleOrders auth",
-            { owner, ctx, conditionalOrder },
-            error
-          );
-          return undefined; // returns undefined if it cannot be checked
-        });
+    // TODO: Fix model and delete the explicit cast: https://github.com/cowprotocol/tenderly-watch-tower/issues/18
+    const [handler, salt, staticInput] = conditionalOrder.params as any as [
+      string,
+      string,
+      string
+    ];
 
-      // Return early if the order is not authorised (if its not authorised)
-      // Note we continue in case of an error (this is just to let _getTradeableOrderWithSignature handle the error and log the Tenderly simulation link)
-      if (authorised === false) {
-        console.log(
-          `[processConditionalOrder] Single order not authed. Deleting order...`,
-          { owner, ctx, conditionalOrder }
-        );
-        return { deleteConditionalOrder: true, error: false };
-      }
-    }
+    const proof = conditionalOrder.proof
+      ? conditionalOrder.proof.path.map((c) => c.toString())
+      : [];
+    const offchainInput = "0x";
 
-    // Do custom Conditional Order checks
-    const [handler, salt, staticInput] = await (() => {
-      const { handler, salt, staticInput } = conditionalOrder.params;
-      return Promise.all([handler, salt, staticInput]);
-    })();
-    const validateResult = await validateOrder({
-      handler,
-      salt,
-      staticInput,
-    });
-    if (validateResult && validateResult.result !== ValidationResult.Success) {
-      const { result, deleteConditionalOrder } = validateResult;
-      return {
-        error: result !== ValidationResult.FailedButIsExpected, // If we expected the call to fail, then we don't consider it an error
-        deleteConditionalOrder,
-      };
-    }
-
-    // Get GPv2 Order
-    const tradeableOrderResult = await _getTradeableOrderWithSignature(
+    const pollParams: PollParams = {
       owner,
-      network,
-      conditionalOrder,
-      contract,
-      multicall
+      chainId,
+      proof,
+      offchainInput,
+      blockInfo: {
+        blockTimestamp,
+        blockNumber,
+      },
+      provider: chainContext.provider,
+    };
+    const conditionalOrderParams = {
+      handler,
+      staticInput,
+      salt,
+    };
+    let pollResult = await pollConditionalOrder(
+      pollParams,
+      conditionalOrderParams
     );
 
-    // Return early if the simulation fails
-    if (tradeableOrderResult.result != ValidationResult.Success) {
-      const { deleteConditionalOrder, result } = tradeableOrderResult;
-      return {
-        error: result !== ValidationResult.FailedButIsExpected, // If we expected the call to fail, then we don't consider it an error
-        deleteConditionalOrder,
-      };
+    if (!pollResult) {
+      // Unsupported Order Type (unknown handler)
+      // For now, fallback to legacy behavior
+      // TODO: Decide in the future what to do. Probably, move the error handling to the SDK and kill the poll Legacy
+      pollResult = await _pollLegacy(
+        owner,
+        chainId,
+        conditionalOrder,
+        contract,
+        multicall
+      );
     }
 
-    const { order, signature } = tradeableOrderResult.data;
+    // Error polling
+    if (pollResult.result !== PollResultCode.SUCCESS) {
+      return pollResult;
+    }
+
+    const { order, signature } = pollResult;
 
     const orderToSubmit: Order = {
       ...order,
@@ -213,14 +260,14 @@ async function _processConditionalOrder(
     };
 
     // calculate the orderUid
-    const orderUid = _getOrderUid(network, orderToSubmit, owner);
+    const orderUid = _getOrderUid(chainId, orderToSubmit, owner);
 
     // if the orderUid has not been submitted, or filled, then place the order
     if (!conditionalOrder.orders.has(orderUid)) {
       await _placeOrder(
         orderUid,
         { ...orderToSubmit, from: owner, signature },
-        chainContext.api_url
+        chainContext.apiUrl
       );
 
       conditionalOrder.orders.set(orderUid, OrderStatus.SUBMITTED);
@@ -233,22 +280,29 @@ async function _processConditionalOrder(
       );
     }
   } catch (e: any) {
-    error = true;
-    console.error(
-      `[_processConditionalOrder] Unexpected error while processing order:`,
-      e
-    );
+    return {
+      result: PollResultCode.UNEXPECTED_ERROR,
+      error: e,
+      reason:
+        "Unhandled error processing conditional order" +
+        (e.message ? `: ${e.message}` : ""),
+    };
   }
 
-  return { deleteConditionalOrder: false, error };
+  // Success!
+  return undefined;
 }
 
-function _getOrderUid(network: string, orderToSubmit: Order, owner: string) {
+function _getOrderUid(
+  chainId: SupportedChainId,
+  orderToSubmit: Order,
+  owner: string
+) {
   return computeOrderUid(
     {
       name: "Gnosis Protocol",
       version: "v2",
-      chainId: network,
+      chainId: chainId,
       verifyingContract: GPV2SETTLEMENT,
     },
     {
@@ -366,32 +420,24 @@ function _handleOrderBookError(
   return { shouldThrow: true };
 }
 
-export type TradableOrderWithSignatureResult = SmartOrderValidationResult<{
-  order: GPv2Order.DataStructOutput;
-  signature: string;
-}>;
-
-async function _getTradeableOrderWithSignature(
+async function _pollLegacy(
   owner: string,
-  network: string,
+  chainId: SupportedChainId,
   conditionalOrder: ConditionalOrder,
   contract: ComposableCoW,
   multicall: Multicall3
-): Promise<TradableOrderWithSignatureResult> {
-  const proof = conditionalOrder.proof ? conditionalOrder.proof.path : [];
-  const offchainInput = "0x";
-
+): Promise<PollResult> {
   // as we going to use multicall, with `aggregate3Value`, there is no need to do any simulation as the
   // calls are guaranteed to pass, and will return the results, or the reversion within the ABI-encoded data.
   // By not using `populateTransaction`, we avoid an `eth_estimateGas` RPC call.
   const to = contract.address;
   const data = contract.interface.encodeFunctionData(
-      "getTradeableOrderWithSignature",
-      [owner, conditionalOrder.params, offchainInput, proof]
-    );
+    "getTradeableOrderWithSignature",
+    [owner, conditionalOrder.params, offchainInput, proof]
+  );
 
   console.log(
-    `[getTradeableOrderWithSignature] Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${network}&contractAddress=${to}&rawFunctionInput=${data}`
+    `[pollLegacy] Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${to}&rawFunctionInput=${data}`
   );
 
   try {
@@ -401,47 +447,39 @@ async function _getTradeableOrderWithSignature(
         allowFailure: true,
         value: 0,
         callData: data,
-      }
-    ])
+      },
+    ]);
 
-    const [{ success, returnData}] = lowLevelCall;
+    const [{ success, returnData }] = lowLevelCall;
 
     // If the call failed, we throw an error and wrap the returnData as it is done by erigon / geth 🦦
     if (!success) {
-      throw new LowLevelError('low-level call failed', returnData);
+      throw new LowLevelError("low-level call failed", returnData);
     }
-    
+
     // Decode the result to get the order and signature
-    const { order, signature } = contract.interface.decodeFunctionResult("getTradeableOrderWithSignature", returnData);
+    const { order, signature } = contract.interface.decodeFunctionResult(
+      "getTradeableOrderWithSignature",
+      returnData
+    );
     return {
-      result: ValidationResult.Success,
-      data: { order, signature },
+      result: PollResultCode.SUCCESS,
+      order,
+      signature,
     };
   } catch (error: any) {
     // Print and handle the error
     // We need to decide if the error is final or not (if a re-attempt might help). If it doesn't, we delete the order
-    const { result, deleteConditionalOrder } = _handleGetTradableOrderCall(
-      error,
-      owner
-    );
-    return {
-      result,
-      deleteConditionalOrder,
-      errorObj: error,
-    };
+    return _handleGetTradableOrderCall(error, owner);
   }
 }
 
 function _handleGetTradableOrderCall(
   error: any,
   owner: string
-): {
-  result: ValidationResult.Failed | ValidationResult.FailedButIsExpected;
-  deleteConditionalOrder: boolean;
-} {
+): PollResultErrors {
   if (error.code === Logger.errors.CALL_EXCEPTION) {
-    const errorMessagePrefix =
-      "[getTradeableOrderWithSignature] Call Exception";
+    const errorMessagePrefix = "[pollLegacy] Call Exception";
 
     // Support raw errors (nethermind issue), and parameterised errors (ethers issue)
     const { errorNameOrSelector } = parseCustomError(error);
@@ -455,8 +493,8 @@ function _handleGetTradableOrderCall(
         // TODO: Make use of `message` returned by parseCustomError ?
 
         return {
-          result: ValidationResult.FailedButIsExpected,
-          deleteConditionalOrder: false,
+          result: PollResultCode.TRY_NEXT_BLOCK,
+          reason: "OrderNotValid",
         };
       case "SingleOrderNotAuthed":
       case SINGLE_ORDER_NOT_AUTHED_SELECTOR:
@@ -468,8 +506,9 @@ function _handleGetTradableOrderCall(
           `${errorMessagePrefix}: Single order on safe ${owner} not authed. Deleting order...`
         );
         return {
-          result: ValidationResult.FailedButIsExpected,
-          deleteConditionalOrder: true,
+          result: PollResultCode.DONT_TRY_AGAIN,
+          reason:
+            "SingleOrderNotAuthed: The owner has not authorized the order",
         };
       case "ProofNotAuthed":
       case PROOF_NOT_AUTHED_SELECTOR:
@@ -481,8 +520,8 @@ function _handleGetTradableOrderCall(
           `${errorMessagePrefix}: Proof on safe ${owner} not authed. Deleting order...`
         );
         return {
-          result: ValidationResult.FailedButIsExpected,
-          deleteConditionalOrder: true,
+          result: PollResultCode.DONT_TRY_AGAIN,
+          reason: "ProofNotAuthed: The owner has not authorized the order",
         };
       default:
         // If there's no authorization we delete the order
@@ -495,15 +534,20 @@ function _handleGetTradableOrderCall(
         );
         // If we don't know the reason, is better to not delete the order
         return {
-          result: ValidationResult.Failed,
-          deleteConditionalOrder: false,
+          result: PollResultCode.TRY_NEXT_BLOCK,
+          reason: "UnexpectedErrorName: CALL error is unknown" + errorName,
         };
     }
   }
 
-  console.error("[getTradeableOrderWithSignature] Unexpected error", error);
+  console.error("[pollLegacy] Unexpected error", error);
   // If we don't know the reason, is better to not delete the order
-  return { result: ValidationResult.Failed, deleteConditionalOrder: false };
+  return {
+    result: PollResultCode.TRY_NEXT_BLOCK,
+    reason:
+      "UnexpectedErrorName: Unspected error" +
+      (error.message ? `: ${error.message}` : ""),
+  };
 }
 
 /**
@@ -553,3 +597,26 @@ export const balanceToString = (balance: string) => {
     throw new Error(`Unknown balance type: ${balance}`);
   }
 };
+function getEmojiByPollResult(result?: PollResultCode) {
+  if (!result) {
+    return "";
+  }
+
+  switch (result) {
+    case PollResultCode.SUCCESS:
+      return "✅";
+
+    case PollResultCode.DONT_TRY_AGAIN:
+      return "✋";
+
+    case PollResultCode.TRY_AT_EPOCH:
+    case PollResultCode.TRY_ON_BLOCK:
+      return "🕣";
+
+    case PollResultCode.TRY_NEXT_BLOCK:
+      return "👀";
+
+    default:
+      return "❌";
+  }
+}
