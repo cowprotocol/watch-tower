@@ -9,7 +9,7 @@ import {
 import axios from "axios";
 
 import { ethers, utils } from "ethers";
-import { BytesLike, Logger } from "ethers/lib/utils";
+import { BytesLike, Logger, hexlify } from "ethers/lib/utils";
 
 import {
   ComposableCoW,
@@ -32,6 +32,7 @@ import {
 import { ChainContext, ConditionalOrder, OrderStatus } from "./model";
 import { pollConditionalOrder } from "./utils/poll";
 import {
+  PollParams,
   PollResult,
   PollResultCode,
   PollResultErrors,
@@ -203,9 +204,16 @@ async function _processConditionalOrder(
       string
     ];
 
-    const pollParams = {
+    const proof = conditionalOrder.proof
+      ? conditionalOrder.proof.path.map((c) => c.toString())
+      : [];
+    const offchainInput = "0x";
+
+    const pollParams: PollParams = {
       owner,
       chainId,
+      proof,
+      offchainInput,
       blockInfo: {
         blockTimestamp,
         blockNumber,
@@ -417,9 +425,6 @@ async function _pollLegacy(
   contract: ComposableCoW,
   multicall: Multicall3
 ): Promise<PollResult> {
-  const proof = conditionalOrder.proof ? conditionalOrder.proof.path : [];
-  const offchainInput = "0x";
-
   // as we going to use multicall, with `aggregate3Value`, there is no need to do any simulation as the
   // calls are guaranteed to pass, and will return the results, or the reversion within the ABI-encoded data.
   // By not using `populateTransaction`, we avoid an `eth_estimateGas` RPC call.
