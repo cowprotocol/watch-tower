@@ -73,10 +73,9 @@ const _checkForAndPlaceOrder: ActionFn = async (
   );
   const { ownerOrders } = registry;
 
-  // enumerate all the owners
   let hasErrors = false;
-  let ownerCount = 0;
-  let orderCount = 0;
+  let ownerCounter = 0;
+  let orderCounter = 0;
 
   if (ownerOrders.size > 0) {
     console.log(`[checkForAndPlaceOrder] New Block ${blockNumber}`);
@@ -87,15 +86,15 @@ const _checkForAndPlaceOrder: ActionFn = async (
   );
 
   for (const [owner, conditionalOrders] of ownerOrders.entries()) {
-    ownerCount++;
+    ownerCounter++;
     const ordersPendingDelete = [];
     // enumerate all the `ConditionalOrder`s for a given owner
     console.log(
-      `[checkForAndPlaceOrder::${ownerCount}] Process owner ${owner} (${conditionalOrders.size} orders)`
+      `[checkForAndPlaceOrder::${ownerCounter}] Process owner ${owner} (${conditionalOrders.size} orders)`
     );
     for (const conditionalOrder of conditionalOrders) {
-      orderCount++;
-      const logPrefix = `[checkForAndPlaceOrder::${ownerCount}.${orderCount}]`;
+      orderCounter++;
+      const logPrefix = `[checkForAndPlaceOrder::${ownerCounter}.${orderCounter}]`;
       console.log(
         `${logPrefix} Check conditional order created in TX ${conditionalOrder.tx} with params:`,
         conditionalOrder.params
