@@ -142,7 +142,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
           }`
         : "SUCCESS";
       console[error ? "error" : "log"](
-        `${logPrefix} Check conditional order result: ${getEmojiByPollError(
+        `${logPrefix} Check conditional order result: ${getEmojiByPollResult(
           pollError?.result
         )} ${resultDescription}`
       );
@@ -590,7 +590,7 @@ export const balanceToString = (balance: string) => {
     throw new Error(`Unknown balance type: ${balance}`);
   }
 };
-function getEmojiByPollError(result?: PollResultCode) {
+function getEmojiByPollResult(result?: PollResultCode) {
   if (!result) {
     return "";
   }
