@@ -4,7 +4,7 @@ import { ethers } from "ethers";
 import { ConnectionInfo, Logger } from "ethers/lib/utils";
 
 import { SupportedChainId } from "@cowprotocol/cow-sdk";
-import assert = require("assert");
+import { getSecret } from "./misc";
 
 export async function getProvider(
   context: Context,
@@ -33,13 +33,6 @@ export async function getProvider(
       : { url };
 
   return new ethers.providers.JsonRpcProvider(providerConfig);
-}
-
-async function getSecret(key: string, context: Context): Promise<string> {
-  const value = await context.secrets.get(key);
-  assert(value, `${key} secret is required`);
-
-  return value;
 }
 
 function getAuthHeader({ user, password }: { user: string; password: string }) {
