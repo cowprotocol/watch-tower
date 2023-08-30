@@ -78,7 +78,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
   let orderCounter = 0;
 
   if (ownerOrders.size > 0) {
-    console.log(`[checkForAndPlaceOrder] New Block ${blockNumber}`);
+    console.log(`[checkForAndPlaceOrder] Processing Block ${blockNumber}`);
   }
 
   const { timestamp: blockTimestamp } = await chainContext.provider.getBlock(
