@@ -168,12 +168,15 @@ const _checkForAndPlaceOrder: ActionFn = async (
     }
   }
 
-  // Delete owners with no orders
-  for (const [owner, conditionalOrders] of Array.from(ownerOrders.entries())) {
-    if (conditionalOrders.size === 0) {
-      ownerOrders.delete(owner);
-    }
-  }
+  // TODO: Decide if we want to delete owners with no orders
+  //    - One one hand, we don't want to keep growing our registry forever
+  //    - On the other hand, it might be handy to know this owner has been verified before
+  // // Delete owners with no orders
+  // for (const [owner, conditionalOrders] of Array.from(ownerOrders.entries())) {
+  //   if (conditionalOrders.size === 0) {
+  //     ownerOrders.delete(owner);
+  //   }
+  // }
 
   // Update the registry
   hasErrors ||= await !writeRegistry();
