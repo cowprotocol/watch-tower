@@ -10,6 +10,9 @@ import { PollResult, SupportedChainId } from "@cowprotocol/cow-sdk";
 
 // Standardise the storage key
 const LAST_NOTIFIED_ERROR_STORAGE_KEY = "LAST_NOTIFIED_ERROR";
+const CONDITIONAL_ORDER_REGISTRY_VERSION_KEY =
+  "CONDITIONAL_ORDER_REGISTRY_VERSION";
+const CONDITIONAL_ORDER_REGISTRY_VERSION = 1;
 
 export const getOrdersStorageKey = (network: string): string => {
   return `CONDITIONAL_ORDER_REGISTRY_${network}`;
@@ -77,7 +80,7 @@ export type ConditionalOrder = {
  * Contains a map of owners to conditional orders and the last time we sent an error.
  */
 export class Registry {
-  version = 1;
+  version = CONDITIONAL_ORDER_REGISTRY_VERSION;
   ownerOrders: Map<Owner, Set<ConditionalOrder>>;
   storage: Storage;
   network: string;
@@ -117,16 +120,19 @@ export class Registry {
       .then((isoDate) => (isoDate ? new Date(isoDate) : null))
       .catch(() => null);
 
-    if (str === null || str === undefined || str === "") {
-      return new Registry(
-        new Map<Owner, Set<ConditionalOrder>>(),
-        context.storage,
-        network,
-        lastNotifiedError
-      );
-    }
+    // Get the persisted registry version
+    const version = await context.storage
+      .getStr(CONDITIONAL_ORDER_REGISTRY_VERSION_KEY)
+      .then((versionString) => Number(versionString))
+      .catch(() => undefined);
 
-    const ownerOrders = JSON.parse(str, _reviver);
+    // Parse conditional orders registry (for the persisted version, converting it to the last version)
+    const ownerOrders = parseConditionalOrders(
+      !!str ? str : undefined,
+      version
+    );
+
+    // Return registry (on its latest version)
     return new Registry(
       ownerOrders,
       context.storage,
@@ -144,6 +150,14 @@ export class Registry {
       JSON.stringify(this.ownerOrders, replacer)
     );
 
+    const writeConditionalOrderRegistryVersion =
+      this.lastNotifiedError !== null
+        ? this.storage.putStr(
+            CONDITIONAL_ORDER_REGISTRY_VERSION_KEY,
+            this.version.toString()
+          )
+        : Promise.resolve();
+
     const writeLastNotifiedError =
       this.lastNotifiedError !== null
         ? this.storage.putStr(
@@ -152,7 +166,11 @@ export class Registry {
           )
         : Promise.resolve();
 
-    return Promise.all([writeOrders, writeLastNotifiedError]).then(() => {});
+    return Promise.all([
+      writeOrders,
+      writeConditionalOrderRegistryVersion,
+      writeLastNotifiedError,
+    ]).then(() => {});
   }
 }
 
@@ -206,4 +224,13 @@ export function replacer(_key: any, value: any) {
   } else {
     return value;
   }
+}
+function parseConditionalOrders(
+  serializedConditionalOrders: string | undefined,
+  _version: number | undefined
+): Map<Owner, Set<ConditionalOrder>> {
+  if (!serializedConditionalOrders) {
+    return new Map<Owner, Set<ConditionalOrder>>();
+  }
+  return JSON.parse(serializedConditionalOrders, _reviver);
 }
