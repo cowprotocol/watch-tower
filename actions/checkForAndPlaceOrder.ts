@@ -97,10 +97,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
     blockNumber
   );
 
-  console.log(
-    "[checkForAndPlaceOrder] Number of orders: ",
-    Array.from(registry.ownerOrders.values()).flatMap((s) => s).length
-  );
+  console.log("[checkForAndPlaceOrder] Number of orders: ", registry.numOrders);
 
   for (const [owner, conditionalOrders] of ownerOrders.entries()) {
     ownerCounter++;
@@ -203,10 +200,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
   //   registry.stringifyOrders()
   // );
 
-  console.log(
-    "[checkForAndPlaceOrder] Remaining orders: ",
-    Array.from(registry.ownerOrders.values()).flatMap((s) => s).length
-  );
+  console.log("[checkForAndPlaceOrder] Remaining orders: ", registry.numOrders);
 
   // Throw execution error if there was at least one error
   if (hasErrors) {
