@@ -10,6 +10,7 @@ import { CaptureConsole as CaptureConsoleIntegration } from "@sentry/integration
 
 import { ExecutionContext, Registry } from "../model";
 import { SupportedChainId } from "@cowprotocol/cow-sdk";
+import { initLogging } from "./logging";
 
 const NOTIFICATION_WAIT_PERIOD = 1000 * 60 * 60 * 2; // 2h - Don't send more than one notification every 2h
 
@@ -20,6 +21,7 @@ export async function initContext(
   chainId: SupportedChainId,
   context: Context
 ): Promise<ExecutionContext> {
+  initLogging();
   // Init registry
   const registry = await Registry.load(context, chainId.toString());
 
