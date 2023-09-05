@@ -1,13 +1,13 @@
 import {
   ConditionalOrderFactory,
   ConditionalOrderParams,
-  DEFAULT_CONDITIONAL_ORDER_REGSTRY,
+  DEFAULT_CONDITIONAL_ORDER_REGISTRY,
   PollParams,
   PollResult,
 } from "@cowprotocol/cow-sdk";
 
 const ordersFactory = new ConditionalOrderFactory(
-  DEFAULT_CONDITIONAL_ORDER_REGSTRY
+  DEFAULT_CONDITIONAL_ORDER_REGISTRY
 );
 
 export async function pollConditionalOrder(

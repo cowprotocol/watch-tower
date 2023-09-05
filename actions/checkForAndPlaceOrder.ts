@@ -241,7 +241,9 @@ async function _processConditionalOrder(
         chainId,
         conditionalOrder,
         contract,
-        multicall
+        multicall,
+        proof,
+        offchainInput
       );
     }
 
@@ -254,9 +256,10 @@ async function _processConditionalOrder(
 
     const orderToSubmit: Order = {
       ...order,
-      kind: kindToString(order.kind),
-      sellTokenBalance: balanceToString(order.sellTokenBalance),
-      buyTokenBalance: balanceToString(order.buyTokenBalance),
+      kind: kindToString(order.kind.toString()),
+      sellTokenBalance: balanceToString(order.sellTokenBalance.toString()),
+      buyTokenBalance: balanceToString(order.buyTokenBalance.toString()),
+      validTo: Number(order.validTo),
     };
 
     // calculate the orderUid
@@ -425,7 +428,9 @@ async function _pollLegacy(
   chainId: SupportedChainId,
   conditionalOrder: ConditionalOrder,
   contract: ComposableCoW,
-  multicall: Multicall3
+  multicall: Multicall3,
+  proof: string[],
+  offchainInput: string
 ): Promise<PollResult> {
   // as we going to use multicall, with `aggregate3Value`, there is no need to do any simulation as the
   // calls are guaranteed to pass, and will return the results, or the reversion within the ABI-encoded data.
