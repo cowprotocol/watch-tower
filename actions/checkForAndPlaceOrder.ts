@@ -118,14 +118,13 @@ const _checkForAndPlaceOrder: ActionFn = async (
         multicall,
         chainContext
       );
-      const isError = pollResult.result !== PollResultCode.SUCCESS;
 
       // Don't try again the same order, in case thats the poll result
       if (pollResult.result === PollResultCode.DONT_TRY_AGAIN) {
         ordersPendingDelete.push(conditionalOrder);
       }
 
-      // Save poll result
+      // Save the latest poll result
       conditionalOrder.pollResult = {
         lastExecution: new Date(),
         result: pollResult,
@@ -135,6 +134,8 @@ const _checkForAndPlaceOrder: ActionFn = async (
       const unexpectedError =
         pollResult?.result === PollResultCode.UNEXPECTED_ERROR;
 
+      // Print the polling result
+      const isError = pollResult.result !== PollResultCode.SUCCESS;
       const resultDescription =
         pollResult.result +
         (isError && pollResult.reason ? `. Reason: ${pollResult.reason}` : "");
@@ -177,6 +178,13 @@ const _checkForAndPlaceOrder: ActionFn = async (
 
   // Update the registry
   hasErrors ||= await !writeRegistry();
+
+  // console.log(
+  //   `[run_local] New CONDITIONAL_ORDER_REGISTRY value: `,
+  //   registry.stringifyOrders()
+  // );
+
+  Array.from(registry.ownerOrders.values()).flatMap((s) => s);
 
   // Throw execution error if there was at least one error
   if (hasErrors) {

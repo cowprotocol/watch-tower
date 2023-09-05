@@ -158,8 +158,12 @@ export class Registry {
   private async writeOrders(): Promise<void> {
     await this.storage.putStr(
       getOrdersStorageKey(this.network),
-      JSON.stringify(this.ownerOrders, replacer)
+      this.stringifyOrders()
     );
+  }
+
+  public stringifyOrders(): string {
+    return JSON.stringify(this.ownerOrders, replacer);
   }
 
   private async writeConditionalOrderRegistryVersion(): Promise<void> {
