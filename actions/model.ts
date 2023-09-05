@@ -6,7 +6,7 @@ import { BytesLike, ethers, providers } from "ethers";
 
 import { apiUrl, getProvider } from "./utils";
 import type { IConditionalOrder } from "./types/ComposableCoW";
-import { ConditionalOrderParams, SupportedChainId } from "@cowprotocol/cow-sdk";
+import { PollResult, SupportedChainId } from "@cowprotocol/cow-sdk";
 
 // Standardise the storage key
 const LAST_NOTIFIED_ERROR_STORAGE_KEY = "LAST_NOTIFIED_ERROR";
@@ -41,17 +41,35 @@ export enum OrderStatus {
 }
 
 export type ConditionalOrder = {
-  tx: string; // the transaction hash that created the conditional order (useful for debugging purposes)
+  /**
+   * The transaction hash that created the conditional order (useful for debugging purposes)
+   */
+  tx: string;
 
-  // the parameters of the conditional order
+  /**
+   * The parameters of the conditional order
+   */
   params: IConditionalOrder.ConditionalOrderParamsStruct; // TODO: We should not use the raw `ConditionalOrderParamsStruct` instead we should do some plain object `ConditionalOrderParams` with the handler,salt,staticInput as properties. See https://github.com/cowprotocol/tenderly-watch-tower/issues/18
-  // the merkle proof if the conditional order is belonging to a merkle root
-  // otherwise, if the conditional order is a single order, this is null
+
+  /**
+   * The merkle proof if the conditional order is belonging to a merkle root
+   * otherwise, if the conditional order is a single order, this is null
+   */
   proof: Proof | null;
-  // a map of discrete order hashes to their status
+  /**
+   *  Map of discrete order hashes to their status
+   */
   orders: Map<OrderUid, OrderStatus>;
-  // the address to poll for orders (may, or **may not** be `ComposableCoW`)
+
+  /**
+   * the address to poll for orders (may, or **may not** be `ComposableCoW`)
+   */
   composableCow: string;
+
+  /**
+   * The result of the last poll
+   */
+  pollResult?: PollResult;
 };
 
 /**
@@ -59,6 +77,7 @@ export type ConditionalOrder = {
  * Contains a map of owners to conditional orders and the last time we sent an error.
  */
 export class Registry {
+  version = 1;
   ownerOrders: Map<Owner, Set<ConditionalOrder>>;
   storage: Storage;
   network: string;

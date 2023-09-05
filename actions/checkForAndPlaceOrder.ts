@@ -108,7 +108,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
         chainContext.provider
       );
 
-      const pollError = await _processConditionalOrder(
+      const pollResult = await _processConditionalOrder(
         owner,
         chainId,
         conditionalOrder,
@@ -118,38 +118,33 @@ const _checkForAndPlaceOrder: ActionFn = async (
         multicall,
         chainContext
       );
-      const error = pollError !== undefined;
+      const isError = pollResult.result !== PollResultCode.SUCCESS;
 
-      // Specific handling for each error
-      if (pollError) {
-        // Dont try again the same order
-        if (pollError.result === PollResultCode.DONT_TRY_AGAIN) {
-          ordersPendingDelete.push(conditionalOrder);
-        }
-
-        // TODO: Handle the other errors :) --> Store them in the registry and ignore blocks until the moment is right
-        //  TRY_ON_BLOCK
-        //  TRY_AT_EPOCH
+      // Don't try again the same order, in case thats the poll result
+      if (pollResult.result === PollResultCode.DONT_TRY_AGAIN) {
+        ordersPendingDelete.push(conditionalOrder);
       }
+
+      // Save poll
+      conditionalOrder.pollResult = pollResult;
 
       // Log the result
       const unexpectedError =
-        pollError?.result === PollResultCode.UNEXPECTED_ERROR;
+        pollResult?.result === PollResultCode.UNEXPECTED_ERROR;
 
-      const resultDescription = error
-        ? `${pollError.result}${
-            pollError.reason ? `. Reason: ${pollError.reason}` : ""
-          }`
-        : "SUCCESS";
-      console[error ? "error" : "log"](
+      const resultDescription =
+        pollResult.result +
+        (isError && pollResult.reason ? `. Reason: ${pollResult.reason}` : "");
+
+      console[isError ? "error" : "log"](
         `${logPrefix} Check conditional order result: ${getEmojiByPollResult(
-          pollError?.result
+          pollResult?.result
         )} ${resultDescription}`
       );
       if (unexpectedError) {
         console.error(
           `${logPrefix} UNEXPECTED_ERROR Details:`,
-          pollError.error
+          pollResult.error
         );
       }
 
@@ -197,7 +192,7 @@ async function _processConditionalOrder(
   contract: ComposableCoW,
   multicall: Multicall3,
   chainContext: ChainContext
-): Promise<PollResultErrors | undefined> {
+): Promise<PollResult> {
   try {
     // TODO: Fix model and delete the explicit cast: https://github.com/cowprotocol/tenderly-watch-tower/issues/18
     const [handler, salt, staticInput] = conditionalOrder.params as any as [
@@ -282,6 +277,13 @@ async function _processConditionalOrder(
         }`
       );
     }
+
+    // Success!
+    return {
+      result: PollResultCode.SUCCESS,
+      order,
+      signature,
+    };
   } catch (e: any) {
     return {
       result: PollResultCode.UNEXPECTED_ERROR,
@@ -291,9 +293,6 @@ async function _processConditionalOrder(
         (e.message ? `: ${e.message}` : ""),
     };
   }
-
-  // Success!
-  return undefined;
 }
 
 function _getOrderUid(

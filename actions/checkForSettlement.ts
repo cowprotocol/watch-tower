@@ -1,6 +1,5 @@
 import {
   ActionFn,
-  BlockEvent,
   Context,
   Event,
   Log,
