@@ -19,6 +19,6 @@ export async function pollConditionalOrder(
   if (!order) {
     return undefined;
   }
-
+  console.log(`[polling] Polling for ${order.toString()}....`);
   return order.poll(pollParams);
 }
