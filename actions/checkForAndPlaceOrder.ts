@@ -8,7 +8,7 @@ import {
 
 import axios from "axios";
 
-import { ethers, utils } from "ethers";
+import { ethers } from "ethers";
 import { BytesLike, Logger, hexlify } from "ethers/lib/utils";
 
 import {

@@ -148,32 +148,34 @@ export class Registry {
    * Write the registry to storage.
    */
   public async write(): Promise<void> {
-    const writeOrders = this.storage.putStr(
+    return Promise.all([
+      this.writeOrders(),
+      this.writeConditionalOrderRegistryVersion(),
+      this.writeLastNotifiedError(),
+    ]).then(() => {});
+  }
+
+  private async writeOrders(): Promise<void> {
+    await this.storage.putStr(
       getOrdersStorageKey(this.network),
       JSON.stringify(this.ownerOrders, replacer)
     );
+  }
 
-    const writeConditionalOrderRegistryVersion =
-      this.lastNotifiedError !== null
-        ? this.storage.putStr(
-            CONDITIONAL_ORDER_REGISTRY_VERSION_KEY,
-            this.version.toString()
-          )
-        : Promise.resolve();
+  private async writeConditionalOrderRegistryVersion(): Promise<void> {
+    await this.storage.putStr(
+      CONDITIONAL_ORDER_REGISTRY_VERSION_KEY,
+      this.version.toString()
+    );
+  }
 
-    const writeLastNotifiedError =
-      this.lastNotifiedError !== null
-        ? this.storage.putStr(
-            LAST_NOTIFIED_ERROR_STORAGE_KEY,
-            this.lastNotifiedError.toISOString()
-          )
-        : Promise.resolve();
-
-    return Promise.all([
-      writeOrders,
-      writeConditionalOrderRegistryVersion,
-      writeLastNotifiedError,
-    ]).then(() => {});
+  private async writeLastNotifiedError(): Promise<void> {
+    if (this.lastNotifiedError !== null) {
+      await this.storage.putStr(
+        LAST_NOTIFIED_ERROR_STORAGE_KEY,
+        this.lastNotifiedError.toISOString()
+      );
+    }
   }
 }
 
