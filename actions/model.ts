@@ -72,7 +72,10 @@ export type ConditionalOrder = {
   /**
    * The result of the last poll
    */
-  pollResult?: PollResult;
+  pollResult?: {
+    lastExecution: Date;
+    result: PollResult;
+  };
 };
 
 /**

@@ -125,8 +125,11 @@ const _checkForAndPlaceOrder: ActionFn = async (
         ordersPendingDelete.push(conditionalOrder);
       }
 
-      // Save poll
-      conditionalOrder.pollResult = pollResult;
+      // Save poll result
+      conditionalOrder.pollResult = {
+        lastExecution: new Date(),
+        result: pollResult,
+      };
 
       // Log the result
       const unexpectedError =
