@@ -15,7 +15,7 @@ export function initLogging(logglyToken: string, tags: string[]) {
       token: logglyToken,
       subdomain: "cowprotocol",
       tags,
-      json: false,
+      json: true,
     })
   );
 
