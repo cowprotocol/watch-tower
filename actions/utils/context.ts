@@ -218,8 +218,8 @@ async function _initLogging(
 ) {
   const logglyToken = await context.secrets.get("LOGGLY_TOKEN").catch(() => "");
   if (logglyToken) {
-    console.warn("LOGGLY_TOKEN is not set, logging to console only");
-  } else {
     initLogging(logglyToken, [transactionName, `chain:${chainId}`]);
+  } else {
+    console.warn("LOGGLY_TOKEN is not set, logging to console only");
   }
 }
