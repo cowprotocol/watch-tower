@@ -9,7 +9,7 @@ import {
 import axios from "axios";
 
 import { ethers } from "ethers";
-import { BytesLike, Logger, hexlify } from "ethers/lib/utils";
+import { BytesLike, Logger } from "ethers/lib/utils";
 
 import {
   ComposableCoW,
