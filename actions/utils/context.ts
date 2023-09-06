@@ -21,7 +21,9 @@ export async function initContext(
   chainId: SupportedChainId,
   context: Context
 ): Promise<ExecutionContext> {
-  initLogging();
+  // Init Logging
+  await _initLogging(transactionName, chainId, context);
+
   // Init registry
   const registry = await Registry.load(context, chainId.toString());
 
@@ -204,4 +206,20 @@ function handlePromiseErrors<T>(
       console.error(errorMessage, error);
       return false;
     });
+}
+
+/**
+ * Init Logging with Loggly
+ */
+async function _initLogging(
+  transactionName: string,
+  chainId: SupportedChainId,
+  context: Context
+) {
+  const logglyToken = await context.secrets.get("LOGGLY_TOKEN").catch(() => "");
+  if (logglyToken) {
+    console.warn("LOGGLY_TOKEN is not set, logging to console only");
+  } else {
+    initLogging(logglyToken, [transactionName, `chain:${chainId}`]);
+  }
 }
