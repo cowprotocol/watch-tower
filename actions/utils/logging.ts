@@ -2,26 +2,31 @@ import assert = require("assert");
 import winston = require("winston");
 const { Loggly } = require("winston-loggly-bulk");
 
-let initialized = false;
+let logger: undefined | any;
 
 export function initLogging(
   logglyToken: string,
   tags: string[],
   logOnlyIfError = false
 ) {
-  if (initialized) {
+  const newLogger = new Loggly({
+    token: logglyToken,
+    subdomain: "cowprotocol",
+    tags,
+    json: true,
+  });
+
+  if (logger !== undefined) {
+    // We had a previous logger, remove it and add the new one
+    winston.remove(logger);
+    winston.add(newLogger);
+    logger = newLogger;
     return;
   }
 
-  initialized = true;
-  winston.add(
-    new Loggly({
-      token: logglyToken,
-      subdomain: "cowprotocol",
-      tags,
-      json: true,
-    })
-  );
+  // We didn't have a previous logger, just add the new one
+  logger = newLogger;
+  winston.add(logger);
 
   const consoleOriginal = {
     log: console.log,
