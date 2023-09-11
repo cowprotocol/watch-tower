@@ -149,11 +149,11 @@ export class Registry {
    * Write the registry to storage.
    */
   public async write(): Promise<void> {
-    return Promise.all([
+    await Promise.all([
       this.writeOrders(),
       this.writeConditionalOrderRegistryVersion(),
       this.writeLastNotifiedError(),
-    ]).then(() => {});
+    ]);
   }
 
   private async writeOrders(): Promise<void> {
