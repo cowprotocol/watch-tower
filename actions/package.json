@@ -26,6 +26,7 @@
     "@tenderly/actions": "^0.0.13",
     "axios": "^1.4.0",
     "ethers": "^5.7.2",
+    "exponential-backoff": "^3.1.1",
     "graphql-request": "^6.1.0",
     "node-fetch": "2",
     "node-slack": "^0.0.7",

@@ -1,5 +1,6 @@
 import Slack = require("node-slack");
 import { Context } from "@tenderly/actions";
+import { backOff } from "exponential-backoff";
 
 import {
   init as sentryInit,
@@ -182,8 +183,26 @@ export function sendSlack(message: string): boolean {
 export async function writeRegistry(): Promise<boolean> {
   if (executionContext) {
     return handlePromiseErrors(
-      "Error writing registry",
-      executionContext.registry.write()
+      "Error writing registry. Not more attempts!",
+      backOff(
+        async () => {
+          if (!executionContext) {
+            return undefined;
+          }
+          return executionContext.registry.write();
+        },
+        {
+          numOfAttempts: 10,
+          timeMultiple: 2,
+          retry: (e, attemptNumber) => {
+            console.error(
+              `Error writing registry. Attempt ${attemptNumber}. Retrying...`,
+              e
+            );
+            return true;
+          },
+        }
+      )
     );
   }
 
