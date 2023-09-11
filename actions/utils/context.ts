@@ -202,7 +202,15 @@ export async function writeRegistry(): Promise<boolean> {
             return true;
           },
         }
-      )
+      ).catch((e) => {
+        if (executionContext) {
+          console.error(
+            "Error writing registry. Not more attempts! Dumping the orders",
+            executionContext.registry.stringifyOrders()
+          );
+        }
+        throw e;
+      })
     );
   }
 
