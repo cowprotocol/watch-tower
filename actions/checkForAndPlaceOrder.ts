@@ -36,11 +36,23 @@ import {
   PollResult,
   PollResultCode,
   PollResultErrors,
+  PollResultSuccess,
+  PollResultTryNextBlock,
+  PollResultUnexpectedError,
   SupportedChainId,
 } from "@cowprotocol/cow-sdk";
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
+
+/**
+ * Handle error that will return `TRY_NEXT_BLOCK`, so it doesn't throw but is re-attempted on next block
+ */
+const ORDER_BOOK_API_HANDLED_ERRORS = [
+  "InsufficientBalance",
+  "InsufficientAllowance",
+  "InsufficientFee",
+];
 
 /**
  * Watch for new blocks and check for orders to place
@@ -84,6 +96,8 @@ const _checkForAndPlaceOrder: ActionFn = async (
   const { timestamp: blockTimestamp } = await chainContext.provider.getBlock(
     blockNumber
   );
+
+  console.log("[checkForAndPlaceOrder] Number of orders: ", registry.numOrders);
 
   for (const [owner, conditionalOrders] of ownerOrders.entries()) {
     ownerCounter++;
@@ -186,7 +200,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
   //   registry.stringifyOrders()
   // );
 
-  Array.from(registry.ownerOrders.values()).flatMap((s) => s);
+  console.log("[checkForAndPlaceOrder] Remaining orders: ", registry.numOrders);
 
   // Throw execution error if there was at least one error
   if (hasErrors) {
@@ -273,14 +287,21 @@ async function _processConditionalOrder(
     // calculate the orderUid
     const orderUid = _getOrderUid(chainId, orderToSubmit, owner);
 
-    // if the orderUid has not been submitted, or filled, then place the order
+    // Place order, if the orderUid has not been submitted or filled
     if (!conditionalOrder.orders.has(orderUid)) {
-      await _placeOrder(
+      // Place order
+      const placeOrderResult = await _placeOrder(
         orderUid,
         { ...orderToSubmit, from: owner, signature },
         chainContext.apiUrl
       );
 
+      // In case of error, return early
+      if (placeOrderResult.result !== PollResultCode.SUCCESS) {
+        return placeOrderResult;
+      }
+
+      // Mark order as submitted
       conditionalOrder.orders.set(orderUid, OrderStatus.SUBMITTED);
     } else {
       const orderStatus = conditionalOrder.orders.get(orderUid);
@@ -356,7 +377,11 @@ async function _placeOrder(
   orderUid: string,
   order: any,
   apiUrl: string
-): Promise<void> {
+): Promise<
+  | Omit<PollResultSuccess, "order" | "signature">
+  | PollResultTryNextBlock
+  | PollResultUnexpectedError
+> {
   try {
     const postData = {
       sellToken: order.sellToken,
@@ -393,46 +418,76 @@ async function _placeOrder(
       console.log(`[placeOrder] API response`, { status, data });
     }
   } catch (error: any) {
-    const errorMessage = "[placeOrder] Error placing order in API";
+    let reasonError = "Error placing order in API";
     if (error.response) {
       const { status, data } = error.response;
 
-      const { shouldThrow } = _handleOrderBookError(status, data);
+      const handleErrorResult = _handleOrderBookError(status, data, error);
+      const isSuccess = handleErrorResult.result === PollResultCode.SUCCESS;
 
       // The request was made and the server responded with a status code
       // that falls out of the range of 2xx
-      const log = console[shouldThrow ? "error" : "warn"];
-      log(`${errorMessage}. Result: ${status}`, data);
+      const log = console[isSuccess ? "warn" : "error"];
+      log(`[placeOrder] Error placing order in API. Result: ${status}`, data);
 
-      if (!shouldThrow) {
+      if (isSuccess) {
         log("All good! continuing with warnings...");
-        return;
+        return { result: PollResultCode.SUCCESS };
+      } else {
+        return handleErrorResult;
       }
     } else if (error.request) {
       // The request was made but no response was received
       // `error.request` is an instance of XMLHttpRequest in the browser and an instance of
       // http.ClientRequest in node.js
-      console.error(`${errorMessage}. Unresponsive API: ${error.request}`);
+      reasonError += `Unresponsive API: ${error.request}`;
     } else if (error.message) {
       // Something happened in setting up the request that triggered an Error
-      console.error(`${errorMessage}. Internal Error: ${error.message}`);
+      reasonError += `. Internal Error: ${error.request}`;
     } else {
-      console.error(`${errorMessage}. Unhandled Error: ${error.message}`);
+      reasonError += `. Unhandled Error: ${error.message}`;
     }
-    throw error;
+
+    return {
+      result: PollResultCode.UNEXPECTED_ERROR,
+      reason: reasonError,
+      error,
+    };
   }
+
+  return { result: PollResultCode.SUCCESS };
 }
 
 function _handleOrderBookError(
   status: any,
-  data: any
-): { shouldThrow: boolean } {
-  if (status === 400 && data?.errorType === "DuplicatedOrder") {
+  data: any,
+  error: any
+):
+  | Omit<PollResultSuccess, "order" | "signature">
+  | PollResultTryNextBlock
+  | PollResultUnexpectedError {
+  if (status === 400) {
     // The order is in the OrderBook, all good :)
-    return { shouldThrow: false };
+    if (data?.errorType === "DuplicatedOrder") {
+      return {
+        result: PollResultCode.SUCCESS,
+      };
+    }
+
+    // Handle some errors, that might be solved in the next block
+    if (ORDER_BOOK_API_HANDLED_ERRORS.includes(data?.errorType)) {
+      return {
+        result: PollResultCode.TRY_NEXT_BLOCK,
+        reason: `OrderBook API Known Error: ${data?.errorType}, ${data?.description}`,
+      };
+    }
   }
 
-  return { shouldThrow: true };
+  return {
+    result: PollResultCode.UNEXPECTED_ERROR,
+    reason: `OrderBook API Unknown Error: ${data?.errorType}, ${data?.description}`,
+    error,
+  };
 }
 
 async function _pollLegacy(

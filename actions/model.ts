@@ -145,6 +145,10 @@ export class Registry {
     );
   }
 
+  get numOrders(): number {
+    return Array.from(this.ownerOrders.values()).flatMap((o) => o).length;
+  }
+
   /**
    * Write the registry to storage.
    */
