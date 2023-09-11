@@ -73,7 +73,8 @@ export type ConditionalOrder = {
    * The result of the last poll
    */
   pollResult?: {
-    lastExecution: Date;
+    lastExecutionTime: number;
+    blockNumber: number;
     result: PollResult;
   };
 };

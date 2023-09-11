@@ -126,7 +126,9 @@ const _checkForAndPlaceOrder: ActionFn = async (
 
       // Save the latest poll result
       conditionalOrder.pollResult = {
-        lastExecution: new Date(),
+        lastExecutionTime: blockTimestamp,
+        blockNumber: blockNumber,
+
         result: pollResult,
       };
 
