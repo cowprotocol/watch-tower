@@ -195,7 +195,7 @@ export async function writeRegistry(): Promise<boolean> {
           numOfAttempts: 10,
           timeMultiple: 2,
           retry: (e, attemptNumber) => {
-            console.error(
+            console.warn(
               `Error writing registry. Attempt ${attemptNumber}. Retrying...`,
               e
             );
