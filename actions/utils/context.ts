@@ -10,6 +10,7 @@ import { CaptureConsole as CaptureConsoleIntegration } from "@sentry/integration
 
 import { ExecutionContext, Registry } from "../model";
 import { SupportedChainId } from "@cowprotocol/cow-sdk";
+import { initLogging } from "./logging";
 
 const NOTIFICATION_WAIT_PERIOD = 1000 * 60 * 60 * 2; // 2h - Don't send more than one notification every 2h
 
@@ -20,6 +21,9 @@ export async function initContext(
   chainId: SupportedChainId,
   context: Context
 ): Promise<ExecutionContext> {
+  // Init Logging
+  await _initLogging(transactionName, chainId, context);
+
   // Init registry
   const registry = await Registry.load(context, chainId.toString());
 
@@ -202,4 +206,20 @@ function handlePromiseErrors<T>(
       console.error(errorMessage, error);
       return false;
     });
+}
+
+/**
+ * Init Logging with Loggly
+ */
+async function _initLogging(
+  transactionName: string,
+  chainId: SupportedChainId,
+  context: Context
+) {
+  const logglyToken = await context.secrets.get("LOGGLY_TOKEN").catch(() => "");
+  if (logglyToken) {
+    initLogging(logglyToken, [transactionName, `chain_${chainId}`]);
+  } else {
+    console.warn("LOGGLY_TOKEN is not set, logging to console only");
+  }
 }

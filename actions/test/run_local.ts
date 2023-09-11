@@ -163,6 +163,7 @@ async function _getRunTime(chainId: SupportedChainId): Promise<TestRuntime> {
     "SLACK_WEBHOOK_URL",
     "NOTIFICATIONS_ENABLED",
     "SENTRY_DSN",
+    "LOGGLY_TOKEN",
   ];
   for (const name of envNames) {
     const envValue = process.env[name];
