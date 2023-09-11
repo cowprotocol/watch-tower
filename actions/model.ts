@@ -6,10 +6,13 @@ import { BytesLike, ethers, providers } from "ethers";
 
 import { apiUrl, getProvider } from "./utils";
 import type { IConditionalOrder } from "./types/ComposableCoW";
-import { ConditionalOrderParams, SupportedChainId } from "@cowprotocol/cow-sdk";
+import { PollResult, SupportedChainId } from "@cowprotocol/cow-sdk";
 
 // Standardise the storage key
 const LAST_NOTIFIED_ERROR_STORAGE_KEY = "LAST_NOTIFIED_ERROR";
+const CONDITIONAL_ORDER_REGISTRY_VERSION_KEY =
+  "CONDITIONAL_ORDER_REGISTRY_VERSION";
+const CONDITIONAL_ORDER_REGISTRY_VERSION = 1;
 
 export const getOrdersStorageKey = (network: string): string => {
   return `CONDITIONAL_ORDER_REGISTRY_${network}`;
@@ -41,17 +44,39 @@ export enum OrderStatus {
 }
 
 export type ConditionalOrder = {
-  tx: string; // the transaction hash that created the conditional order (useful for debugging purposes)
+  /**
+   * The transaction hash that created the conditional order (useful for debugging purposes)
+   */
+  tx: string;
 
-  // the parameters of the conditional order
+  /**
+   * The parameters of the conditional order
+   */
   params: IConditionalOrder.ConditionalOrderParamsStruct; // TODO: We should not use the raw `ConditionalOrderParamsStruct` instead we should do some plain object `ConditionalOrderParams` with the handler,salt,staticInput as properties. See https://github.com/cowprotocol/tenderly-watch-tower/issues/18
-  // the merkle proof if the conditional order is belonging to a merkle root
-  // otherwise, if the conditional order is a single order, this is null
+
+  /**
+   * The merkle proof if the conditional order is belonging to a merkle root
+   * otherwise, if the conditional order is a single order, this is null
+   */
   proof: Proof | null;
-  // a map of discrete order hashes to their status
+  /**
+   *  Map of discrete order hashes to their status
+   */
   orders: Map<OrderUid, OrderStatus>;
-  // the address to poll for orders (may, or **may not** be `ComposableCoW`)
+
+  /**
+   * the address to poll for orders (may, or **may not** be `ComposableCoW`)
+   */
   composableCow: string;
+
+  /**
+   * The result of the last poll
+   */
+  pollResult?: {
+    lastExecutionTime: number;
+    blockNumber: number;
+    result: PollResult;
+  };
 };
 
 /**
@@ -59,6 +84,7 @@ export type ConditionalOrder = {
  * Contains a map of owners to conditional orders and the last time we sent an error.
  */
 export class Registry {
+  version = CONDITIONAL_ORDER_REGISTRY_VERSION;
   ownerOrders: Map<Owner, Set<ConditionalOrder>>;
   storage: Storage;
   network: string;
@@ -98,16 +124,19 @@ export class Registry {
       .then((isoDate) => (isoDate ? new Date(isoDate) : null))
       .catch(() => null);
 
-    if (str === null || str === undefined || str === "") {
-      return new Registry(
-        new Map<Owner, Set<ConditionalOrder>>(),
-        context.storage,
-        network,
-        lastNotifiedError
-      );
-    }
+    // Get the persisted registry version
+    const version = await context.storage
+      .getStr(CONDITIONAL_ORDER_REGISTRY_VERSION_KEY)
+      .then((versionString) => Number(versionString))
+      .catch(() => undefined);
 
-    const ownerOrders = JSON.parse(str, _reviver);
+    // Parse conditional orders registry (for the persisted version, converting it to the last version)
+    const ownerOrders = parseConditionalOrders(
+      !!str ? str : undefined,
+      version
+    );
+
+    // Return registry (on its latest version)
     return new Registry(
       ownerOrders,
       context.storage,
@@ -120,20 +149,38 @@ export class Registry {
    * Write the registry to storage.
    */
   public async write(): Promise<void> {
-    const writeOrders = this.storage.putStr(
+    await Promise.all([
+      this.writeOrders(),
+      this.writeConditionalOrderRegistryVersion(),
+      this.writeLastNotifiedError(),
+    ]);
+  }
+
+  private async writeOrders(): Promise<void> {
+    await this.storage.putStr(
       getOrdersStorageKey(this.network),
-      JSON.stringify(this.ownerOrders, replacer)
+      this.stringifyOrders()
     );
+  }
 
-    const writeLastNotifiedError =
-      this.lastNotifiedError !== null
-        ? this.storage.putStr(
-            LAST_NOTIFIED_ERROR_STORAGE_KEY,
-            this.lastNotifiedError.toISOString()
-          )
-        : Promise.resolve();
+  public stringifyOrders(): string {
+    return JSON.stringify(this.ownerOrders, replacer);
+  }
 
-    return Promise.all([writeOrders, writeLastNotifiedError]).then(() => {});
+  private async writeConditionalOrderRegistryVersion(): Promise<void> {
+    await this.storage.putStr(
+      CONDITIONAL_ORDER_REGISTRY_VERSION_KEY,
+      this.version.toString()
+    );
+  }
+
+  private async writeLastNotifiedError(): Promise<void> {
+    if (this.lastNotifiedError !== null) {
+      await this.storage.putStr(
+        LAST_NOTIFIED_ERROR_STORAGE_KEY,
+        this.lastNotifiedError.toISOString()
+      );
+    }
   }
 }
 
@@ -187,4 +234,13 @@ export function replacer(_key: any, value: any) {
   } else {
     return value;
   }
+}
+function parseConditionalOrders(
+  serializedConditionalOrders: string | undefined,
+  _version: number | undefined
+): Map<Owner, Set<ConditionalOrder>> {
+  if (!serializedConditionalOrders) {
+    return new Map<Owner, Set<ConditionalOrder>>();
+  }
+  return JSON.parse(serializedConditionalOrders, _reviver);
 }

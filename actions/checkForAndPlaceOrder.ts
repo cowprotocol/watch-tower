@@ -8,7 +8,7 @@ import {
 
 import axios from "axios";
 
-import { ethers, utils } from "ethers";
+import { ethers } from "ethers";
 import { BytesLike, Logger, hexlify } from "ethers/lib/utils";
 
 import {
@@ -108,7 +108,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
         chainContext.provider
       );
 
-      const pollError = await _processConditionalOrder(
+      const pollResult = await _processConditionalOrder(
         owner,
         chainId,
         conditionalOrder,
@@ -118,38 +118,39 @@ const _checkForAndPlaceOrder: ActionFn = async (
         multicall,
         chainContext
       );
-      const error = pollError !== undefined;
 
-      // Specific handling for each error
-      if (pollError) {
-        // Dont try again the same order
-        if (pollError.result === PollResultCode.DONT_TRY_AGAIN) {
-          ordersPendingDelete.push(conditionalOrder);
-        }
-
-        // TODO: Handle the other errors :) --> Store them in the registry and ignore blocks until the moment is right
-        //  TRY_ON_BLOCK
-        //  TRY_AT_EPOCH
+      // Don't try again the same order, in case thats the poll result
+      if (pollResult.result === PollResultCode.DONT_TRY_AGAIN) {
+        ordersPendingDelete.push(conditionalOrder);
       }
+
+      // Save the latest poll result
+      conditionalOrder.pollResult = {
+        lastExecutionTime: blockTimestamp,
+        blockNumber: blockNumber,
+
+        result: pollResult,
+      };
 
       // Log the result
       const unexpectedError =
-        pollError?.result === PollResultCode.UNEXPECTED_ERROR;
+        pollResult?.result === PollResultCode.UNEXPECTED_ERROR;
 
-      const resultDescription = error
-        ? `${pollError.result}${
-            pollError.reason ? `. Reason: ${pollError.reason}` : ""
-          }`
-        : "SUCCESS";
-      console[error ? "error" : "log"](
+      // Print the polling result
+      const isError = pollResult.result !== PollResultCode.SUCCESS;
+      const resultDescription =
+        pollResult.result +
+        (isError && pollResult.reason ? `. Reason: ${pollResult.reason}` : "");
+
+      console[isError ? "error" : "log"](
         `${logPrefix} Check conditional order result: ${getEmojiByPollResult(
-          pollError?.result
+          pollResult?.result
         )} ${resultDescription}`
       );
       if (unexpectedError) {
         console.error(
           `${logPrefix} UNEXPECTED_ERROR Details:`,
-          pollError.error
+          pollResult.error
         );
       }
 
@@ -180,6 +181,13 @@ const _checkForAndPlaceOrder: ActionFn = async (
   // Update the registry
   hasErrors ||= await !writeRegistry();
 
+  // console.log(
+  //   `[run_local] New CONDITIONAL_ORDER_REGISTRY value: `,
+  //   registry.stringifyOrders()
+  // );
+
+  Array.from(registry.ownerOrders.values()).flatMap((s) => s);
+
   // Throw execution error if there was at least one error
   if (hasErrors) {
     throw Error(
@@ -197,7 +205,7 @@ async function _processConditionalOrder(
   contract: ComposableCoW,
   multicall: Multicall3,
   chainContext: ChainContext
-): Promise<PollResultErrors | undefined> {
+): Promise<PollResult> {
   try {
     // TODO: Fix model and delete the explicit cast: https://github.com/cowprotocol/tenderly-watch-tower/issues/18
     const [handler, salt, staticInput] = conditionalOrder.params as any as [
@@ -241,7 +249,9 @@ async function _processConditionalOrder(
         chainId,
         conditionalOrder,
         contract,
-        multicall
+        multicall,
+        proof,
+        offchainInput
       );
     }
 
@@ -254,9 +264,10 @@ async function _processConditionalOrder(
 
     const orderToSubmit: Order = {
       ...order,
-      kind: kindToString(order.kind),
-      sellTokenBalance: balanceToString(order.sellTokenBalance),
-      buyTokenBalance: balanceToString(order.buyTokenBalance),
+      kind: kindToString(order.kind.toString()),
+      sellTokenBalance: balanceToString(order.sellTokenBalance.toString()),
+      buyTokenBalance: balanceToString(order.buyTokenBalance.toString()),
+      validTo: Number(order.validTo),
     };
 
     // calculate the orderUid
@@ -279,6 +290,13 @@ async function _processConditionalOrder(
         }`
       );
     }
+
+    // Success!
+    return {
+      result: PollResultCode.SUCCESS,
+      order,
+      signature,
+    };
   } catch (e: any) {
     return {
       result: PollResultCode.UNEXPECTED_ERROR,
@@ -288,9 +306,6 @@ async function _processConditionalOrder(
         (e.message ? `: ${e.message}` : ""),
     };
   }
-
-  // Success!
-  return undefined;
 }
 
 function _getOrderUid(
@@ -425,7 +440,9 @@ async function _pollLegacy(
   chainId: SupportedChainId,
   conditionalOrder: ConditionalOrder,
   contract: ComposableCoW,
-  multicall: Multicall3
+  multicall: Multicall3,
+  proof: string[],
+  offchainInput: string
 ): Promise<PollResult> {
   // as we going to use multicall, with `aggregate3Value`, there is no need to do any simulation as the
   // calls are guaranteed to pass, and will return the results, or the reversion within the ABI-encoded data.

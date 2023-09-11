@@ -1,13 +1,13 @@
 import {
   ConditionalOrderFactory,
   ConditionalOrderParams,
-  DEFAULT_CONDITIONAL_ORDER_REGSTRY,
+  DEFAULT_CONDITIONAL_ORDER_REGISTRY,
   PollParams,
   PollResult,
 } from "@cowprotocol/cow-sdk";
 
 const ordersFactory = new ConditionalOrderFactory(
-  DEFAULT_CONDITIONAL_ORDER_REGSTRY
+  DEFAULT_CONDITIONAL_ORDER_REGISTRY
 );
 
 export async function pollConditionalOrder(
@@ -19,6 +19,6 @@ export async function pollConditionalOrder(
   if (!order) {
     return undefined;
   }
-
+  console.log(`[polling] Polling for ${order.toString()}....`);
   return order.poll(pollParams);
 }
