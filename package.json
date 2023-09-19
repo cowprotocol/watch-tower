@@ -1,6 +1,6 @@
 {
   "name": "tenderly-watch-tower",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "A tenderly watch tower, keeping an eye on Composable Cows 👀🐮",
   "author": {
     "name": "Cow Protocol"
