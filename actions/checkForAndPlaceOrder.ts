@@ -109,10 +109,36 @@ const _checkForAndPlaceOrder: ActionFn = async (
     for (const conditionalOrder of conditionalOrders) {
       orderCounter++;
       const logPrefix = `[checkForAndPlaceOrder::${ownerCounter}.${orderCounter}]`;
-      console.log(
-        `${logPrefix} Check conditional order created in TX ${conditionalOrder.tx} with params:`,
-        conditionalOrder.params
-      );
+      const logOrderDetails = `Order created in TX ${conditionalOrder.tx} with params:`;
+
+      const { result: lastResult } = conditionalOrder.pollResult || {};
+
+      // Check if the order is due (by epoch)
+      if (
+        lastResult?.result === PollResultCode.TRY_AT_EPOCH &&
+        lastResult.epoch < blockTimestamp
+      ) {
+        console.log(
+          `${logPrefix} Skipping conditional. Reason: Not due yet (TRY_AT_EPOCH=${lastResult.epoch}). ${logOrderDetails}`,
+          conditionalOrder.params
+        );
+        continue;
+      }
+
+      // Check if the order is due (by blockNumber)
+      if (
+        lastResult?.result === PollResultCode.TRY_ON_BLOCK &&
+        lastResult.blockNumber < blockNumber
+      ) {
+        console.log(
+          `${logPrefix} Skipping conditional. Reason: Not due yet (TRY_ON_BLOCK=${lastResult.blockNumber}). ${logOrderDetails}`,
+          conditionalOrder.params
+        );
+        continue;
+      }
+
+      // Proceed with the normal check
+      console.log(`${logPrefix} ${logOrderDetails}`, conditionalOrder.params);
       const contract = ComposableCoW__factory.connect(
         conditionalOrder.composableCow,
         chainContext.provider
@@ -140,7 +166,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
 
       // Save the latest poll result
       conditionalOrder.pollResult = {
-        lastExecutionTime: blockTimestamp,
+        lastExecutionTimestamp: blockTimestamp,
         blockNumber: blockNumber,
 
         result: pollResult,
