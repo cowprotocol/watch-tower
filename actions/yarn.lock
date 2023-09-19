@@ -300,10 +300,10 @@
   resolved "https://registry.npmjs.org/@cowprotocol/contracts/-/contracts-1.4.0.tgz"
   integrity sha512-XLs3SlPmXD4lbiWIO7mxxuCn1eE5isuO6EUlE1cj17HqN/wukDAN0xXYPx6umOH/XdjGS33miMiPHELEyY9siw==
 
-"@cowprotocol/cow-sdk@^3.0.0-rc.5":
-  version "3.0.0-rc.5"
-  resolved "https://registry.npmjs.org/@cowprotocol/cow-sdk/-/cow-sdk-3.0.0-rc.5.tgz"
-  integrity sha512-lw9ppOWSuste893Rtd+OVTTIMN7D1VlUE0HZo64197fOctcYXMCx3pTh9AqJi5qgqoiIUFWILJJ0tGy0PARmXw==
+"@cowprotocol/cow-sdk@^3.0.0-rc.8":
+  version "3.0.0-rc.8"
+  resolved "https://registry.yarnpkg.com/@cowprotocol/cow-sdk/-/cow-sdk-3.0.0-rc.8.tgz#87b388f6429e7ee11b650d7f0414cddbc248e9d2"
+  integrity sha512-zbGShUz0xFsXm1yV8A1iL46226pDKE4BpSOtqKd8AedCSDNcClqGrXSKTsmar3r7Somvb3fSKwhv9KIsM8lk6w==
   dependencies:
     "@cowprotocol/contracts" "^1.4.0"
     "@ethersproject/abstract-signer" "^5.7.0"
