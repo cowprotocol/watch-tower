@@ -119,7 +119,7 @@ const main = async () => {
       }
     } while (toBlock !== 'latest' && (typeof toBlock !== 'string' && toBlock != currentBlockNumber));
 
-    // 5. Replay the blocks by iterating over the replayPlan
+    // 6. Replay the blocks by iterating over the replayPlan
     for (const [blockNumber, txHints] of Object.entries(replayPlan)) {
       console.log(`[run_rebuild] Processing block ${blockNumber}`);
       const overrides: ProcessBlockOverrides = {
@@ -133,7 +133,7 @@ const main = async () => {
       );
       console.log(`[run_rebuild] Block ${blockNumber} has been processed.`);
     }
-    // 6. Print the storage
+    // 7. Print the storage
     testRuntime.context.storage.getJson(getOrdersStorageKey(chainId.toString())).then((storage) => {
       console.log(`[run_rebuild] Storage: ${JSON.stringify(storage)}`);
     })
