@@ -95,6 +95,7 @@ yarn start:actions
 
 # You can re-process an old block by:
 #   - Add an env BLOCK_NUMBER
+#   - Add an env TX
 #   - Run actions locally
 yarn start:actions
 ```
