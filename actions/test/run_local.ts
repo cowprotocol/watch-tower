@@ -204,13 +204,13 @@ async function processBlock(
       overrides?.txList?.includes(transaction.hash) ?? true;
 
     if (shouldProcessTx) {
-      hasErrors ||= await !_processTx(
+      hasErrors ||= !(await _processTx(
         provider,
         block,
         chainId,
         testRuntime,
         transaction
-      );
+      ));
     }
   }
 
@@ -235,10 +235,7 @@ async function processTx(
   chainId: number,
   testRuntime: TestRuntime
 ) {
-  // Execute once, for a specific tx
-  console.log(
-    `[run_local] Processing ONCE for a specific transaction: ${tx}...`
-  );
+  let hasErrors = false;
   const transaction = await provider.getTransaction(tx);
   if (!transaction.blockNumber) {
     throw new Error(`The transaction ${tx} is not mined yet (no blockNumber)`);
@@ -248,8 +245,18 @@ async function processTx(
     throw new Error(`[run_local] Transaction ${tx} not found`);
   }
 
-  await _processTx(provider, block, chainId, testRuntime, transaction);
-  await _pollAndPost({ block, chainId, testRuntime });
+  hasErrors ||= !(await _processTx(
+    provider,
+    block,
+    chainId,
+    testRuntime,
+    transaction
+  ));
+  hasErrors ||= !(await _pollAndPost({ block, chainId, testRuntime }));
+
+  if (hasErrors) {
+    throw new Error("[run_local] Errors found in processing TX");
+  }
 }
 
 async function _processTx(
