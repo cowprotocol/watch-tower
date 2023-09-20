@@ -26,6 +26,10 @@ export interface ExecutionContext {
   context: Context;
 }
 
+export interface ReplayPlan {
+  [key: number]: Set<string>;
+}
+
 /**
  * A merkle proof is a set of parameters:
  * - `merkleRoot`: the merkle root of the conditional order

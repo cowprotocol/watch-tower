@@ -8,11 +8,15 @@ import { addContract } from "../addContract";
 import { ethers } from "ethers";
 import assert = require("assert");
 import { toChainId, getProvider } from "../utils";
-import { getOrdersStorageKey } from "../model";
+import { ReplayPlan, getOrdersStorageKey } from "../model";
 import { exit } from "process";
 import { SupportedChainId } from "@cowprotocol/cow-sdk";
+import { ComposableCoW__factory } from "../types/factories/ComposableCoW__factory";
 
 require("dotenv").config();
+
+const DEFAULT_PAGE_SIZE = 5000;
+const DEFAULT_DEPLOYMENT_BLOCK = 0;
 
 const main = async () => {
   // The web3 actions fetches the node url and computes the API based on the current chain id
@@ -25,9 +29,10 @@ const main = async () => {
   // Get provider
   const provider = await getProvider(testRuntime.context, chainId);
 
-  // Run one of the 2 Execution modes (single block, or watch mode)
+  // Run one of the 3 Execution modes (single block, watch mode, or rebuild mode)
   const blockNumberEnv = process.env.BLOCK_NUMBER;
-  if (blockNumberEnv) {
+  const contractAddressEnv = process.env.CONTRACT_ADDRESS;
+  if (blockNumberEnv && !contractAddressEnv) {
     // Execute once, for a specific block
     const isLatest = blockNumberEnv === "latest";
     const blockNumber = isLatest
@@ -45,7 +50,7 @@ const main = async () => {
       }
     );
     console.log(`[run_local] Block ${blockNumber} has been processed.`);
-  } else {
+  } else if (!blockNumberEnv && !contractAddressEnv){
     // Watch for new blocks
     console.log(`[run_local] Subscribe to new blocks for network ${network}`);
     provider.on("block", async (blockNumber: number) => {
@@ -55,6 +60,75 @@ const main = async () => {
         console.error("[run_local] Error in processBlock", error);
       }
     });
+  } else if (contractAddressEnv) {
+    // If no blockNumberEnv is provided, then we rebuild the state from the default deployment block
+    if (!blockNumberEnv) {
+      console.log(`[run_rebuild] No block number provided, using default deployment block`);
+    } else {
+      assert(!isNaN(Number(blockNumberEnv)), "blockNumber must be a number");
+    }
+    let fromBlock = blockNumberEnv ? Number(blockNumberEnv) : DEFAULT_DEPLOYMENT_BLOCK;
+
+    // Rebuild the state
+    console.log(`[run_rebuild] Rebuild the state of the conditional orders from the historical events.`);
+    const contractAddress = process.env.CONTRACT_ADDRESS;
+    assert(contractAddress && ethers.utils.isAddress(contractAddress), "contract address is required");
+    const pageSize = process.env.PAGE_SIZE ? parseInt(process.env.PAGE_SIZE) : DEFAULT_PAGE_SIZE;
+
+    // 1. Record the current block number - useful with paging
+    let currentBlockNumber = await provider.getBlockNumber();
+    console.log(`[run_rebuild] Current block number: ${currentBlockNumber}`);
+
+    // 2. Connect to the contract instance
+    const contract = ComposableCoW__factory.connect(contractAddress, provider);
+    
+    // 3. Define the filter.
+    const filter = contract.filters.ConditionalOrderCreated();
+
+    // 4. Get the historical events
+    const replayPlan: ReplayPlan = {}
+    let toBlock;
+    do {
+      toBlock = (pageSize == 0) ? 'latest' : fromBlock + (pageSize - 1);
+      if (typeof toBlock !== 'string' && toBlock > currentBlockNumber) {
+          // refresh the current block number
+          currentBlockNumber = await provider.getBlockNumber();
+          toBlock = (toBlock > currentBlockNumber) ? currentBlockNumber : toBlock;
+
+          console.log(`[run_rebuild] Reaching tip of chain, current block number: ${currentBlockNumber}`);
+      }
+
+      console.log(`[run_rebuild] Processing events from block ${fromBlock} to block ${toBlock}`);
+
+      const events = await contract.queryFilter(filter, fromBlock, toBlock);
+
+      console.log(`[run_rebuild] Found ${events.length} events`);
+
+      // 5. Process the events
+      for (const event of events) {
+        if (replayPlan[event.blockNumber] === undefined) {
+          replayPlan[event.blockNumber] = new Set();
+        }
+
+        replayPlan[event.blockNumber].add(event.transactionHash);
+      }
+
+      // only possible string value for toBlock is 'latest'
+      if (typeof toBlock !== 'string') {
+          fromBlock = toBlock + 1;
+      }
+    } while (toBlock !== 'latest' && (typeof toBlock !== 'string' && toBlock != currentBlockNumber));
+
+    // 5. Replay the blocks by iterating over the replayPlan
+    for (const [blockNumber, txHints] of Object.entries(replayPlan)) {
+      console.log(`[run_rebuild] Processing block ${blockNumber}`);
+      await processBlock(provider, Number(blockNumber), chainId, testRuntime, Array.from(txHints)).catch(
+        () => {
+          exit(100);
+        }
+      );
+      console.log(`[run_rebuild] Block ${blockNumber} has been processed.`);
+    }
   }
 };
 
@@ -62,7 +136,8 @@ async function processBlock(
   provider: ethers.providers.Provider,
   blockNumber: number,
   chainId: number,
-  testRuntime: TestRuntime
+  testRuntime: TestRuntime,
+  txHints?: string[]
 ) {
   const block = await provider.getBlock(blockNumber);
 
@@ -72,6 +147,9 @@ async function processBlock(
   );
   let hasErrors = false;
   for (const transaction of blockWithTransactions.transactions) {
+    if (txHints && !txHints.includes(transaction.hash)) {
+      continue;
+    }
     const receipt = await provider.getTransactionReceipt(transaction.hash);
     if (receipt) {
       const {

@@ -21,6 +21,20 @@ yarn build
 yarn ts-node ./actions/test/run_local.ts
 ```
 
+### Watch tower state
+
+As the Tenderly watch tower stores data in an abstracted manner, and there have been cases witnessed in production where the storage
+has reported odd errors, it is useful to be able to rebuild the state of what _should_ be in the watch tower for quality assurance /
+resilience purposes.
+
+To run the state rebuilder locally, use the previous command in [Local testing](#Local-testing) and set the environment variables:
+
+- `BLOCK_NUMBER`: The block number to start from (defaults to `0`)
+- `PAGE_SIZE`: The page size for `eth_getLogs` (defaults to `5000` to support Infura)
+- `CONTRACT_ADDRESS`: The address of the `ComposableCoW` contract.
+
+Other environment variables such as the RPC node URL and notifications MUST be set as well.
+
 ### Deployment
 
 If running your own watch tower, or deploying for production:
