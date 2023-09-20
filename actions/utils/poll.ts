@@ -7,7 +7,7 @@ import {
 } from "@cowprotocol/cow-sdk";
 
 // Watch-tower will index every block, so we will by default the processing block and not the latest.
-const POLL_FROM_LATEST_BLOCK = true;
+const POLL_FROM_LATEST_BLOCK = false;
 
 const ordersFactory = new ConditionalOrderFactory(
   DEFAULT_CONDITIONAL_ORDER_REGISTRY
