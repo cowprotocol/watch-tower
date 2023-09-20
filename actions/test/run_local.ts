@@ -190,7 +190,6 @@ async function processBlock(
       };
 
       // run action
-      console.log(`[run_local] Run "addContract" action for TX ${hash}`);
       const result = await testRuntime
         .execute(addContract, testTransactionEvent)
         .then(() => true)

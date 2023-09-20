@@ -61,17 +61,23 @@ const _addContract: ActionFn = async (context: Context, event: Event) => {
     );
     if (added) {
       numContractsAdded++;
+    } else {
+      console.error(
+        `[addContract] Failed to register Smart Order from tx ${tx} on block ${transactionEvent.blockNumber}. Error: ${error}`
+      );
     }
     hasErrors ||= error;
   }
 
-  console.log(`[addContract] Added ${numContractsAdded} contracts`);
-  hasErrors ||= !(await writeRegistry());
-  // Throw execution error if there was at least one error
-  if (hasErrors) {
-    throw Error(
-      "[addContract] Error adding conditional order. Event: " + event
-    );
+  if (numContractsAdded > 0) {
+    console.log(`[addContract] Added ${numContractsAdded} contracts`);
+    hasErrors ||= !(await writeRegistry());
+    // Throw execution error if there was at least one error
+    if (hasErrors) {
+      throw Error(
+        "[addContract] Error adding conditional order. Event: " + event
+      );
+    }
   }
 };
 
@@ -138,7 +144,7 @@ export async function _registerNewOrder(
     }
   } catch (error) {
     console.error(
-      "[addContract] Error handling ConditionalOrderCreated/MerkleRootSet event" +
+      `[addContract] Error handling ConditionalOrderCreated/MerkleRootSet event for tx: ${tx}` +
         error
     );
     return { error: true, added };
