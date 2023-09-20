@@ -30,6 +30,11 @@ export interface ReplayPlan {
   [key: number]: Set<string>;
 }
 
+export interface ProcessBlockOverrides {
+  txList?: string[];
+  blockWatchBlockNumber?: number;
+}
+
 /**
  * A merkle proof is a set of parameters:
  * - `merkleRoot`: the merkle root of the conditional order

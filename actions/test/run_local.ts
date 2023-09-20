@@ -8,7 +8,7 @@ import { addContract } from "../addContract";
 import { ethers } from "ethers";
 import assert = require("assert");
 import { toChainId, getProvider } from "../utils";
-import { ReplayPlan, getOrdersStorageKey } from "../model";
+import { ProcessBlockOverrides, ReplayPlan, getOrdersStorageKey } from "../model";
 import { exit } from "process";
 import { SupportedChainId } from "@cowprotocol/cow-sdk";
 import { ComposableCoW__factory } from "../types/factories/ComposableCoW__factory";
@@ -122,13 +122,21 @@ const main = async () => {
     // 5. Replay the blocks by iterating over the replayPlan
     for (const [blockNumber, txHints] of Object.entries(replayPlan)) {
       console.log(`[run_rebuild] Processing block ${blockNumber}`);
-      await processBlock(provider, Number(blockNumber), chainId, testRuntime, Array.from(txHints)).catch(
+      const overrides: ProcessBlockOverrides = {
+        blockWatchBlockNumber: currentBlockNumber,
+        txList: Array.from(txHints)
+      }
+      await processBlock(provider, Number(blockNumber), chainId, testRuntime, overrides).catch(
         () => {
           exit(100);
         }
       );
       console.log(`[run_rebuild] Block ${blockNumber} has been processed.`);
     }
+    // 6. Print the storage
+    testRuntime.context.storage.getJson(getOrdersStorageKey(chainId.toString())).then((storage) => {
+      console.log(`[run_rebuild] Storage: ${JSON.stringify(storage)}`);
+    })
   }
 };
 
@@ -137,7 +145,7 @@ async function processBlock(
   blockNumber: number,
   chainId: number,
   testRuntime: TestRuntime,
-  txHints?: string[]
+  overrides?: ProcessBlockOverrides
 ) {
   const block = await provider.getBlock(blockNumber);
 
@@ -147,7 +155,7 @@ async function processBlock(
   );
   let hasErrors = false;
   for (const transaction of blockWithTransactions.transactions) {
-    if (txHints && !txHints.includes(transaction.hash)) {
+    if (overrides?.txList && !overrides.txList.includes(transaction.hash)) {
       continue;
     }
     const receipt = await provider.getTransactionReceipt(transaction.hash);
@@ -204,7 +212,7 @@ async function processBlock(
 
   // Block watcher for creating new orders
   const testBlockEvent = new TestBlockEvent();
-  testBlockEvent.blockNumber = blockNumber;
+  testBlockEvent.blockNumber = overrides?.blockWatchBlockNumber ?? blockNumber;
   testBlockEvent.blockDifficulty = block.difficulty?.toString();
   testBlockEvent.blockHash = block.hash;
   testBlockEvent.network = chainId.toString();
