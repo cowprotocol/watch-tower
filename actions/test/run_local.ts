@@ -8,7 +8,11 @@ import { addContract } from "../addContract";
 import { ethers } from "ethers";
 import assert = require("assert");
 import { toChainId, getProvider } from "../utils";
-import { ProcessBlockOverrides, ReplayPlan, getOrdersStorageKey } from "../model";
+import {
+  ProcessBlockOverrides,
+  ReplayPlan,
+  getOrdersStorageKey,
+} from "../model";
 import { exit } from "process";
 import { SupportedChainId } from "@cowprotocol/cow-sdk";
 import { ComposableCoW__factory } from "../types/factories/ComposableCoW__factory";
@@ -30,9 +34,27 @@ const main = async () => {
   const provider = await getProvider(testRuntime.context, chainId);
 
   // Run one of the 3 Execution modes (single block, watch mode, or rebuild mode)
-  const blockNumberEnv = process.env.BLOCK_NUMBER;
   const contractAddressEnv = process.env.CONTRACT_ADDRESS;
-  if (blockNumberEnv && !contractAddressEnv) {
+
+  // Run one of the 3 Execution modes:
+  //  - Single tx: Process just one tx
+  //  - Single block: Process just one block
+  //  - Watch mode: Watch for new blocks, and process them
+  //  - Rebuild state mode
+  const txEnv = process.env.TX;
+  const blockNumberEnv = process.env.BLOCK_NUMBER;
+  if (txEnv) {
+    // Execute once, for a specific tx
+    console.log(
+      `[run_local] Processing ONCE for a specific transaction: ${txEnv}...`
+    );
+
+    await processTx(provider, txEnv, chainId, testRuntime).catch(() => {
+      exit(101);
+    });
+
+    console.log(`[run_local] Transaction ${txEnv} has been processed.`);
+  } else if (blockNumberEnv && !contractAddressEnv) {
     // Execute once, for a specific block
     const isLatest = blockNumberEnv === "latest";
     const blockNumber = isLatest
@@ -50,7 +72,7 @@ const main = async () => {
       }
     );
     console.log(`[run_local] Block ${blockNumber} has been processed.`);
-  } else if (!blockNumberEnv && !contractAddressEnv){
+  } else if (!blockNumberEnv && !contractAddressEnv) {
     // Watch for new blocks
     console.log(`[run_local] Subscribe to new blocks for network ${network}`);
     provider.on("block", async (blockNumber: number) => {
@@ -63,17 +85,28 @@ const main = async () => {
   } else if (contractAddressEnv) {
     // If no blockNumberEnv is provided, then we rebuild the state from the default deployment block
     if (!blockNumberEnv) {
-      console.log(`[run_rebuild] No block number provided, using default deployment block`);
+      console.log(
+        `[run_rebuild] No block number provided, using default deployment block`
+      );
     } else {
       assert(!isNaN(Number(blockNumberEnv)), "blockNumber must be a number");
     }
-    let fromBlock = blockNumberEnv ? Number(blockNumberEnv) : DEFAULT_DEPLOYMENT_BLOCK;
+    let fromBlock = blockNumberEnv
+      ? Number(blockNumberEnv)
+      : DEFAULT_DEPLOYMENT_BLOCK;
 
     // Rebuild the state
-    console.log(`[run_rebuild] Rebuild the state of the conditional orders from the historical events.`);
+    console.log(
+      `[run_rebuild] Rebuild the state of the conditional orders from the historical events.`
+    );
     const contractAddress = process.env.CONTRACT_ADDRESS;
-    assert(contractAddress && ethers.utils.isAddress(contractAddress), "contract address is required");
-    const pageSize = process.env.PAGE_SIZE ? parseInt(process.env.PAGE_SIZE) : DEFAULT_PAGE_SIZE;
+    assert(
+      contractAddress && ethers.utils.isAddress(contractAddress),
+      "contract address is required"
+    );
+    const pageSize = process.env.PAGE_SIZE
+      ? parseInt(process.env.PAGE_SIZE)
+      : DEFAULT_PAGE_SIZE;
 
     // 1. Record the current block number - useful with paging
     let currentBlockNumber = await provider.getBlockNumber();
@@ -81,24 +114,28 @@ const main = async () => {
 
     // 2. Connect to the contract instance
     const contract = ComposableCoW__factory.connect(contractAddress, provider);
-    
+
     // 3. Define the filter.
     const filter = contract.filters.ConditionalOrderCreated();
 
     // 4. Get the historical events
-    const replayPlan: ReplayPlan = {}
-    let toBlock: 'latest' | number = 0;
+    const replayPlan: ReplayPlan = {};
+    let toBlock: "latest" | number = 0;
     do {
-      toBlock = !pageSize ? 'latest' : fromBlock + (pageSize - 1);
-      if (!isNaN(toBlock) && toBlock > currentBlockNumber) {
-          // refresh the current block number
-          currentBlockNumber = await provider.getBlockNumber();
-          toBlock = (toBlock > currentBlockNumber) ? currentBlockNumber : toBlock;
+      toBlock = !pageSize ? "latest" : fromBlock + (pageSize - 1);
+      if (typeof toBlock === "number" && toBlock > currentBlockNumber) {
+        // refresh the current block number
+        currentBlockNumber = await provider.getBlockNumber();
+        toBlock = toBlock > currentBlockNumber ? currentBlockNumber : toBlock;
 
-          console.log(`[run_rebuild] Reaching tip of chain, current block number: ${currentBlockNumber}`);
+        console.log(
+          `[run_rebuild] Reaching tip of chain, current block number: ${currentBlockNumber}`
+        );
       }
 
-      console.log(`[run_rebuild] Processing events from block ${fromBlock} to block ${toBlock}`);
+      console.log(
+        `[run_rebuild] Processing events from block ${fromBlock} to block ${toBlock}`
+      );
 
       const events = await contract.queryFilter(filter, fromBlock, toBlock);
 
@@ -114,29 +151,37 @@ const main = async () => {
       }
 
       // only possible string value for toBlock is 'latest'
-      if (typeof toBlock === 'number') {
-          fromBlock = toBlock + 1;
+      if (typeof toBlock === "number") {
+        fromBlock = toBlock + 1;
       }
-    } while (toBlock !== 'latest' && toBlock !== currentBlockNumber);
+    } while (toBlock !== "latest" && toBlock !== currentBlockNumber);
 
     // 6. Replay the blocks by iterating over the replayPlan
     for (const [blockNumber, txHints] of Object.entries(replayPlan)) {
       console.log(`[run_rebuild] Processing block ${blockNumber}`);
       const overrides: ProcessBlockOverrides = {
         blockWatchBlockNumber: currentBlockNumber,
-        txList: Array.from(txHints)
+        txList: Array.from(txHints),
+      };
+      try {
+        await processBlock(
+          provider,
+          Number(blockNumber),
+          chainId,
+          testRuntime,
+          overrides
+        );
+      } catch {
+        exit(100);
       }
-     try {
-       await processBlock(provider, Number(blockNumber), chainId, testRuntime, overrides)
-     } catch {
-         exit(100);
-     }
       console.log(`[run_rebuild] Block ${blockNumber} has been processed.`);
     }
     // 7. Print the storage
-    testRuntime.context.storage.getJson(getOrdersStorageKey(chainId.toString())).then((storage) => {
-      console.log(`[run_rebuild] Storage: ${JSON.stringify(storage)}`);
-    })
+    testRuntime.context.storage
+      .getJson(getOrdersStorageKey(chainId.toString()))
+      .then((storage) => {
+        console.log(`[run_rebuild] Storage: ${JSON.stringify(storage)}`);
+      });
   }
 };
 
@@ -155,63 +200,133 @@ async function processBlock(
   );
   let hasErrors = false;
   for (const transaction of blockWithTransactions.transactions) {
-    if (overrides?.txList && !overrides.txList.includes(transaction.hash)) {
-      continue;
-    }
-    const receipt = await provider.getTransactionReceipt(transaction.hash);
-    if (receipt) {
-      const {
-        hash,
-        from,
-        value,
-        nonce,
-        gasLimit,
-        maxPriorityFeePerGas,
-        maxFeePerGas,
-      } = transaction;
+    const shouldProcessTx =
+      overrides?.txList?.includes(transaction.hash) ?? true;
 
-      const testTransactionEvent: TestTransactionEvent = {
-        blockHash: block.hash,
-        blockNumber: block.number,
-        from,
-        hash,
-        network: chainId.toString(),
-        logs: receipt.logs,
-        input: "",
-        value: value.toString(),
-        nonce: nonce.toString(),
-        gas: gasLimit.toString(),
-        gasUsed: receipt.gasUsed.toString(),
-        cumulativeGasUsed: receipt.cumulativeGasUsed.toString(),
-        gasPrice: receipt.effectiveGasPrice.toString(),
-        gasTipCap: maxPriorityFeePerGas ? maxPriorityFeePerGas.toString() : "",
-        gasFeeCap: maxFeePerGas ? maxFeePerGas.toString() : "",
-        transactionHash: transaction.hash,
-      };
-
-      // run action
-      const result = await testRuntime
-        .execute(addContract, testTransactionEvent)
-        .then(() => true)
-        .catch((e) => {
-          hasErrors = true;
-          console.error(
-            `[run_local] Error running "addContract" action for TX:`,
-            e
-          );
-          return false;
-        });
-      console.log(
-        `[run_local] Result of "addContract" action for TX ${hash}: ${_formatResult(
-          result
-        )}`
+    if (shouldProcessTx) {
+      hasErrors ||= await !_processTx(
+        provider,
+        block,
+        chainId,
+        testRuntime,
+        transaction
       );
     }
   }
 
+  const pollingBlock = overrides?.blockWatchBlockNumber
+    ? await provider.getBlock(blockNumber)
+    : block;
+
+  hasErrors ||= !(await _pollAndPost({
+    block: pollingBlock,
+    chainId,
+    testRuntime,
+  }));
+
+  if (hasErrors) {
+    throw new Error("[run_local] Errors found in processing block");
+  }
+}
+
+async function processTx(
+  provider: ethers.providers.Provider,
+  tx: string,
+  chainId: number,
+  testRuntime: TestRuntime
+) {
+  // Execute once, for a specific tx
+  console.log(
+    `[run_local] Processing ONCE for a specific transaction: ${tx}...`
+  );
+  const transaction = await provider.getTransaction(tx);
+  if (!transaction.blockNumber) {
+    throw new Error(`The transaction ${tx} is not mined yet (no blockNumber)`);
+  }
+  const block = await provider.getBlock(transaction.blockNumber);
+  if (!transaction) {
+    throw new Error(`[run_local] Transaction ${tx} not found`);
+  }
+
+  await _processTx(provider, block, chainId, testRuntime, transaction);
+  await _pollAndPost({ block, chainId, testRuntime });
+}
+
+async function _processTx(
+  provider: ethers.providers.Provider,
+  block: ethers.providers.Block,
+  chainId: number,
+  testRuntime: TestRuntime,
+  transaction: ethers.providers.TransactionResponse
+): Promise<boolean> {
+  const receipt = await provider.getTransactionReceipt(transaction.hash);
+  if (receipt) {
+    const {
+      hash,
+      from,
+      value,
+      nonce,
+      gasLimit,
+      maxPriorityFeePerGas,
+      maxFeePerGas,
+    } = transaction;
+
+    const testTransactionEvent: TestTransactionEvent = {
+      blockHash: block.hash,
+      blockNumber: block.number,
+      from,
+      hash,
+      network: chainId.toString(),
+      logs: receipt.logs,
+      input: "",
+      value: value.toString(),
+      nonce: nonce.toString(),
+      gas: gasLimit.toString(),
+      gasUsed: receipt.gasUsed.toString(),
+      cumulativeGasUsed: receipt.cumulativeGasUsed.toString(),
+      gasPrice: receipt.effectiveGasPrice.toString(),
+      gasTipCap: maxPriorityFeePerGas ? maxPriorityFeePerGas.toString() : "",
+      gasFeeCap: maxFeePerGas ? maxFeePerGas.toString() : "",
+      transactionHash: transaction.hash,
+    };
+
+    // run action
+    const result = await testRuntime
+      .execute(addContract, testTransactionEvent)
+      .then(() => true)
+      .catch((e) => {
+        console.error(
+          `[run_local] Error running "addContract" action for TX:`,
+          e
+        );
+        return false;
+      });
+    console.log(
+      `[run_local] Result of "addContract" action for TX ${hash}: ${_formatResult(
+        result
+      )}`
+    );
+
+    return result;
+  }
+
+  return true;
+}
+
+async function _pollAndPost({
+  block,
+  chainId,
+  testRuntime,
+}: {
+  block: ethers.providers.Block;
+  chainId: number;
+  testRuntime: TestRuntime;
+}) {
+  const blockNumber = block.number;
+
   // Block watcher for creating new orders
   const testBlockEvent = new TestBlockEvent();
-  testBlockEvent.blockNumber = overrides?.blockWatchBlockNumber ?? blockNumber;
+  testBlockEvent.blockNumber = blockNumber;
   testBlockEvent.blockDifficulty = block.difficulty?.toString();
   testBlockEvent.blockHash = block.hash;
   testBlockEvent.network = chainId.toString();
@@ -221,8 +336,7 @@ async function processBlock(
   const result = await testRuntime
     .execute(checkForAndPlaceOrder, testBlockEvent)
     .then(() => true)
-    .catch((e) => {
-      hasErrors = true;
+    .catch(() => {
       console.log(`[run_local] Error running "checkForAndPlaceOrder" action`);
       return false;
     });
@@ -232,9 +346,7 @@ async function processBlock(
     )}`
   );
 
-  if (hasErrors) {
-    throw new Error("[run_local] Errors found in processing block");
-  }
+  return result;
 }
 
 async function _getRunTime(chainId: SupportedChainId): Promise<TestRuntime> {
