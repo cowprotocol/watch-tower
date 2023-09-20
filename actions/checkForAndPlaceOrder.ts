@@ -161,7 +161,18 @@ const _checkForAndPlaceOrder: ActionFn = async (
 
       // Don't try again the same order, in case thats the poll result
       if (pollResult.result === PollResultCode.DONT_TRY_AGAIN) {
-        ordersPendingDelete.push(conditionalOrder);
+        // Check if the TX exists. This avoids one race condition where the order has been registered but our RPC don't see it yet.
+        // It can happen if:
+        //    - Tenderly RPC node is ahead of our RPC node
+        //    - There's a reorg between the registration and the polling
+        const existTransaction = await chainContext.provider
+          .getTransaction(conditionalOrder.tx)
+          .then(() => true)
+          .catch(() => false);
+
+        if (existTransaction) {
+          ordersPendingDelete.push(conditionalOrder);
+        }
       }
 
       // Save the latest poll result
