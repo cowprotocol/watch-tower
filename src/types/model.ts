@@ -1,13 +1,14 @@
 import Slack = require("node-slack");
 
 import { Transaction as SentryTransaction } from "@sentry/node";
-import { BytesLike } from "ethers";
+import { BytesLike, ethers } from "ethers";
 
+import { apiUrl } from "../utils";
 import type {
   ConditionalOrderCreatedEvent,
   IConditionalOrder,
 } from "./generated/ComposableCoW";
-import { PollResult } from "@cowprotocol/cow-sdk";
+import { PollResult, SupportedChainId } from "@cowprotocol/cow-sdk";
 import DBService from "../utils/db";
 
 // Standardise the storage key
@@ -229,6 +230,31 @@ export class Registry {
 
   public stringifyOrders(): string {
     return JSON.stringify(this.ownerOrders, replacer);
+  }
+}
+
+export class ChainContext {
+  provider: ethers.providers.Provider;
+  apiUrl: string;
+  chainId: SupportedChainId;
+
+  constructor(
+    provider: ethers.providers.Provider,
+    apiUrl: string,
+    chainId: SupportedChainId
+  ) {
+    this.provider = provider;
+    this.apiUrl = apiUrl;
+    this.chainId = chainId;
+  }
+
+  public static async create(
+    storage: DBService,
+    url: string
+  ): Promise<ChainContext> {
+    const provider = new ethers.providers.JsonRpcProvider(url);
+    const chainId = (await provider.getNetwork()).chainId;
+    return new ChainContext(provider, apiUrl(chainId), chainId);
   }
 }
 
