@@ -1,6 +1,4 @@
-import { Context } from "@tenderly/actions";
-import assert = require("assert");
-import { OrderStatus } from "../model";
+import { OrderStatus } from "../types/model";
 import {
   ALL_SUPPORTED_CHAIN_IDS,
   SupportedChainId,
@@ -18,17 +16,7 @@ export function toChainId(network: string): SupportedChainId {
   return chainId;
 }
 
-export async function getSecret(
-  key: string,
-  context: Context
-): Promise<string> {
-  const value = await context.secrets.get(key);
-  assert(value, `${key} secret is required`);
-
-  return value;
-}
-
-// TODO: If we use the Ordebook  API a lot of code will be deleted. Out of the scope of this PR (a lot has to be cleaned)
+// TODO: If we use the Orderbook API a lot of code will be deleted. Out of the scope of this PR (a lot has to be cleaned)
 export function apiUrl(chainId: SupportedChainId | LocalChainId): string {
   switch (chainId) {
     case SupportedChainId.MAINNET:

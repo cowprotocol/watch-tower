@@ -1,6 +1,6 @@
 import Slack = require("node-slack");
-import { Context } from "@tenderly/actions";
 import { backOff } from "exponential-backoff";
+import DBService from "./db";
 
 import {
   init as sentryInit,
@@ -9,9 +9,10 @@ import {
 } from "@sentry/node";
 import { CaptureConsole as CaptureConsoleIntegration } from "@sentry/integrations";
 
-import { ExecutionContext, Registry } from "../model";
+import { ExecutionContext, Registry } from "../types/model";
 import { SupportedChainId } from "@cowprotocol/cow-sdk";
 import { initLogging } from "./logging";
+import { SingularRunOptions } from "../types";
 
 const NOTIFICATION_WAIT_PERIOD = 1000 * 60 * 60 * 2; // 2h - Don't send more than one notification every 2h
 
@@ -20,22 +21,26 @@ let executionContext: ExecutionContext | undefined;
 export async function initContext(
   transactionName: string,
   chainId: SupportedChainId,
-  context: Context
+  options: SingularRunOptions
 ): Promise<ExecutionContext> {
   // Init Logging
-  await _initLogging(transactionName, chainId, context);
+  _initLogging(transactionName, chainId, options);
+
+  // Init storage
+  const storage = DBService.getInstance();
 
   // Init registry
-  const registry = await Registry.load(context, chainId.toString());
-
-  // Get notifications config (enabled by default)
-  const notificationsEnabled = await _getNotificationsEnabled(context);
+  const registry = await Registry.load(
+    storage,
+    chainId.toString(),
+    Number(options.deploymentBlock)
+  );
 
   // Init slack
-  const slack = await _getSlack(notificationsEnabled, context);
+  const slack = _getSlack(options);
 
   // Init Sentry
-  const sentryTransaction = await _getSentry(transactionName, chainId, context);
+  const sentryTransaction = _getSentry(transactionName, chainId, options);
   if (!sentryTransaction) {
     console.warn("SENTRY_DSN secret is not set. Sentry will be disabled");
   }
@@ -44,54 +49,42 @@ export async function initContext(
     registry,
     slack,
     sentryTransaction,
-    notificationsEnabled,
-    context,
+    notificationsEnabled: !options.silent,
+    storage,
   };
 
   return executionContext;
 }
 
-async function _getNotificationsEnabled(context: Context): Promise<boolean> {
-  // Get notifications config (enabled by default)
-  return context.secrets
-    .get("NOTIFICATIONS_ENABLED")
-    .then((value) => (value ? value !== "false" : true))
-    .catch(() => true);
-}
-
-async function _getSlack(
-  notificationsEnabled: boolean,
-  context: Context
-): Promise<Slack | undefined> {
+function _getSlack(options: SingularRunOptions): Slack | undefined {
   if (executionContext) {
     return executionContext?.slack;
   }
 
   // Init slack
-  const webhookUrl = await context.secrets
-    .get("SLACK_WEBHOOK_URL")
-    .catch(() => "");
-  if (!notificationsEnabled) {
+  const webhookUrl = options.slackWebhook || "";
+
+  if (options.silent && !webhookUrl) {
     return undefined;
   }
 
   if (!webhookUrl) {
     throw new Error(
-      "SLACK_WEBHOOK_URL secret is required when NOTIFICATIONS_ENABLED is true"
+      "SLACK_WEBHOOK_URL must be set if not running in silent mode"
     );
   }
 
   return new Slack(webhookUrl);
 }
 
-async function _getSentry(
+function _getSentry(
   transactionName: string,
   chainId: SupportedChainId,
-  context: Context
-): Promise<SentryTransaction | undefined> {
+  options: SingularRunOptions
+): SentryTransaction | undefined {
   // Init Sentry
   if (!executionContext) {
-    const sentryDsn = await context.secrets.get("SENTRY_DSN").catch(() => "");
+    const sentryDsn = options.sentryDsn || "";
     sentryInit({
       dsn: sentryDsn,
       debug: false,
@@ -237,12 +230,12 @@ function handlePromiseErrors<T>(
 /**
  * Init Logging with Loggly
  */
-async function _initLogging(
+function _initLogging(
   transactionName: string,
   chainId: SupportedChainId,
-  context: Context
+  options: SingularRunOptions
 ) {
-  const logglyToken = await context.secrets.get("LOGGLY_TOKEN").catch(() => "");
+  const { logglyToken } = options;
   if (logglyToken) {
     initLogging(logglyToken, [transactionName, `chain_${chainId}`]);
   } else {

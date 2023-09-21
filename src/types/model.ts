@@ -1,21 +1,23 @@
 import Slack = require("node-slack");
 
-import { Context, Storage } from "@tenderly/actions";
 import { Transaction as SentryTransaction } from "@sentry/node";
 import { BytesLike, ethers } from "ethers";
 
-import { apiUrl, getProvider } from "./utils";
-import type { IConditionalOrder } from "./types/ComposableCoW";
+import { apiUrl } from "../utils";
+import type { IConditionalOrder } from "./generated/ComposableCoW";
 import { PollResult, SupportedChainId } from "@cowprotocol/cow-sdk";
+import DBService from "../utils/db";
 
 // Standardise the storage key
 const LAST_NOTIFIED_ERROR_STORAGE_KEY = "LAST_NOTIFIED_ERROR";
+const LAST_PROCESSED_BLOCK_STORAGE_KEY = "LAST_PROCESSED_BLOCK";
+const CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY = "CONDITIONAL_ORDER_REGISTRY";
 const CONDITIONAL_ORDER_REGISTRY_VERSION_KEY =
   "CONDITIONAL_ORDER_REGISTRY_VERSION";
 const CONDITIONAL_ORDER_REGISTRY_VERSION = 1;
 
-export const getOrdersStorageKey = (network: string): string => {
-  return `CONDITIONAL_ORDER_REGISTRY_${network}`;
+export const getNetworkStorageKey = (key: string, network: string): string => {
+  return `${key}_${network}`;
 };
 
 export interface ExecutionContext {
@@ -23,7 +25,7 @@ export interface ExecutionContext {
   notificationsEnabled: boolean;
   slack?: Slack;
   sentryTransaction?: SentryTransaction;
-  context: Context;
+  storage: DBService;
 }
 
 export interface ReplayPlan {
@@ -95,9 +97,10 @@ export type ConditionalOrder = {
 export class Registry {
   version = CONDITIONAL_ORDER_REGISTRY_VERSION;
   ownerOrders: Map<Owner, Set<ConditionalOrder>>;
-  storage: Storage;
+  storage: DBService;
   network: string;
   lastNotifiedError: Date | null;
+  lastProcessedBlock: number | null;
 
   /**
    * Instantiates a registry.
@@ -107,14 +110,16 @@ export class Registry {
    */
   constructor(
     ownerOrders: Map<Owner, Set<ConditionalOrder>>,
-    storage: Storage,
+    storage: DBService,
     network: string,
-    lastNotifiedError: Date | null
+    lastNotifiedError: Date | null,
+    lastProcessedBlock: number | null
   ) {
     this.ownerOrders = ownerOrders;
     this.storage = storage;
     this.network = network;
     this.lastNotifiedError = lastNotifiedError;
+    this.lastProcessedBlock = lastProcessedBlock;
   }
 
   /**
@@ -124,18 +129,37 @@ export class Registry {
    * @returns a registry instance
    */
   public static async load(
-    context: Context,
-    network: string
+    storage: DBService,
+    network: string,
+    genesisBlockNumber: number
   ): Promise<Registry> {
-    const str = await context.storage.getStr(getOrdersStorageKey(network));
-    const lastNotifiedError = await context.storage
-      .getStr(LAST_NOTIFIED_ERROR_STORAGE_KEY)
-      .then((isoDate) => (isoDate ? new Date(isoDate) : null))
+    const str = await storage
+      .getDB()
+      .get(
+        getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY, network)
+      );
+    const lastNotifiedError = await storage
+      .getDB()
+      .get(getNetworkStorageKey(LAST_NOTIFIED_ERROR_STORAGE_KEY, network))
+      .then((isoDate: string | number | Date) =>
+        isoDate ? new Date(isoDate) : null
+      )
+      .catch(() => null);
+
+    const lastProcessedBlock = await storage
+      .getDB()
+      .get(getNetworkStorageKey(LAST_PROCESSED_BLOCK_STORAGE_KEY, network))
+      .then((blockNumber: string | number) =>
+        blockNumber ? Number(blockNumber) : genesisBlockNumber
+      )
       .catch(() => null);
 
     // Get the persisted registry version
-    const version = await context.storage
-      .getStr(CONDITIONAL_ORDER_REGISTRY_VERSION_KEY)
+    const version = await storage
+      .getDB()
+      .get(
+        getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_VERSION_KEY, network)
+      )
       .then((versionString) => Number(versionString))
       .catch(() => undefined);
 
@@ -148,9 +172,10 @@ export class Registry {
     // Return registry (on its latest version)
     return new Registry(
       ownerOrders,
-      context.storage,
+      storage,
       network,
-      lastNotifiedError
+      lastNotifiedError,
+      lastProcessedBlock
     );
   }
 
@@ -162,38 +187,54 @@ export class Registry {
    * Write the registry to storage.
    */
   public async write(): Promise<void> {
-    await Promise.all([
-      this.writeOrders(),
-      this.writeConditionalOrderRegistryVersion(),
-      this.writeLastNotifiedError(),
-    ]);
-  }
+    const batch = this.storage
+      .getDB()
+      .batch()
+      .put(
+        getNetworkStorageKey(
+          CONDITIONAL_ORDER_REGISTRY_VERSION_KEY,
+          this.network
+        ),
+        this.version.toString()
+      )
+      .put(
+        getNetworkStorageKey(
+          CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY,
+          this.network
+        ),
+        this.stringifyOrders()
+      );
 
-  private async writeOrders(): Promise<void> {
-    await this.storage.putStr(
-      getOrdersStorageKey(this.network),
-      this.stringifyOrders()
-    );
+    // Write or delete last notified error
+    if (this.lastNotifiedError !== null) {
+      batch.put(
+        getNetworkStorageKey(LAST_NOTIFIED_ERROR_STORAGE_KEY, this.network),
+        this.lastNotifiedError.toISOString()
+      );
+    } else {
+      batch.del(
+        getNetworkStorageKey(LAST_NOTIFIED_ERROR_STORAGE_KEY, this.network)
+      );
+    }
+
+    // Write or delete last processed block
+    if (this.lastProcessedBlock !== null) {
+      batch.put(
+        getNetworkStorageKey(LAST_PROCESSED_BLOCK_STORAGE_KEY, this.network),
+        this.lastProcessedBlock.toString()
+      );
+    } else {
+      batch.del(
+        getNetworkStorageKey(LAST_PROCESSED_BLOCK_STORAGE_KEY, this.network)
+      );
+    }
+
+    // Write all atomically
+    await batch.write();
   }
 
   public stringifyOrders(): string {
     return JSON.stringify(this.ownerOrders, replacer);
-  }
-
-  private async writeConditionalOrderRegistryVersion(): Promise<void> {
-    await this.storage.putStr(
-      CONDITIONAL_ORDER_REGISTRY_VERSION_KEY,
-      this.version.toString()
-    );
-  }
-
-  private async writeLastNotifiedError(): Promise<void> {
-    if (this.lastNotifiedError !== null) {
-      await this.storage.putStr(
-        LAST_NOTIFIED_ERROR_STORAGE_KEY,
-        this.lastNotifiedError.toISOString()
-      );
-    }
   }
 }
 
@@ -213,11 +254,11 @@ export class ChainContext {
   }
 
   public static async create(
-    context: Context,
-    chainId: SupportedChainId
+    storage: DBService,
+    url: string
   ): Promise<ChainContext> {
-    const provider = await getProvider(context, chainId);
-    await provider.getNetwork();
+    const provider = new ethers.providers.JsonRpcProvider(url);
+    const chainId = (await provider.getNetwork()).chainId;
     return new ChainContext(provider, apiUrl(chainId), chainId);
   }
 }
