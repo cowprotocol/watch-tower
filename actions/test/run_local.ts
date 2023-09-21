@@ -226,7 +226,7 @@ async function processBlock(
   }));
 
   if (hasErrors) {
-    throw new Error("[run_local] Errors found in processing block");
+    throw new Error(`[run_local] Errors found in processing block: ${block}`);
   }
 }
 
@@ -256,7 +256,7 @@ async function processTx(
   hasErrors ||= !(await _pollAndPost({ block, chainId, testRuntime }));
 
   if (hasErrors) {
-    throw new Error("[run_local] Errors found in processing TX");
+    throw new Error(`[run_local] Errors found in processing TX: ${tx}`);
   }
 }
 
@@ -304,7 +304,7 @@ async function _processTx(
       .then(() => true)
       .catch((e) => {
         console.error(
-          `[run_local] Error running "addContract" action for TX:`,
+          `[run_local] Error running "addContract" action for TX: ${hash}`,
           e
         );
         return false;
