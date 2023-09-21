@@ -4,7 +4,10 @@ import { Transaction as SentryTransaction } from "@sentry/node";
 import { BytesLike, ethers } from "ethers";
 
 import { apiUrl } from "../utils";
-import type { IConditionalOrder } from "./generated/ComposableCoW";
+import type {
+  ConditionalOrderCreatedEvent,
+  IConditionalOrder,
+} from "./generated/ComposableCoW";
 import { PollResult, SupportedChainId } from "@cowprotocol/cow-sdk";
 import DBService from "../utils/db";
 
@@ -28,13 +31,9 @@ export interface ExecutionContext {
   storage: DBService;
 }
 
+// Todo: This should also encompass `MerkleRootSet`
 export interface ReplayPlan {
-  [key: number]: Set<string>;
-}
-
-export interface ProcessBlockOverrides {
-  txList?: string[];
-  blockWatchBlockNumber?: number;
+  [key: number]: Set<ConditionalOrderCreatedEvent>;
 }
 
 /**
@@ -249,10 +248,7 @@ export class ChainContext {
     this.chainId = chainId;
   }
 
-  public static async create(
-    storage: DBService,
-    url: string
-  ): Promise<ChainContext> {
+  public static async create(url: string): Promise<ChainContext> {
     const provider = new ethers.providers.JsonRpcProvider(url);
     const chainId = (await provider.getNetwork()).chainId;
     return new ChainContext(provider, apiUrl(chainId), chainId);
