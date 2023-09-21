@@ -93,8 +93,8 @@ yarn build:actions
 #   - As a result, new Composable Cow orders will be discovered and posted to the OrderBook API
 yarn start:actions
 
-# You can re-process an old block by:
-#   - Add an env BLOCK_NUMBER
-#   - Run actions locally
+# You can re-process an old block by defining the following environment variables:
+#   - Add an env TX: Process only one transaction (takes precedence over BLOCK_NUMBER)
+#   - Add an env BLOCK_NUMBER: Process only one block
 yarn start:actions
 ```

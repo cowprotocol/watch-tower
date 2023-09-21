@@ -8,6 +8,7 @@ actions:
     specs:
       register_single_order:
         description: Listens to events that index new single conditional orders
+        execution_type: sequential
         function: addContract:addContract
         trigger:
           transaction:
@@ -27,6 +28,7 @@ actions:
 
       register_merkle_root:
         description: Listens to events that index a merkle root of conditional orders
+        execution_type: sequential
         function: addContract:addContract
         trigger:
           transaction:
@@ -46,6 +48,7 @@ actions:
 
       watch_settlements:
         description: Watch for settled trades and update the state
+        execution_type: sequential
         function: checkForSettlement:checkForSettlement
         trigger:
           transaction:
@@ -67,6 +70,7 @@ actions:
         description:
           Checks on every block if the registered smart order contract
           wants to trade
+        execution_type: sequential
         function: checkForAndPlaceOrder:checkForAndPlaceOrder
         trigger:
           block:
