@@ -1,4 +1,3 @@
-import { ActionFn, BlockEvent, Context, Event } from "@tenderly/actions";
 import {
   Order,
   OrderBalance,
@@ -16,7 +15,7 @@ import {
   ComposableCoW__factory,
   Multicall3,
   Multicall3__factory,
-} from "./types";
+} from "./types/generated";
 import {
   LowLevelError,
   ORDER_NOT_VALID_SELECTOR,
@@ -24,12 +23,10 @@ import {
   SINGLE_ORDER_NOT_AUTHED_SELECTOR,
   formatStatus,
   handleExecutionError,
-  initContext,
   parseCustomError,
-  toChainId,
   writeRegistry,
 } from "./utils";
-import { ChainContext, ConditionalOrder, OrderStatus } from "./model";
+import { ChainContext, ConditionalOrder, OrderStatus } from "./types/model";
 import { pollConditionalOrder } from "./utils/poll";
 import {
   PollParams,
@@ -41,6 +38,7 @@ import {
   PollResultUnexpectedError,
   SupportedChainId,
 } from "@cowprotocol/cow-sdk";
+import { ChainWatcher } from "./modes";
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
@@ -60,30 +58,35 @@ const ORDER_BOOK_API_HANDLED_ERRORS = [
  * @param context tenderly context
  * @param event block event
  */
-export const checkForAndPlaceOrder: ActionFn = async (
-  context: Context,
-  event: Event
+export const checkForAndPlaceOrder = async (
+  context: ChainWatcher,
+  block: ethers.providers.Block,
+  blockNumberOverride?: number,
+  blockTimestampOverride?: number
 ) => {
-  return _checkForAndPlaceOrder(context, event).catch(handleExecutionError);
+  return _checkForAndPlaceOrder(
+    context,
+    block,
+    blockNumberOverride,
+    blockTimestampOverride
+  ).catch(handleExecutionError);
 };
 
 /**
  * Asyncronous version of checkForAndPlaceOrder. It will process all the orders, and will throw an error at the end if there was at least one error
  */
-const _checkForAndPlaceOrder: ActionFn = async (
-  context: Context,
-  event: Event
+const _checkForAndPlaceOrder = async (
+  context: ChainWatcher,
+  block: ethers.providers.Block,
+  blockNumberOverride?: number,
+  blockTimestampOverride?: number
 ) => {
-  const blockEvent = event as BlockEvent;
-  const { network, blockNumber } = blockEvent;
-  const chainId = toChainId(network);
-  const chainContext = await ChainContext.create(context, chainId);
-  const { registry } = await initContext(
-    "checkForAndPlaceOrder",
-    chainId,
-    context
-  );
+  const { chainContext, registry } = context;
+  const { chainId } = chainContext;
   const { ownerOrders } = registry;
+
+  const blockNumber = blockNumberOverride || block.number;
+  const blockTimestamp = blockTimestampOverride || block.timestamp;
 
   let hasErrors = false;
   let ownerCounter = 0;
@@ -92,10 +95,6 @@ const _checkForAndPlaceOrder: ActionFn = async (
   if (ownerOrders.size > 0) {
     console.log(`[checkForAndPlaceOrder] Processing Block ${blockNumber}`);
   }
-
-  const { timestamp: blockTimestamp } = await chainContext.provider.getBlock(
-    blockNumber
-  );
 
   console.log("[checkForAndPlaceOrder] Number of orders: ", registry.numOrders);
 
