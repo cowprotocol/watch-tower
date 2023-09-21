@@ -17,6 +17,9 @@ import { exit } from "process";
 import { SupportedChainId } from "@cowprotocol/cow-sdk";
 import { ComposableCoW__factory } from "../types/factories/ComposableCoW__factory";
 
+const ERROR_CODE_PROCESS_BLOCK = 100;
+const ERROR_CODE_PROCESS_TX = 101;
+
 require("dotenv").config();
 
 const DEFAULT_PAGE_SIZE = 5000;
@@ -49,9 +52,9 @@ const main = async () => {
       `[run_local] Processing ONCE for a specific transaction: ${txEnv}...`
     );
 
-    await processTx(provider, txEnv, chainId, testRuntime).catch(() => {
-      exit(101);
-    });
+    await processTx(provider, txEnv, chainId, testRuntime).catch(() =>
+      exit(ERROR_CODE_PROCESS_TX)
+    );
 
     console.log(`[run_local] Transaction ${txEnv} has been processed.`);
   } else if (blockNumberEnv && !contractAddressEnv) {
@@ -66,10 +69,8 @@ const main = async () => {
         isLatest ? `latest (${blockNumber})` : blockNumber
       }...`
     );
-    await processBlock(provider, blockNumber, chainId, testRuntime).catch(
-      () => {
-        exit(100);
-      }
+    await processBlock(provider, blockNumber, chainId, testRuntime).catch(() =>
+      exit(ERROR_CODE_PROCESS_BLOCK)
     );
     console.log(`[run_local] Block ${blockNumber} has been processed.`);
   } else if (!blockNumberEnv && !contractAddressEnv) {
