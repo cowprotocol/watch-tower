@@ -215,14 +215,11 @@ async function processBlock(
     }
   }
 
-  const pollingBlock = overrides?.blockWatchBlockNumber
-    ? await provider.getBlock(blockNumber)
-    : block;
-
   hasErrors ||= !(await _pollAndPost({
-    block: pollingBlock,
+    block,
     chainId,
     testRuntime,
+    blockWatchBlockNumber: overrides?.blockWatchBlockNumber,
   }));
 
   if (hasErrors) {
@@ -325,16 +322,18 @@ async function _pollAndPost({
   block,
   chainId,
   testRuntime,
+  blockWatchBlockNumber,
 }: {
   block: ethers.providers.Block;
   chainId: number;
   testRuntime: TestRuntime;
+  blockWatchBlockNumber?: number;
 }) {
   const blockNumber = block.number;
 
   // Block watcher for creating new orders
   const testBlockEvent = new TestBlockEvent();
-  testBlockEvent.blockNumber = blockNumber;
+  testBlockEvent.blockNumber = blockWatchBlockNumber ?? blockNumber;
   testBlockEvent.blockDifficulty = block.difficulty?.toString();
   testBlockEvent.blockHash = block.hash;
   testBlockEvent.network = chainId.toString();
