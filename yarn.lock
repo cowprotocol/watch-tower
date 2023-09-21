@@ -1482,6 +1482,14 @@
   resolved "https://registry.yarnpkg.com/@types/triple-beam/-/triple-beam-1.3.3.tgz#726ae98a5f6418c8f24f9b0f2a9f81a8664876ae"
   integrity sha512-6tOUG+nVHn0cJbVp25JFayS5UE6+xlbcNF9Lo9mU7U0zk3zeUShZied4YEQZjy1JBF043FSkdXw8YkUJuVtB5g==
 
+"@types/winston-loggly-bulk@^3.0.3":
+  version "3.0.3"
+  resolved "https://registry.yarnpkg.com/@types/winston-loggly-bulk/-/winston-loggly-bulk-3.0.3.tgz#f93e15c1c21daf41232046e4c36f458fa133aa7a"
+  integrity sha512-jTYTJvgjdFZD0RKMR9vOM9dLMfE8QMLK0TqUXEyi758KdKUKWVID5Ktx2IDHe7Pxh0WtEcIrFxE+BjhFVorlXg==
+  dependencies:
+    "@types/node" "*"
+    winston "^3.0.0"
+
 "@types/yargs-parser@*":
   version "21.0.0"
   resolved "https://registry.yarnpkg.com/@types/yargs-parser/-/yargs-parser-21.0.0.tgz#0c60e537fa790f5f9472ed2776c2b71ec117351b"
@@ -5283,7 +5291,7 @@ winston-transport@^4.4.0, winston-transport@^4.5.0:
     readable-stream "^3.6.0"
     triple-beam "^1.3.0"
 
-winston@^3.3.3:
+winston@^3.0.0, winston@^3.3.3:
   version "3.10.0"
   resolved "https://registry.yarnpkg.com/winston/-/winston-3.10.0.tgz#d033cb7bd3ced026fed13bf9d92c55b903116803"
   integrity sha512-nT6SIDaE9B7ZRO0u3UvdrimG0HkB7dSTAgInQnNR2SOPJ4bvq5q79+pXLftKmP52lJGW15+H5MCK0nM9D3KB/g==

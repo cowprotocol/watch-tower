@@ -68,7 +68,6 @@ async function _getSlack(
   }
 
   // Init slack
-  let slack;
   const webhookUrl = await context.secrets
     .get("SLACK_WEBHOOK_URL")
     .catch(() => "");
