@@ -108,7 +108,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
     );
     for (const conditionalOrder of conditionalOrders) {
       orderCounter++;
-      const orderRef = `${ownerCounter}.${orderCounter}`;
+      const orderRef = `${ownerCounter}.${orderCounter}@${blockNumber}}`;
       const logPrefix = `[checkForAndPlaceOrder::${orderRef}]`;
       const logOrderDetails = `Order created in TX ${conditionalOrder.tx} with params:`;
 
