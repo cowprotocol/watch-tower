@@ -165,12 +165,12 @@ const _checkForAndPlaceOrder: ActionFn = async (
         // It can happen if:
         //    - Tenderly RPC node is ahead of our RPC node
         //    - There's a reorg between the registration and the polling
-        const existTransaction = await chainContext.provider
+        const transactionExists = await chainContext.provider
           .getTransaction(conditionalOrder.tx)
           .then(() => true)
           .catch(() => false);
 
-        if (existTransaction) {
+        if (transactionExists) {
           ordersPendingDelete.push(conditionalOrder);
         }
       }
