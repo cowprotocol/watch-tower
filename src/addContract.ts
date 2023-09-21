@@ -171,7 +171,7 @@ export const add = async (
       `[register:add] Adding conditional order to already existing owner contract ${owner}`,
       { tx, handler, salt, staticInput }
     );
-    let exists: boolean = false;
+    let exists = false;
     // Iterate over the conditionalOrders to make sure that the params are not already in the registry
     for (const conditionalOrder of conditionalOrders?.values() ?? []) {
       // Check if the params are in the conditionalOrder

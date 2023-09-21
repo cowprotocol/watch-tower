@@ -8,12 +8,15 @@ import { addContract } from "../addContract";
 import { ethers } from "ethers";
 import assert = require("assert");
 import { toChainId, getProvider } from "../utils";
-import { ProcessBlockOverrides, ReplayPlan, getOrdersStorageKey } from "../model";
+import {
+  ProcessBlockOverrides,
+  ReplayPlan,
+  getOrdersStorageKey,
+} from "../model";
 import { exit } from "process";
 import { SupportedChainId } from "@cowprotocol/cow-sdk";
 import { ComposableCoW__factory } from "../types/factories/ComposableCoW__factory";
-
-require("dotenv").config();
+import "dotenv/config";
 
 const DEFAULT_PAGE_SIZE = 5000;
 const DEFAULT_DEPLOYMENT_BLOCK = 0;
@@ -50,7 +53,7 @@ const main = async () => {
       }
     );
     console.log(`[run_local] Block ${blockNumber} has been processed.`);
-  } else if (!blockNumberEnv && !contractAddressEnv){
+  } else if (!blockNumberEnv && !contractAddressEnv) {
     // Watch for new blocks
     console.log(`[run_local] Subscribe to new blocks for network ${network}`);
     provider.on("block", async (blockNumber: number) => {
@@ -63,17 +66,28 @@ const main = async () => {
   } else if (contractAddressEnv) {
     // If no blockNumberEnv is provided, then we rebuild the state from the default deployment block
     if (!blockNumberEnv) {
-      console.log(`[run_rebuild] No block number provided, using default deployment block`);
+      console.log(
+        `[run_rebuild] No block number provided, using default deployment block`
+      );
     } else {
       assert(!isNaN(Number(blockNumberEnv)), "blockNumber must be a number");
     }
-    let fromBlock = blockNumberEnv ? Number(blockNumberEnv) : DEFAULT_DEPLOYMENT_BLOCK;
+    let fromBlock = blockNumberEnv
+      ? Number(blockNumberEnv)
+      : DEFAULT_DEPLOYMENT_BLOCK;
 
     // Rebuild the state
-    console.log(`[run_rebuild] Rebuild the state of the conditional orders from the historical events.`);
+    console.log(
+      `[run_rebuild] Rebuild the state of the conditional orders from the historical events.`
+    );
     const contractAddress = process.env.CONTRACT_ADDRESS;
-    assert(contractAddress && ethers.utils.isAddress(contractAddress), "contract address is required");
-    const pageSize = process.env.PAGE_SIZE ? parseInt(process.env.PAGE_SIZE) : DEFAULT_PAGE_SIZE;
+    assert(
+      contractAddress && ethers.utils.isAddress(contractAddress),
+      "contract address is required"
+    );
+    const pageSize = process.env.PAGE_SIZE
+      ? parseInt(process.env.PAGE_SIZE)
+      : DEFAULT_PAGE_SIZE;
 
     // 1. Record the current block number - useful with paging
     let currentBlockNumber = await provider.getBlockNumber();
@@ -81,24 +95,28 @@ const main = async () => {
 
     // 2. Connect to the contract instance
     const contract = ComposableCoW__factory.connect(contractAddress, provider);
-    
+
     // 3. Define the filter.
     const filter = contract.filters.ConditionalOrderCreated();
 
     // 4. Get the historical events
-    const replayPlan: ReplayPlan = {}
-    let toBlock: 'latest' | number = 0;
+    const replayPlan: ReplayPlan = {};
+    let toBlock: "latest" | number = 0;
     do {
-      toBlock = !pageSize ? 'latest' : fromBlock + (pageSize - 1);
+      toBlock = !pageSize ? "latest" : fromBlock + (pageSize - 1);
       if (!isNaN(toBlock) && toBlock > currentBlockNumber) {
-          // refresh the current block number
-          currentBlockNumber = await provider.getBlockNumber();
-          toBlock = (toBlock > currentBlockNumber) ? currentBlockNumber : toBlock;
+        // refresh the current block number
+        currentBlockNumber = await provider.getBlockNumber();
+        toBlock = toBlock > currentBlockNumber ? currentBlockNumber : toBlock;
 
-          console.log(`[run_rebuild] Reaching tip of chain, current block number: ${currentBlockNumber}`);
+        console.log(
+          `[run_rebuild] Reaching tip of chain, current block number: ${currentBlockNumber}`
+        );
       }
 
-      console.log(`[run_rebuild] Processing events from block ${fromBlock} to block ${toBlock}`);
+      console.log(
+        `[run_rebuild] Processing events from block ${fromBlock} to block ${toBlock}`
+      );
 
       const events = await contract.queryFilter(filter, fromBlock, toBlock);
 
@@ -114,29 +132,37 @@ const main = async () => {
       }
 
       // only possible string value for toBlock is 'latest'
-      if (typeof toBlock === 'number') {
-          fromBlock = toBlock + 1;
+      if (typeof toBlock === "number") {
+        fromBlock = toBlock + 1;
       }
-    } while (toBlock !== 'latest' && toBlock !== currentBlockNumber);
+    } while (toBlock !== "latest" && toBlock !== currentBlockNumber);
 
     // 6. Replay the blocks by iterating over the replayPlan
     for (const [blockNumber, txHints] of Object.entries(replayPlan)) {
       console.log(`[run_rebuild] Processing block ${blockNumber}`);
       const overrides: ProcessBlockOverrides = {
         blockWatchBlockNumber: currentBlockNumber,
-        txList: Array.from(txHints)
+        txList: Array.from(txHints),
+      };
+      try {
+        await processBlock(
+          provider,
+          Number(blockNumber),
+          chainId,
+          testRuntime,
+          overrides
+        );
+      } catch {
+        exit(100);
       }
-     try {
-       await processBlock(provider, Number(blockNumber), chainId, testRuntime, overrides)
-     } catch {
-         exit(100);
-     }
       console.log(`[run_rebuild] Block ${blockNumber} has been processed.`);
     }
     // 7. Print the storage
-    testRuntime.context.storage.getJson(getOrdersStorageKey(chainId.toString())).then((storage) => {
-      console.log(`[run_rebuild] Storage: ${JSON.stringify(storage)}`);
-    })
+    testRuntime.context.storage
+      .getJson(getOrdersStorageKey(chainId.toString()))
+      .then((storage) => {
+        console.log(`[run_rebuild] Storage: ${JSON.stringify(storage)}`);
+      });
   }
 };
 
@@ -222,7 +248,7 @@ async function processBlock(
   const result = await testRuntime
     .execute(checkForAndPlaceOrder, testBlockEvent)
     .then(() => true)
-    .catch((e) => {
+    .catch(() => {
       hasErrors = true;
       console.log(`[run_local] Error running "checkForAndPlaceOrder" action`);
       return false;
@@ -261,7 +287,6 @@ async function _getRunTime(chainId: SupportedChainId): Promise<TestRuntime> {
   // Load storage from env
   const storage = process.env.STORAGE;
   if (storage) {
-    const storageFormatted = JSON.stringify(JSON.parse(storage), null, 2);
     await testRuntime.context.storage.putStr(
       getOrdersStorageKey(chainId.toString()),
       storage

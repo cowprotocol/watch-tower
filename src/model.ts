@@ -2,7 +2,7 @@ import Slack = require("node-slack");
 
 import { Context, Storage } from "@tenderly/actions";
 import { Transaction as SentryTransaction } from "@sentry/node";
-import { BytesLike, ethers, providers } from "ethers";
+import { BytesLike, ethers } from "ethers";
 
 import { apiUrl, getProvider } from "./utils";
 import type { IConditionalOrder } from "./types/ComposableCoW";

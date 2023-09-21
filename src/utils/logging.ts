@@ -1,6 +1,5 @@
-import assert = require("assert");
 import winston = require("winston");
-const { Loggly } = require("winston-loggly-bulk");
+import { Loggly } from "winston-loggly-bulk";
 
 let logger: undefined | any;
 
