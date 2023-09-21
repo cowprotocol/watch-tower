@@ -89,28 +89,27 @@ const _checkForAndPlaceOrder: ActionFn = async (
   let ownerCounter = 0;
   let orderCounter = 0;
 
-  if (ownerOrders.size > 0) {
-    console.log(`[checkForAndPlaceOrder] Processing Block ${blockNumber}`);
-  }
-
   const { timestamp: blockTimestamp } = await chainContext.provider.getBlock(
     blockNumber
   );
 
-  console.log("[checkForAndPlaceOrder] Number of orders: ", registry.numOrders);
+  console.log(
+    `[checkForAndPlaceOrder@${blockNumber}] Number of orders: `,
+    registry.numOrders
+  );
 
   for (const [owner, conditionalOrders] of ownerOrders.entries()) {
     ownerCounter++;
     const ordersPendingDelete = [];
     // enumerate all the `ConditionalOrder`s for a given owner
     console.log(
-      `[checkForAndPlaceOrder::${ownerCounter}] Process owner ${owner} (${conditionalOrders.size} orders)`
+      `[checkForAndPlaceOrder::${ownerCounter}@${blockNumber}] Process owner ${owner} (${conditionalOrders.size} orders)`
     );
     for (const conditionalOrder of conditionalOrders) {
       orderCounter++;
       const orderRef = `${ownerCounter}.${orderCounter}@${blockNumber}}`;
       const logPrefix = `[checkForAndPlaceOrder::${orderRef}]`;
-      const logOrderDetails = `Order created in TX ${conditionalOrder.tx} with params:`;
+      const logOrderDetails = `Processing order from TX ${conditionalOrder.tx} with params:`;
 
       const { result: lastResult } = conditionalOrder.pollResult || {};
 
@@ -222,7 +221,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
       const deleted = conditionalOrders.delete(conditionalOrder);
       const action = deleted ? "Deleted" : "Fail to delete";
       console.log(
-        `[checkForAndPlaceOrder] ${action} conditional order with params:`,
+        `[checkForAndPlaceOrder@${blockNumber}] ${action} conditional order with params:`,
         conditionalOrder.params
       );
     }
@@ -244,12 +243,15 @@ const _checkForAndPlaceOrder: ActionFn = async (
   //   registry.stringifyOrders()
   // );
 
-  console.log("[checkForAndPlaceOrder] Remaining orders: ", registry.numOrders);
+  console.log(
+    `[checkForAndPlaceOrder@${blockNumber}] Remaining orders: `,
+    registry.numOrders
+  );
 
   // Throw execution error if there was at least one error
   if (hasErrors) {
     throw Error(
-      "[checkForAndPlaceOrder] At least one unexpected error processing conditional orders"
+      `[checkForAndPlaceOrder@${blockNumber}] At least one unexpected error processing conditional orders`
     );
   }
 };
