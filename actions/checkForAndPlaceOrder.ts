@@ -433,7 +433,7 @@ async function _placeOrder(
   | PollResultTryNextBlock
   | PollResultUnexpectedError
 > {
-  const logPrefix = `[placeOrder::${orderRef}] `;
+  const logPrefix = `[placeOrder::${orderRef}]`;
   try {
     const postData = {
       sellToken: order.sellToken,
