@@ -248,10 +248,7 @@ export class ChainContext {
     this.chainId = chainId;
   }
 
-  public static async create(
-    storage: DBService,
-    url: string
-  ): Promise<ChainContext> {
+  public static async create(url: string): Promise<ChainContext> {
     const provider = new ethers.providers.JsonRpcProvider(url);
     const chainId = (await provider.getNetwork()).chainId;
     return new ChainContext(provider, apiUrl(chainId), chainId);
