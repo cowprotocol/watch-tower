@@ -9,9 +9,9 @@ lcov.info
 node_modules/
 
 # Typechain generated and artifacts
-/actions/types/
+/src/types
 
 # Compiled production code
-/actions/out/
+/dist/
 .yalc
 yalc.lock
