@@ -1,69 +1,63 @@
-import {
-  ActionFn,
-  Context,
-  Event,
-  TransactionEvent,
-  Log,
-} from "@tenderly/actions";
 import { BytesLike, ethers } from "ethers";
 
 import type {
   ComposableCoW,
   ComposableCoWInterface,
+  ConditionalOrderCreatedEvent,
   IConditionalOrder,
-} from "./types/ComposableCoW";
-import { ComposableCoW__factory } from "./types/factories/ComposableCoW__factory";
+  MerkleRootSetEvent,
+} from "./types/generated/ComposableCoW";
+import { ComposableCoW__factory } from "./types/generated/factories/ComposableCoW__factory";
 
 import {
   isComposableCowCompatible,
   handleExecutionError,
-  initContext,
   writeRegistry,
-  toChainId,
 } from "./utils";
-import { ChainContext, Owner, Proof, Registry } from "./model";
+import { Owner, Proof, Registry } from "./types/model";
+import { ChainWatcher } from "./modes";
 
 /**
  * Listens to these events on the `ComposableCoW` contract:
  * - `ConditionalOrderCreated`
  * - `MerkleRootSet`
- * @param context tenderly context
+ * @param chainWatcher chain watcher
  * @param event transaction event
  */
-export const addContract: ActionFn = async (context: Context, event: Event) => {
-  return _addContract(context, event).catch(handleExecutionError);
+export const addContract = async (
+  chainWatcher: ChainWatcher,
+  event: ConditionalOrderCreatedEvent
+) => {
+  return _addContract(chainWatcher, event).catch(handleExecutionError);
 };
 
-const _addContract: ActionFn = async (context: Context, event: Event) => {
-  const transactionEvent = event as TransactionEvent;
-  const tx = transactionEvent.hash;
+const _addContract = async (
+  context: ChainWatcher,
+  event: ConditionalOrderCreatedEvent
+) => {
   const composableCow = ComposableCoW__factory.createInterface();
-
-  const chainId = toChainId(transactionEvent.network);
-  const { provider } = await ChainContext.create(context, chainId);
-  const { registry } = await initContext("addContract", chainId, context);
+  const { chainContext, registry } = context;
+  const { provider } = chainContext;
 
   // Process the logs
   let hasErrors = false;
   let numContractsAdded = 0;
-  for (const log of transactionEvent.logs) {
-    // Do not process logs that are not from a `ComposableCoW`-compatible contract
-    // This is a *normal* case, if the contract is not `ComposableCoW`-compatible
-    // then we do not need to do anything, and therefore don't flag as an error.
-    if (!isComposableCowCompatible(await provider.getCode(log.address))) {
-      continue;
-    }
-    const { error, added } = await _registerNewOrder(
-      tx,
-      log,
-      composableCow,
-      registry
-    );
-    if (added) {
-      numContractsAdded++;
-    }
-    hasErrors ||= error;
+
+  // Do not process logs that are not from a `ComposableCoW`-compatible contract
+  // This is a *normal* case, if the contract is not `ComposableCoW`-compatible
+  // then we do not need to do anything, and therefore don't flag as an error.
+  if (!isComposableCowCompatible(await provider.getCode(event.address))) {
+    return;
   }
+  const { error, added } = await _registerNewOrder(
+    event,
+    composableCow,
+    registry
+  );
+  if (added) {
+    numContractsAdded++;
+  }
+  hasErrors ||= error;
 
   console.log(`[addContract] Added ${numContractsAdded} contracts`);
   hasErrors ||= !(await writeRegistry());
@@ -76,8 +70,7 @@ const _addContract: ActionFn = async (context: Context, event: Event) => {
 };
 
 export async function _registerNewOrder(
-  tx: string,
-  log: Log,
+  event: ConditionalOrderCreatedEvent | MerkleRootSetEvent,
   composableCow: ComposableCoWInterface,
   registry: Registry
 ): Promise<{ error: boolean; added: boolean }> {
@@ -85,8 +78,10 @@ export async function _registerNewOrder(
   try {
     // Check if the log is a ConditionalOrderCreated event
     if (
-      log.topics[0] === composableCow.getEventTopic("ConditionalOrderCreated")
+      event.topics[0] === composableCow.getEventTopic("ConditionalOrderCreated")
     ) {
+      const log = event as ConditionalOrderCreatedEvent;
+      // Decode the log
       const [owner, params] = composableCow.decodeEventLog(
         "ConditionalOrderCreated",
         log.data,
@@ -94,9 +89,19 @@ export async function _registerNewOrder(
       ) as [string, IConditionalOrder.ConditionalOrderParamsStruct];
 
       // Attempt to add the conditional order to the registry
-      await add(tx, owner, params, null, log.address, registry);
+      await add(
+        log.transactionHash,
+        owner,
+        params,
+        null,
+        log.address,
+        registry
+      );
       added = true;
-    } else if (log.topics[0] == composableCow.getEventTopic("MerkleRootSet")) {
+    } else if (
+      event.topics[0] == composableCow.getEventTopic("MerkleRootSet")
+    ) {
+      const log = event as MerkleRootSetEvent;
       const [owner, root, proof] = composableCow.decodeEventLog(
         "MerkleRootSet",
         log.data,
@@ -125,7 +130,7 @@ export async function _registerNewOrder(
           );
           // Attempt to add the conditional order to the registry
           await add(
-            tx,
+            event.transactionHash,
             owner,
             decodedOrder[1],
             { merkleRoot: root, path: decodedOrder[0] },
