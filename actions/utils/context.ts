@@ -36,9 +36,6 @@ export async function initContext(
 
   // Init Sentry
   const sentryTransaction = await _getSentry(transactionName, chainId, context);
-  if (!sentryTransaction) {
-    console.warn("SENTRY_DSN secret is not set. Sentry will be disabled");
-  }
 
   executionContext = {
     registry,
@@ -90,9 +87,16 @@ async function _getSentry(
   chainId: SupportedChainId,
   context: Context
 ): Promise<SentryTransaction | undefined> {
+  const sentryDsn = (
+    await context.secrets.get("SENTRY_DSN").catch(() => "")
+  ).trim();
+
+  if (!sentryDsn) {
+    return undefined;
+  }
+
   // Init Sentry
   if (!executionContext) {
-    const sentryDsn = await context.secrets.get("SENTRY_DSN").catch(() => "");
     sentryInit({
       dsn: sentryDsn,
       debug: false,
