@@ -16,6 +16,7 @@
     "prepare": "husky install && yarn typechain"
   },
   "devDependencies": {
+    "@commander-js/extra-typings": "^11.0.0",
     "@commitlint/cli": "^17.6.7",
     "@commitlint/config-conventional": "^17.6.7",
     "@typechain/ethers-v5": "^10.2.0",
