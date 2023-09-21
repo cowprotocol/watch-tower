@@ -1,5 +1,5 @@
 import { program, Option } from "@commander-js/extra-typings";
-import { ReplayBlockOptions, ReplayTxOptions, RunOptions } from "./types";
+import { ReplayTxOptions } from "./types";
 import { replayBlock, replayTx, run } from "./modes";
 
 async function main() {
@@ -35,23 +35,33 @@ async function main() {
     .option("--sentry-dsn <sentryDsn>", "Sentry DSN")
     .option("--loggly-token <logglyToken>", "Loggly token")
     .option("--one-shot", "Run the watchtower once and exit", false)
-    .action((options: RunOptions) => {
+    .action((options) => {
       // Need to assert that the RPCs and deployment blocks are the same length
-      const { rpc, deploymentBlock } = options;
+      const {
+        rpc,
+        deploymentBlock: deploymentBlockEnv,
+        pageSize: pageSizeEnv,
+      } = options;
 
       // Ensure that the deployment blocks are all numbers
-      deploymentBlock.forEach((block) => {
-        if (isNaN(Number(block))) {
-          throw new Error("Deployment blocks must be numbers");
-        }
-      });
+      const deploymentBlock = deploymentBlockEnv.map((block) => Number(block));
+      if (deploymentBlock.some((block) => isNaN(block))) {
+        throw new Error("Deployment blocks must be numbers");
+      }
 
+      // Ensure that pageSize is a number
+      const pageSize = Number(pageSizeEnv);
+      if (isNaN(pageSize)) {
+        throw new Error("Page size must be a number");
+      }
+
+      // Ensure that the RPCs and deployment blocks are the same length
       if (rpc.length !== deploymentBlock.length) {
         throw new Error("RPC and deployment blocks must be the same length");
       }
 
       // Run the watchtower
-      run(options);
+      run({ ...options, deploymentBlock, pageSize });
     });
 
   program
@@ -64,7 +74,15 @@ async function main() {
       "Publish any new discrete orders to the OrderBook API",
       true
     )
-    .action((options: ReplayBlockOptions) => replayBlock(options));
+    .action((options) => {
+      // Ensure that the block is a number
+      const block = Number(options.block);
+      if (isNaN(block)) {
+        throw new Error("Block must be a number");
+      }
+
+      replayBlock({ ...options, block });
+    });
 
   program
     .command("replay-tx")
