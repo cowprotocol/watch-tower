@@ -87,10 +87,10 @@ const main = async () => {
 
     // 4. Get the historical events
     const replayPlan: ReplayPlan = {}
-    let toBlock;
+    let toBlock: 'latest' | number = 0;
     do {
-      toBlock = (pageSize == 0) ? 'latest' : fromBlock + (pageSize - 1);
-      if (typeof toBlock !== 'string' && toBlock > currentBlockNumber) {
+      toBlock = !pageSize ? 'latest' : fromBlock + (pageSize - 1);
+      if (!isNaN(toBlock) && toBlock > currentBlockNumber) {
           // refresh the current block number
           currentBlockNumber = await provider.getBlockNumber();
           toBlock = (toBlock > currentBlockNumber) ? currentBlockNumber : toBlock;
@@ -114,10 +114,10 @@ const main = async () => {
       }
 
       // only possible string value for toBlock is 'latest'
-      if (typeof toBlock !== 'string') {
+      if (typeof toBlock === 'number') {
           fromBlock = toBlock + 1;
       }
-    } while (toBlock !== 'latest' && (typeof toBlock !== 'string' && toBlock != currentBlockNumber));
+    } while (toBlock !== 'latest' && toBlock !== currentBlockNumber);
 
     // 6. Replay the blocks by iterating over the replayPlan
     for (const [blockNumber, txHints] of Object.entries(replayPlan)) {
@@ -126,11 +126,11 @@ const main = async () => {
         blockWatchBlockNumber: currentBlockNumber,
         txList: Array.from(txHints)
       }
-      await processBlock(provider, Number(blockNumber), chainId, testRuntime, overrides).catch(
-        () => {
-          exit(100);
-        }
-      );
+     try {
+       await processBlock(provider, Number(blockNumber), chainId, testRuntime, overrides)
+     } catch {
+         exit(100);
+     }
       console.log(`[run_rebuild] Block ${blockNumber} has been processed.`);
     }
     // 7. Print the storage
