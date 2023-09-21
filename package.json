@@ -47,6 +47,8 @@
     "ethers": "^5.7.2",
     "exponential-backoff": "^3.1.1",
     "graphql-request": "^6.1.0",
+    "level": "^8.0.0",
+    "level-ts": "^2.1.0",
     "node-fetch": "2",
     "node-slack": "^0.0.7",
     "ts-node": "^10.9.1",

@@ -1,11 +1,11 @@
-import * as composableCow from "./artifacts/ComposableCoW.json";
-import * as extensibleFallbackHandler from "./artifacts/ExtensibleFallbackHandler.json";
+import * as composableCow from "../../abi/ComposableCoW.json";
+import * as extensibleFallbackHandler from "../../abi/ExtensibleFallbackHandler.json";
 import {
   ORDER_NOT_VALID_SELECTOR,
   SINGLE_ORDER_NOT_AUTHED_SELECTOR,
   isComposableCowCompatible,
   parseCustomError,
-} from "./utils";
+} from ".";
 
 // consts for readability
 const composableCowBytecode = composableCow.deployedBytecode.object;
