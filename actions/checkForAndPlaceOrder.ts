@@ -391,7 +391,7 @@ async function _processConditionalOrder(
     // Place order, if the orderUid has not been submitted or filled
     if (!conditionalOrder.orders.has(orderUid)) {
       // Place order
-      const placeOrderResult = await _placeOrder({
+      const { result: placeOrderResult } = await _placeOrder({
         orderUid,
         order: orderToPost,
         apiUrl: chainContext.apiUrl,
@@ -476,6 +476,10 @@ export const _printUnfilledOrders = (orders: Map<BytesLike, OrderStatus>) => {
   }
 };
 
+interface PlaceOrderResult {
+  result: Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors;
+  statusCode?: number;
+}
 /**
  * Place a new order
  * @param order to be placed on the cow protocol api
@@ -485,12 +489,12 @@ async function _placeOrder(params: {
   orderUid: string;
   order: any;
   apiUrl: string;
-  orderRef: string | undefined;
+  orderRef: string;
   blockTimestamp: number;
-}): Promise<Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors> {
+}): Promise<PlaceOrderResult> {
   const { orderUid, order, apiUrl, orderRef, blockTimestamp } = params;
 
-  const logPrefix = `[placeOrder${orderRef ? "::" + order : ""}]`;
+  const logPrefix = `[placeOrder::${orderRef}]`;
   try {
     // if the apiUrl doesn't contain localhost, post
     console.log(`${logPrefix} Post order ${orderUid} to ${apiUrl}`);
@@ -528,9 +532,12 @@ async function _placeOrder(params: {
 
       if (isSuccess) {
         log(`${orderRef} All good! continuing with warnings...`);
-        return { result: PollResultCode.SUCCESS };
+        return {
+          result: { result: PollResultCode.SUCCESS },
+          statusCode: status,
+        };
       } else {
-        return handleErrorResult;
+        return { result: handleErrorResult, statusCode: status };
       }
     } else if (error.request) {
       // The request was made but no response was received
@@ -545,13 +552,16 @@ async function _placeOrder(params: {
     }
 
     return {
-      result: PollResultCode.UNEXPECTED_ERROR,
-      reason: reasonError,
-      error,
+      statusCode: undefined,
+      result: {
+        result: PollResultCode.UNEXPECTED_ERROR,
+        reason: reasonError,
+        error,
+      },
     };
   }
 
-  return { result: PollResultCode.SUCCESS };
+  return { result: { result: PollResultCode.SUCCESS }, statusCode: 200 };
 }
 
 function _handleOrderBookError(params: {
@@ -774,17 +784,23 @@ async function _handleAllOrdersShadowMode(params: {
 
     // We need to post the order to the orderbook
     if (shadowModeResult === undefined) {
-      const placeOrderResult = await _placeOrder({
+      const { result: placeOrderResult, statusCode } = await _placeOrder({
         orderUid: orderUid.toString(),
         apiUrl,
         blockTimestamp,
         order,
-        orderRef: undefined,
+        orderRef: `_@${blockNumber}`,
       });
 
       if (placeOrderResult.result === PollResultCode.SUCCESS) {
         console.log(
           `${logPrefix} ☀️ Posted order ${orderUid} to the API. Shadow Watch Tower saved the day!`
+        );
+        pendingOrdersShadowMode.delete(orderUid);
+      } else if (statusCode === 400) {
+        console.error(
+          `${logPrefix} Error posting order ${orderUid} to the API. Deleting because its not a valid order`,
+          placeOrderResult
         );
         pendingOrdersShadowMode.delete(orderUid);
       } else {
