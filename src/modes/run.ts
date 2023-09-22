@@ -12,7 +12,7 @@ import { checkForAndPlaceOrder } from "../checkForAndPlaceOrder";
  * @param options Specified by the CLI / environment for running the watch-tower
  */
 export async function run(options: RunOptions) {
-  const { rpc, deploymentBlock } = options;
+  const { rpc, deploymentBlock, oneShot } = options;
 
   process.on("unhandledRejection", async (error) => {
     console.log(error);
@@ -42,7 +42,7 @@ export async function run(options: RunOptions) {
 
     // Run the block watcher for each chain
     const runPromises = chainWatchers.map(async (chainWatcher) => {
-      return chainWatcher.warmUp();
+      return chainWatcher.warmUp(oneShot);
     });
 
     // Run all the chain watchers
@@ -104,7 +104,7 @@ export class ChainWatcher {
    * checking if the chain is in sync.
    * @returns the run promises for what needs to be watched
    */
-  public async warmUp() {
+  public async warmUp(oneShot?: boolean) {
     const { provider, chainId } = this.chainContext;
     const { lastProcessedBlock } = this.registry;
     const { pageSize } = this;
@@ -202,8 +202,18 @@ export class ChainWatcher {
       }
     } while (!this.inSync);
 
+    _(oneShot ? "Chain watcher is in sync" : "Chain watcher is warmed up");
+    _(`Last processed block: ${this.registry.lastProcessedBlock}`);
+
     // Notifying that the chain watcher is in sync
     this.inSync = true;
+
+    // If one-shot, return
+    if (oneShot) {
+      return;
+    }
+
+    // Otherwise, run the block watcher
     return await this.runBlockWatcher();
   }
 
@@ -236,9 +246,6 @@ export class ChainWatcher {
           );
         }
         _(`Block ${blockNumber} has been processed.`);
-
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        // await processBlock(provider, blockNumber, chainId, testRuntime);
       } catch (error) {
         console.error(
           `[runBlockWatcher:chainId:${chainId}] Error in processBlock`,
