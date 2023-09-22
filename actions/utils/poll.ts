@@ -32,7 +32,7 @@ export async function pollConditionalOrder(
   const orderString = order.toString();
 
   console.log(
-    `[polling] Polling for ${
+    `[${prefix}] Polling for ${
       orderString.includes(orderId)
         ? orderString
         : `Order (${orderId}) ${orderString}`
