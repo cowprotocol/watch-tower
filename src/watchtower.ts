@@ -36,7 +36,6 @@ async function main() {
     .option("--loggly-token <logglyToken>", "Loggly token")
     .option("--one-shot", "Run the watchtower once and exit", false)
     .action((options) => {
-      // Need to assert that the RPCs and deployment blocks are the same length
       const {
         rpc,
         deploymentBlock: deploymentBlockEnv,
