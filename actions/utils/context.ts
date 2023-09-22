@@ -22,8 +22,14 @@ export async function initContext(
   chainId: SupportedChainId,
   context: Context
 ): Promise<ExecutionContext> {
+  // Get environment
+  const env = await getEnv(context);
+
+  // Get shadow mode
+  const isShadowMode = await getIsShadowMode(context);
+
   // Init Logging
-  await _initLogging(transactionName, chainId, context);
+  await _initLogging(transactionName, chainId, context, env, isShadowMode);
 
   // Init registry
   const registry = await Registry.load(context, chainId.toString());
@@ -38,6 +44,8 @@ export async function initContext(
   const sentryTransaction = await _getSentry(transactionName, chainId, context);
 
   executionContext = {
+    env,
+    isShadowMode,
     registry,
     slack,
     sentryTransaction,
@@ -246,12 +254,34 @@ function handlePromiseErrors<T>(
 async function _initLogging(
   transactionName: string,
   chainId: SupportedChainId,
-  context: Context
+  context: Context,
+  env: string | undefined,
+  isShadowMode: boolean
 ) {
   const logglyToken = (
     await context.secrets.get("LOGGLY_TOKEN").catch(() => "")
   ).trim();
+
   if (logglyToken) {
-    initLogging(logglyToken, [transactionName, `chain_${chainId}`]);
+    const envTag = (isShadowMode ? "shadow" : "live") + (env ? `_${env}` : "");
+    initLogging(logglyToken, [envTag, `chain_${chainId}`, transactionName]);
   }
+}
+
+/**
+ * Return then environment. If not set, it will return undefined
+ */
+async function getEnv(context: Context): Promise<string | undefined> {
+  return (
+    (await context.secrets.get("NODE_ENV").catch(() => "")).trim() || undefined
+  );
+}
+
+/**
+ * Wether the watch tower will run in shadow mode. False by default
+ */
+async function getIsShadowMode(context: Context): Promise<boolean> {
+  return (
+    (await context.secrets.get("SHADOW_MODE").catch(() => "")).trim() === "true"
+  );
 }

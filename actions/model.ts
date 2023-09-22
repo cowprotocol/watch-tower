@@ -19,6 +19,8 @@ export const getOrdersStorageKey = (network: string): string => {
 };
 
 export interface ExecutionContext {
+  env: string | undefined;
+  isShadowMode: boolean;
   registry: Registry;
   notificationsEnabled: boolean;
   slack?: Slack;
