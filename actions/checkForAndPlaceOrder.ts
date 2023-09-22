@@ -97,6 +97,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
     chainId,
     context
   );
+  const logPrefixMain = `[checkForAndPlaceOrder@${blockNumber}]`;
   const { ownerOrders, pendingOrdersShadowMode } = registry;
 
   let hasErrors = false;
@@ -107,10 +108,34 @@ const _checkForAndPlaceOrder: ActionFn = async (
     blockNumber
   );
 
-  console.log(
-    `[checkForAndPlaceOrder@${blockNumber}] Number of orders: `,
-    registry.numOrders
-  );
+  // In shadow mode, we check all pending orders
+  if (isShadowMode && pendingOrdersShadowMode.size > 0) {
+    const logPrefix = `[shadowCheck@${blockNumber}]`;
+    for (const [orderUid, pendingOrderShadowMode] of Array.from(
+      pendingOrdersShadowMode.entries()
+    )) {
+      const { conditionalOrder, conditionalOrderId, order } =
+        pendingOrderShadowMode;
+      _handleOrderShadowMode({
+        orderUid: orderUid.toString(),
+        conditionalOrderId,
+        conditionalOrder,
+        blockTimestamp,
+        apiUrl: chainContext.apiUrl,
+        pendingOrdersShadowMode,
+        orderToPost: order,
+        logPrefix,
+      }).catch((e) => {
+        // Don't let the pending shadow orders to stop the execution
+        console.error(`${logPrefix} Error handling the order ${orderUid}`, e);
+      });
+    }
+    console.log(
+      `${logPrefixMain} Shadow mode. Processing ${pendingOrdersShadowMode.size} pending orders`
+    );
+  }
+
+  console.log(`${logPrefixMain} Number of orders: `, registry.numOrders);
 
   for (const [owner, conditionalOrders] of ownerOrders.entries()) {
     ownerCounter++;
@@ -243,7 +268,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
       const deleted = conditionalOrders.delete(conditionalOrder);
       const action = deleted ? "Deleted" : "Fail to delete";
       console.log(
-        `[checkForAndPlaceOrder@${blockNumber}] ${action} conditional order with params:`,
+        `${logPrefixMain} ${action} conditional order with params:`,
         conditionalOrder.params
       );
     }
@@ -265,15 +290,12 @@ const _checkForAndPlaceOrder: ActionFn = async (
   //   registry.stringifyOrders()
   // );
 
-  console.log(
-    `[checkForAndPlaceOrder@${blockNumber}] Remaining orders: `,
-    registry.numOrders
-  );
+  console.log(`${logPrefixMain} Remaining orders: `, registry.numOrders);
 
   // Throw execution error if there was at least one error
   if (hasErrors) {
     throw Error(
-      `[checkForAndPlaceOrder@${blockNumber}] At least one unexpected error processing conditional orders`
+      `${logPrefixMain} At least one unexpected error processing conditional orders`
     );
   }
 };
@@ -366,7 +388,7 @@ async function _processConditionalOrder(
 
     if (isShadowMode) {
       // In case we run in shadow mode, we decide if we post the order or not
-      const shadowModeResult = _handleOrderShadowMode({
+      const shadowModeResult = await _handleOrderShadowMode({
         orderUid,
         conditionalOrderId,
         conditionalOrder,
@@ -374,6 +396,7 @@ async function _processConditionalOrder(
         pendingOrdersShadowMode,
         orderToPost,
         logPrefix,
+        apiUrl: chainContext.apiUrl,
       });
 
       // If the order shouldn't be posted, we return early
@@ -733,7 +756,7 @@ function _handleGetTradableOrderCall(
   };
 }
 
-function _handleOrderShadowMode(params: {
+async function _handleOrderShadowMode(params: {
   orderUid: string;
   conditionalOrderId: string | undefined;
   conditionalOrder: ConditionalOrder;
@@ -741,7 +764,8 @@ function _handleOrderShadowMode(params: {
   pendingOrdersShadowMode: Map<ethers.utils.BytesLike, PendingOrderShadowMode>;
   orderToPost: any;
   logPrefix: string;
-}): PollResultErrors | undefined {
+  apiUrl: string;
+}): Promise<PollResultErrors | undefined> {
   const {
     orderUid,
     conditionalOrderId,
@@ -750,31 +774,49 @@ function _handleOrderShadowMode(params: {
     pendingOrdersShadowMode,
     orderToPost,
     logPrefix,
+    apiUrl,
   } = params;
-  const pendingOrderShadowMode = pendingOrdersShadowMode.get(orderUid);
+  let doNotPostOrderReason;
   const reasonDescription = `Deferred posting ${orderUid} to the API (running in shadow mode).`;
+
+  // Check if orderUid is an order we are already tracking
+  const pendingOrderShadowMode = pendingOrdersShadowMode.get(orderUid);
   if (pendingOrderShadowMode) {
     const { firstSeenBlockTimestamp } = pendingOrderShadowMode;
     const secondsElapsed = blockTimestamp - firstSeenBlockTimestamp;
     if (secondsElapsed > SHADOW_MODE_LAG_SECONDS) {
-      console.error(
-        `${logPrefix} Shadow Mode. Order ${orderUid} has been over ${Math.floor(
-          SHADOW_MODE_LAG_SECONDS / 60
-        )} minutes pending to be posted to the API. Some WatchTower might be down`
-      );
+      // Check if order exists in orderbook
+      if (await _existsOrderInApi(apiUrl, orderUid)) {
+        // ✅ All good, someone did a good job posting the order
+        doNotPostOrderReason = `Shadow Mode. Great! Order ${orderUid} was placed in the API by someone else`;
+        console.log(`${logPrefix} ${doNotPostOrderReason}`);
+
+        // We won't keep track of the order any more
+        pendingOrdersShadowMode.delete(orderUid);
+      } else {
+        // 🚨 Error, Someone didn't post the order
+        console.error(
+          `${logPrefix} Shadow Mode. Order ${orderUid} has been over ${Math.floor(
+            SHADOW_MODE_LAG_SECONDS / 60
+          )} minutes pending to be posted to the API. Some WatchTower might be down`
+        );
+
+        // Not returning an error will make the WatchTower to continue and post the order
+        return undefined;
+      }
+
       return undefined;
     } else {
+      // 🕣 We need to wait longer until we can post the order
       console.log(
         `${logPrefix} Shadow Mode. Deferring the submission of order ${orderUid} (first seen ${secondsElapsed} seconds ago)`
       );
-      return {
-        result: PollResultCode.TRY_NEXT_BLOCK, // We don't return TRY_AT_EPOCH to try after the lag, because the same conditional order can generate more orders, and some of them could be posted before that
-        reason: `${reasonDescription} Will post it after ${
-          SHADOW_MODE_LAG_SECONDS - secondsElapsed
-        } seconds`,
-      };
+      doNotPostOrderReason = `${reasonDescription} Will post it after ${
+        SHADOW_MODE_LAG_SECONDS - secondsElapsed
+      } seconds`;
     }
   } else {
+    // 📒 Register the order for the first time
     console.log(
       `${logPrefix} Shadow Mode. Deferring the submission of a new order ${orderUid}`
     );
@@ -787,15 +829,23 @@ function _handleOrderShadowMode(params: {
       conditionalOrder,
     });
 
-    console.log(pendingOrdersShadowMode.get(orderUid));
-
-    return {
-      result: PollResultCode.TRY_NEXT_BLOCK,
-      reason: `${reasonDescription} Will post it after ${Math.floor(
-        SHADOW_MODE_LAG_SECONDS / 60
-      )} minutes`,
-    };
+    doNotPostOrderReason = `${reasonDescription} Will post it after ${Math.floor(
+      SHADOW_MODE_LAG_SECONDS / 60
+    )} minutes`;
   }
+
+  return {
+    result: PollResultCode.TRY_NEXT_BLOCK, // We don't return TRY_AT_EPOCH to try after the lag, because the same conditional order can generate more orders, and some of them could be posted before that
+    reason: doNotPostOrderReason,
+  };
+}
+
+async function _existsOrderInApi(apiUrl: string, orderUid: string) {
+  const { status } = await axios
+    .get(`${apiUrl}/api/v1/orders/${orderUid}`)
+    .catch((err) => err);
+
+  return status === 200;
 }
 
 function toOrderApi(order: Order, owner: string, signature: string): any {
