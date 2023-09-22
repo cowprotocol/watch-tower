@@ -366,6 +366,8 @@ async function _getRunTime(chainId: SupportedChainId): Promise<TestRuntime> {
     "NOTIFICATIONS_ENABLED",
     "SENTRY_DSN",
     "LOGGLY_TOKEN",
+    "SHADOW_MODE",
+    "NODE_ENV",
   ];
   for (const name of envNames) {
     const envValue = process.env[name];

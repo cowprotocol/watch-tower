@@ -29,7 +29,13 @@ import {
   toChainId,
   writeRegistry,
 } from "./utils";
-import { ChainContext, ConditionalOrder, OrderStatus } from "./model";
+import {
+  ChainContext,
+  ConditionalOrder,
+  OrderStatus,
+  OrderUid,
+  PendingOrderShadowMode,
+} from "./model";
 import { pollConditionalOrder } from "./utils/poll";
 import {
   OrderPostError,
@@ -58,6 +64,11 @@ const ApiErrors = OrderPostError.errorType;
 const WAITING_TIME_SECONDS_FOR_NOT_BALANCE = 10 * 60; // 10 min
 
 /**
+ * Shadow mode will lag 2 minutes behind
+ */
+const SHADOW_MODE_LAG_SECONDS = 2 * 60; // 2 min
+
+/**
  * Watch for new blocks and check for orders to place
  *
  * @param context tenderly context
@@ -81,12 +92,12 @@ const _checkForAndPlaceOrder: ActionFn = async (
   const { network, blockNumber } = blockEvent;
   const chainId = toChainId(network);
   const chainContext = await ChainContext.create(context, chainId);
-  const { registry } = await initContext(
+  const { registry, isShadowMode } = await initContext(
     "checkForAndPlaceOrder",
     chainId,
     context
   );
-  const { ownerOrders } = registry;
+  const { ownerOrders, pendingOrdersShadowMode } = registry;
 
   let hasErrors = false;
   let ownerCounter = 0;
@@ -166,7 +177,9 @@ const _checkForAndPlaceOrder: ActionFn = async (
         contract,
         multicall,
         chainContext,
-        orderRef
+        orderRef,
+        isShadowMode,
+        pendingOrdersShadowMode
       );
 
       // Don't try again the same order, in case thats the poll result
@@ -274,9 +287,12 @@ async function _processConditionalOrder(
   contract: ComposableCoW,
   multicall: Multicall3,
   chainContext: ChainContext,
-  orderRef: string
+  orderRef: string,
+  isShadowMode: boolean,
+  pendingOrdersShadowMode: Map<OrderUid, PendingOrderShadowMode>
 ): Promise<PollResult> {
   try {
+    const logPrefix = `[processConditionalOrder::${orderRef}]`;
     // TODO: Fix model and delete the explicit cast: https://github.com/cowprotocol/tenderly-watch-tower/issues/18
     const [handler, salt, staticInput] = conditionalOrder.params as any as [
       string,
@@ -305,27 +321,30 @@ async function _processConditionalOrder(
       staticInput,
       salt,
     };
-    let pollResult = await pollConditionalOrder(
-      pollParams,
-      conditionalOrderParams,
-      orderRef
-    );
-
-    if (!pollResult) {
-      // Unsupported Order Type (unknown handler)
-      // For now, fallback to legacy behavior
-      // TODO: Decide in the future what to do. Probably, move the error handling to the SDK and kill the poll Legacy
-      pollResult = await _pollLegacy(
-        owner,
-        chainId,
-        conditionalOrder,
-        contract,
-        multicall,
-        proof,
-        offchainInput,
-        orderRef
-      );
-    }
+    // const result = await pollConditionalOrder(
+    //   pollParams,
+    //   conditionalOrderParams,
+    //   orderRef
+    // );
+    const result = undefined;
+    const { pollResult, conditionalOrderId } = result
+      ? result
+      : {
+          // Unsupported Order Type (unknown handler)
+          // For now, fallback to legacy behavior
+          // TODO: Decide in the future what to do. Probably, move the error handling to the SDK and kill the poll Legacy
+          conditionalOrderId: undefined,
+          pollResult: await _pollLegacy(
+            owner,
+            chainId,
+            conditionalOrder,
+            contract,
+            multicall,
+            proof,
+            offchainInput,
+            orderRef
+          ),
+        };
 
     // Error polling
     if (pollResult.result !== PollResultCode.SUCCESS) {
@@ -345,12 +364,59 @@ async function _processConditionalOrder(
     // calculate the orderUid
     const orderUid = _getOrderUid(chainId, orderToSubmit, owner);
 
+    // TODO: This order should be typed, and we should use the SDK to post the order (we will do in v2 of the watch tower that is being develop as we speak)
+    const orderPost = {
+      ...orderToSubmit,
+      from: owner,
+      signature,
+      sellAmount: order.sellAmount.toString(),
+      buyAmount: order.buyAmount.toString(),
+      feeAmount: order.feeAmount.toString(),
+      signingScheme: "eip1271",
+    };
+
+    // In case we run in shadow mode, we don't place the order, but we still need to track it
+    if (isShadowMode) {
+      const pendingOrderShadowMode = pendingOrdersShadowMode.get(orderUid);
+      if (pendingOrderShadowMode) {
+        const { order, firstSeenBlockTimestamp } = pendingOrderShadowMode;
+
+        if (
+          blockTimestamp - firstSeenBlockTimestamp >
+          SHADOW_MODE_LAG_SECONDS
+        ) {
+          console.error(
+            `${logPrefix} Shadow Mode. Order ${orderUid} has been over ${Math.floor(
+              SHADOW_MODE_LAG_SECONDS / 60
+            )} minutes pending to be posted to the API. Some WatchTower might be down`
+          );
+        }
+      } else {
+        console.log(
+          `${logPrefix} Shadow Mode. Deferring the submission of order ${orderUid}`
+        );
+
+        pendingOrdersShadowMode.set(orderUid, {
+          conditionalOrderId,
+          firstSeenBlockTimestamp: blockTimestamp,
+          order: orderPost,
+          orderUid,
+          conditionalOrder,
+        });
+
+        return {
+          result: PollResultCode.TRY_NEXT_BLOCK,
+          reason: "Shadow Mode",
+        };
+      }
+    }
+
     // Place order, if the orderUid has not been submitted or filled
     if (!conditionalOrder.orders.has(orderUid)) {
       // Place order
       const placeOrderResult = await _placeOrder({
         orderUid,
-        order: { ...orderToSubmit, from: owner, signature },
+        order: orderPost,
         apiUrl: chainContext.apiUrl,
         blockTimestamp,
         orderRef,
@@ -363,10 +429,15 @@ async function _processConditionalOrder(
 
       // Mark order as submitted
       conditionalOrder.orders.set(orderUid, OrderStatus.SUBMITTED);
+
+      // If shadow mode, delete the order from the pending orders
+      if (isShadowMode) {
+        pendingOrdersShadowMode.delete(orderUid);
+      }
     } else {
       const orderStatus = conditionalOrder.orders.get(orderUid);
       console.log(
-        `[processConditionalOrder::${orderRef}] OrderUid ${orderUid} status: ${
+        `${logPrefix} OrderUid ${orderUid} status: ${
           orderStatus ? formatStatus(orderStatus) : "Not found"
         }`
       );
@@ -444,31 +515,13 @@ async function _placeOrder(params: {
 
   const logPrefix = `[placeOrder::${orderRef}]`;
   try {
-    const postData = {
-      sellToken: order.sellToken,
-      buyToken: order.buyToken,
-      receiver: order.receiver,
-      sellAmount: order.sellAmount.toString(),
-      buyAmount: order.buyAmount.toString(),
-      validTo: order.validTo,
-      appData: order.appData,
-      feeAmount: order.feeAmount.toString(),
-      kind: order.kind,
-      partiallyFillable: order.partiallyFillable,
-      sellTokenBalance: order.sellTokenBalance,
-      buyTokenBalance: order.buyTokenBalance,
-      signingScheme: "eip1271",
-      signature: order.signature,
-      from: order.from,
-    };
-
     // if the apiUrl doesn't contain localhost, post
     console.log(`${logPrefix} Post order ${orderUid} to ${apiUrl}`);
-    console.log(`${logPrefix} Order`, postData);
+    console.log(`${logPrefix} Order`, order);
     if (!apiUrl.includes("localhost")) {
       const { status, data } = await axios.post(
         `${apiUrl}/api/v1/orders`,
-        postData,
+        order,
         {
           headers: {
             "Content-Type": "application/json",

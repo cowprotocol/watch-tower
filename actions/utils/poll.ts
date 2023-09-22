@@ -5,6 +5,7 @@ import {
   PollParams,
   PollResult,
 } from "@cowprotocol/cow-sdk";
+import { type } from "os";
 
 // Watch-tower will index every block, so we will by default the processing block and not the latest.
 const POLL_FROM_LATEST_BLOCK = false;
@@ -13,11 +14,16 @@ const ordersFactory = new ConditionalOrderFactory(
   DEFAULT_CONDITIONAL_ORDER_REGISTRY
 );
 
+export type PollConditionalOrder = {
+  conditionalOrderId: string;
+  pollResult: PollResult;
+};
+
 export async function pollConditionalOrder(
   pollParams: PollParams,
   conditionalOrderParams: ConditionalOrderParams,
   orderRef: string
-): Promise<PollResult | undefined> {
+): Promise<PollConditionalOrder | undefined> {
   const prefix = `[polling::${orderRef}]`;
   const order = ordersFactory.fromParams(conditionalOrderParams);
 
@@ -32,7 +38,7 @@ export async function pollConditionalOrder(
   const orderString = order.toString();
 
   console.log(
-    `[${prefix}] Polling for ${
+    `${prefix} Polling for ${
       orderString.includes(orderId)
         ? orderString
         : `Order (${orderId}) ${orderString}`
@@ -43,5 +49,8 @@ export async function pollConditionalOrder(
     })....`
   );
 
-  return order.poll(actualPollParams);
+  return {
+    pollResult: await order.poll(actualPollParams),
+    conditionalOrderId: orderId,
+  };
 }

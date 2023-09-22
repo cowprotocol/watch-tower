@@ -12,7 +12,13 @@ import { PollResult, SupportedChainId } from "@cowprotocol/cow-sdk";
 const LAST_NOTIFIED_ERROR_STORAGE_KEY = "LAST_NOTIFIED_ERROR";
 const CONDITIONAL_ORDER_REGISTRY_VERSION_KEY =
   "CONDITIONAL_ORDER_REGISTRY_VERSION";
-const CONDITIONAL_ORDER_REGISTRY_VERSION = 1;
+const CONDITIONAL_ORDER_REGISTRY_VERSION = 2;
+
+export const getPendingOrdersShadowModeStorageKey = (
+  network: string
+): string => {
+  return `PENDING_ORDERS_SHADOW_MODE_${network}`;
+};
 
 export const getOrdersStorageKey = (network: string): string => {
   return `CONDITIONAL_ORDER_REGISTRY_${network}`;
@@ -90,6 +96,14 @@ export type ConditionalOrder = {
   };
 };
 
+export type PendingOrderShadowMode = {
+  orderUid: OrderUid;
+  firstSeenBlockTimestamp: number;
+  order: any; // TODO: not typed for now, since we still don't use the SDK (we will re-do that part in the v2 that is currently being worked on)
+  conditionalOrderId: string | undefined;
+  conditionalOrder: ConditionalOrder;
+};
+
 /**
  * Models the state between executions.
  * Contains a map of owners to conditional orders and the last time we sent an error.
@@ -97,6 +111,7 @@ export type ConditionalOrder = {
 export class Registry {
   version = CONDITIONAL_ORDER_REGISTRY_VERSION;
   ownerOrders: Map<Owner, Set<ConditionalOrder>>;
+  pendingOrdersShadowMode: Map<OrderUid, PendingOrderShadowMode>;
   storage: Storage;
   network: string;
   lastNotifiedError: Date | null;
@@ -109,11 +124,13 @@ export class Registry {
    */
   constructor(
     ownerOrders: Map<Owner, Set<ConditionalOrder>>,
+    pendingOrdersShadowMode: Map<OrderUid, PendingOrderShadowMode>,
     storage: Storage,
     network: string,
     lastNotifiedError: Date | null
   ) {
     this.ownerOrders = ownerOrders;
+    this.pendingOrdersShadowMode = pendingOrdersShadowMode;
     this.storage = storage;
     this.network = network;
     this.lastNotifiedError = lastNotifiedError;
@@ -129,7 +146,13 @@ export class Registry {
     context: Context,
     network: string
   ): Promise<Registry> {
-    const str = await context.storage.getStr(getOrdersStorageKey(network));
+    const ordersString = await context.storage.getStr(
+      getOrdersStorageKey(network)
+    );
+    const pendingOrdersShadowModeString = await context.storage.getStr(
+      getPendingOrdersShadowModeStorageKey(network)
+    );
+
     const lastNotifiedError = await context.storage
       .getStr(LAST_NOTIFIED_ERROR_STORAGE_KEY)
       .then((isoDate) => (isoDate ? new Date(isoDate) : null))
@@ -143,13 +166,20 @@ export class Registry {
 
     // Parse conditional orders registry (for the persisted version, converting it to the last version)
     const ownerOrders = parseConditionalOrders(
-      !!str ? str : undefined,
+      !!ordersString ? ordersString : undefined,
       version
+    );
+
+    const pendingOrdersShadowMode = parsePendingOrdersShadowMode(
+      !!pendingOrdersShadowModeString
+        ? pendingOrdersShadowModeString
+        : undefined
     );
 
     // Return registry (on its latest version)
     return new Registry(
       ownerOrders,
+      pendingOrdersShadowMode,
       context.storage,
       network,
       lastNotifiedError
@@ -166,6 +196,7 @@ export class Registry {
   public async write(): Promise<void> {
     await Promise.all([
       this.writeOrders(),
+      this.writePendingOrdersShadowMode(),
       this.writeConditionalOrderRegistryVersion(),
       this.writeLastNotifiedError(),
     ]);
@@ -178,8 +209,19 @@ export class Registry {
     );
   }
 
+  private async writePendingOrdersShadowMode(): Promise<void> {
+    await this.storage.putStr(
+      getPendingOrdersShadowModeStorageKey(this.network),
+      this.stringifyPendingOrdersShadowMode()
+    );
+  }
+
   public stringifyOrders(): string {
     return JSON.stringify(this.ownerOrders, replacer);
+  }
+
+  public stringifyPendingOrdersShadowMode(): string {
+    return JSON.stringify(this.pendingOrdersShadowMode, replacer);
   }
 
   private async writeConditionalOrderRegistryVersion(): Promise<void> {
@@ -258,4 +300,13 @@ function parseConditionalOrders(
     return new Map<Owner, Set<ConditionalOrder>>();
   }
   return JSON.parse(serializedConditionalOrders, _reviver);
+}
+
+function parsePendingOrdersShadowMode(
+  serializedPendingOrdersShadowMode: string | undefined
+): Map<OrderUid, PendingOrderShadowMode> {
+  if (!serializedPendingOrdersShadowMode) {
+    return new Map<OrderUid, PendingOrderShadowMode>();
+  }
+  return JSON.parse(serializedPendingOrdersShadowMode, _reviver);
 }
