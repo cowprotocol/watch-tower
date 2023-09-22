@@ -33,6 +33,17 @@ To run the state rebuilder locally, use the previous command in [Local testing](
 - `PAGE_SIZE`: The page size for `eth_getLogs` (defaults to `5000` to support Infura)
 - `CONTRACT_ADDRESS`: The address of the `ComposableCoW` contract.
 
+Example:
+
+```ini
+# Index all Composable CoW orders from block 17883049 (deployment of Composable CoW in Mainnet)
+NETWORK=1
+BLOCK_NUMBER=17883049
+PAGE_SIZE=5000
+CONTRACT_ADDRESS=0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74
+
+```
+
 Other environment variables such as the RPC node URL and notifications MUST be set as well.
 
 ### Deployment
