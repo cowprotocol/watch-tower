@@ -12,6 +12,7 @@ import {
   ProcessBlockOverrides,
   ReplayPlan,
   getOrdersStorageKey,
+  getPendingOrdersShadowModeStorageKey,
 } from "../model";
 import { exit } from "process";
 import { SupportedChainId } from "@cowprotocol/cow-sdk";
@@ -341,8 +342,11 @@ async function _pollAndPost({
   const result = await testRuntime
     .execute(checkForAndPlaceOrder, testBlockEvent)
     .then(() => true)
-    .catch(() => {
-      console.log(`[run_local] Error running "checkForAndPlaceOrder" action`);
+    .catch((e) => {
+      console.log(
+        `[run_local] Error running "checkForAndPlaceOrder" action`,
+        e
+      );
       return false;
     });
   console.log(
@@ -379,10 +383,18 @@ async function _getRunTime(chainId: SupportedChainId): Promise<TestRuntime> {
   // Load storage from env
   const storage = process.env.STORAGE;
   if (storage) {
-    const storageFormatted = JSON.stringify(JSON.parse(storage), null, 2);
     await testRuntime.context.storage.putStr(
       getOrdersStorageKey(chainId.toString()),
       storage
+    );
+  }
+
+  // Load pending orders shadow mode from env
+  const pendingOrdersShadowMode = process.env.PENDING_ORDERS_SHADOW_MODE;
+  if (pendingOrdersShadowMode) {
+    await testRuntime.context.storage.putStr(
+      getPendingOrdersShadowModeStorageKey(chainId.toString()),
+      pendingOrdersShadowMode
     );
   }
 
