@@ -253,7 +253,5 @@ async function _initLogging(
   ).trim();
   if (logglyToken) {
     initLogging(logglyToken, [transactionName, `chain_${chainId}`]);
-  } else {
-    console.warn("LOGGLY_TOKEN is not set, logging to console only");
   }
 }
