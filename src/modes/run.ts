@@ -1,11 +1,16 @@
 import { RunOptions, SingularRunOptions } from "../types";
-import { ChainContext, Registry, ReplayPlan } from "../types/model";
+import { Registry, ReplayPlan } from "../types/model";
 import DBService from "../utils/db";
 import { ComposableCoW, ComposableCoW__factory } from "../types/generated";
-import { COMPOSABLE_COW_CONTRACT_ADDRESS } from "@cowprotocol/cow-sdk";
+import {
+  COMPOSABLE_COW_CONTRACT_ADDRESS,
+  SupportedChainId,
+} from "@cowprotocol/cow-sdk";
 import { ConditionalOrderCreatedEvent } from "../types/generated/ComposableCoW";
 import { addContract } from "../addContract";
 import { checkForAndPlaceOrder } from "../checkForAndPlaceOrder";
+import { ethers } from "ethers";
+import { apiUrl } from "../utils";
 
 /**
  * Run the watch-tower 👀🐮
@@ -21,16 +26,16 @@ export async function run(options: RunOptions) {
   });
 
   process.on("SIGINT", async function () {
-    console.log("️⚠️ Caught interrupt signal ⚠️");
+    console.log("️⚠️ Caught interrupt signal. Closing DB connection.");
     await DBService.getInstance().close();
     process.exit(0);
   });
 
   let exitCode = 0;
   try {
-    const chainWatchers = await Promise.all(
+    const chainContexts = await Promise.all(
       rpc.map((rpc, index) => {
-        return ChainWatcher.init(
+        return ChainContext.init(
           {
             ...options,
             rpc,
@@ -42,11 +47,11 @@ export async function run(options: RunOptions) {
     );
 
     // Run the block watcher for each chain
-    const runPromises = chainWatchers.map(async (chainWatcher) => {
-      return chainWatcher.warmUp(oneShot);
+    const runPromises = chainContexts.map(async (context) => {
+      return context.warmUp(oneShot);
     });
 
-    // Run all the chain watchers
+    // Run all the chain contexts
     await Promise.all(runPromises);
   } catch (error) {
     console.error(error);
@@ -61,18 +66,21 @@ export async function run(options: RunOptions) {
  * The chain watcher handles watching a single chain for new conditional orders
  * and executing them.
  */
-export class ChainWatcher {
+export class ChainContext {
   private readonly deploymentBlock: number;
   private readonly pageSize: number;
   private readonly publish: boolean;
   private inSync = false;
 
-  chainContext: ChainContext;
+  provider: ethers.providers.Provider;
+  apiUrl: string;
+  chainId: SupportedChainId;
   registry: Registry;
 
   protected constructor(
     options: SingularRunOptions,
-    chainContext: ChainContext,
+    provider: ethers.providers.Provider,
+    chainId: SupportedChainId,
     registry: Registry
   ) {
     const { deploymentBlock, pageSize, publish } = options;
@@ -80,24 +88,28 @@ export class ChainWatcher {
     this.pageSize = pageSize;
     this.publish = publish;
 
+    this.provider = provider;
+    this.apiUrl = apiUrl(chainId);
+    this.chainId = chainId;
     this.registry = registry;
-    this.chainContext = chainContext;
   }
 
   public static async init(
     options: SingularRunOptions,
     storage: DBService
-  ): Promise<ChainWatcher> {
+  ): Promise<ChainContext> {
     const { rpc, deploymentBlock } = options;
 
-    const chainContext = await ChainContext.create(rpc);
+    const provider = new ethers.providers.JsonRpcProvider(rpc);
+    const chainId = (await provider.getNetwork()).chainId;
+
     const registry = await Registry.load(
       storage,
-      chainContext.chainId.toString(),
+      chainId.toString(),
       deploymentBlock
     );
 
-    return new ChainWatcher(options, chainContext, registry);
+    return new ChainContext(options, provider, chainId, registry);
   }
 
   /**
@@ -106,7 +118,7 @@ export class ChainWatcher {
    * @returns the run promises for what needs to be watched
    */
   public async warmUp(oneShot?: boolean) {
-    const { provider, chainId } = this.chainContext;
+    const { provider, chainId } = this;
     const { lastProcessedBlock } = this.registry;
     const { pageSize } = this;
     const _ = (s: string) => console.log(`[warmUp:chainId:${chainId}] ${s}`);
@@ -134,11 +146,7 @@ export class ChainWatcher {
 
         _(`Processing events from block ${fromBlock} to block ${toBlock}`);
 
-        const events = await pollContractForEvents(
-          fromBlock,
-          toBlock,
-          this.chainContext
-        );
+        const events = await pollContractForEvents(fromBlock, toBlock, this);
 
         _(`Found ${events.length} events`);
 
@@ -221,7 +229,7 @@ export class ChainWatcher {
    * 2. Check if any orders want to create discrete orders.
    */
   public async runBlockWatcher() {
-    const { provider, chainId } = this.chainContext;
+    const { provider, chainId } = this;
     const _ = (s: string) =>
       console.log(`[runBlockWatcher:chainId:${chainId}] ${s}`);
     // Watch for new blocks
@@ -233,7 +241,7 @@ export class ChainWatcher {
         const events = await pollContractForEvents(
           blockNumber,
           blockNumber,
-          this.chainContext
+          this
         );
 
         try {
@@ -255,13 +263,13 @@ export class ChainWatcher {
 }
 
 async function processBlock(
-  chain: ChainWatcher,
+  context: ChainContext,
   blockNumber: number,
   events: ConditionalOrderCreatedEvent[],
   blockNumberOverride?: number,
   blockTimestampOverride?: number
 ) {
-  const { provider } = chain.chainContext;
+  const { provider } = context;
   const block = await provider.getBlock(blockNumber);
 
   // Transaction watcher for adding new contracts
@@ -273,7 +281,7 @@ async function processBlock(
       console.log(
         `[processBlock] Run "addContract" action for TX ${event.transactionHash}`
       );
-      const result = await addContract(chain, event)
+      const result = await addContract(context, event)
         .then(() => true)
         .catch((e) => {
           hasErrors = true;
@@ -294,7 +302,7 @@ async function processBlock(
   // run action
   console.log(`[processBlock] checkForAndPlaceOrder for block ${blockNumber}`);
   const result = await checkForAndPlaceOrder(
-    chain,
+    context,
     block,
     blockNumberOverride,
     blockTimestampOverride
@@ -316,19 +324,19 @@ async function processBlock(
   }
 }
 
-function composableCowContract(chain: ChainContext): ComposableCoW {
+function composableCowContract(context: ChainContext): ComposableCoW {
   return ComposableCoW__factory.connect(
-    COMPOSABLE_COW_CONTRACT_ADDRESS[chain.chainId],
-    chain.provider
+    COMPOSABLE_COW_CONTRACT_ADDRESS[context.chainId],
+    context.provider
   );
 }
 
 function pollContractForEvents(
   fromBlock: number,
   toBlock: number | "latest",
-  chain: ChainContext
+  context: ChainContext
 ): Promise<ConditionalOrderCreatedEvent[]> {
-  const composableCow = composableCowContract(chain);
+  const composableCow = composableCowContract(context);
   const filter = composableCow.filters.ConditionalOrderCreated();
   return composableCow.queryFilter(filter, fromBlock, toBlock);
 }

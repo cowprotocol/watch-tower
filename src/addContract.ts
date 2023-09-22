@@ -9,35 +9,30 @@ import type {
 } from "./types/generated/ComposableCoW";
 import { ComposableCoW__factory } from "./types/generated/factories/ComposableCoW__factory";
 
-import {
-  isComposableCowCompatible,
-  handleExecutionError,
-  writeRegistry,
-} from "./utils";
+import { isComposableCowCompatible, handleExecutionError } from "./utils";
 import { Owner, Proof, Registry } from "./types/model";
-import { ChainWatcher } from "./modes";
+import { ChainContext } from "./modes";
 
 /**
  * Listens to these events on the `ComposableCoW` contract:
  * - `ConditionalOrderCreated`
  * - `MerkleRootSet`
- * @param chainWatcher chain watcher
+ * @param context chain context
  * @param event transaction event
  */
 export async function addContract(
-  chainWatcher: ChainWatcher,
+  chainWatcher: ChainContext,
   event: ConditionalOrderCreatedEvent
 ) {
   return _addContract(chainWatcher, event).catch(handleExecutionError);
 }
 
 async function _addContract(
-  context: ChainWatcher,
+  context: ChainContext,
   event: ConditionalOrderCreatedEvent
 ) {
   const composableCow = ComposableCoW__factory.createInterface();
-  const { chainContext, registry } = context;
-  const { provider } = chainContext;
+  const { provider, registry } = context;
 
   // Process the logs
   let hasErrors = false;
@@ -60,7 +55,11 @@ async function _addContract(
   hasErrors ||= error;
 
   console.log(`[addContract] Added ${numContractsAdded} contracts`);
-  hasErrors ||= !(await writeRegistry());
+
+  // save the registry - don't catch errors here, as it's now a docker container
+  // and we want to crash if there's an error
+  await registry.write();
+
   // Throw execution error if there was at least one error
   if (hasErrors) {
     throw Error(

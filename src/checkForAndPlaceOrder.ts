@@ -24,9 +24,8 @@ import {
   formatStatus,
   handleExecutionError,
   parseCustomError,
-  writeRegistry,
 } from "./utils";
-import { ChainContext, ConditionalOrder, OrderStatus } from "./types/model";
+import { ConditionalOrder, OrderStatus } from "./types/model";
 import { pollConditionalOrder } from "./utils/poll";
 import {
   PollParams,
@@ -38,7 +37,7 @@ import {
   PollResultUnexpectedError,
   SupportedChainId,
 } from "@cowprotocol/cow-sdk";
-import { ChainWatcher } from "./modes";
+import { ChainContext } from "./modes";
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
@@ -59,7 +58,7 @@ const ORDER_BOOK_API_HANDLED_ERRORS = [
  * @param event block event
  */
 export async function checkForAndPlaceOrder(
-  context: ChainWatcher,
+  context: ChainContext,
   block: ethers.providers.Block,
   blockNumberOverride?: number,
   blockTimestampOverride?: number
@@ -76,13 +75,12 @@ export async function checkForAndPlaceOrder(
  * Asynchronous version of checkForAndPlaceOrder. It will process all the orders, and will throw an error at the end if there was at least one error
  */
 async function _checkForAndPlaceOrder(
-  context: ChainWatcher,
+  context: ChainContext,
   block: ethers.providers.Block,
   blockNumberOverride?: number,
   blockTimestampOverride?: number
 ) {
-  const { chainContext, registry } = context;
-  const { chainId } = chainContext;
+  const { chainId, registry, provider } = context;
   const { ownerOrders } = registry;
 
   const blockNumber = blockNumberOverride || block.number;
@@ -140,12 +138,9 @@ async function _checkForAndPlaceOrder(
       console.log(`${logPrefix} ${logOrderDetails}`, conditionalOrder.params);
       const contract = ComposableCoW__factory.connect(
         conditionalOrder.composableCow,
-        chainContext.provider
+        provider
       );
-      const multicall = Multicall3__factory.connect(
-        MULTICALL3,
-        chainContext.provider
-      );
+      const multicall = Multicall3__factory.connect(MULTICALL3, provider);
 
       const pollResult = await _processConditionalOrder(
         owner,
@@ -155,7 +150,7 @@ async function _checkForAndPlaceOrder(
         blockNumber,
         contract,
         multicall,
-        chainContext
+        context
       );
 
       // Don't try again the same order, in case thats the poll result
@@ -215,8 +210,9 @@ async function _checkForAndPlaceOrder(
     }
   }
 
-  // Update the registry
-  hasErrors ||= await !writeRegistry();
+  // save the registry - don't catch errors here, as it's now a docker container
+  // and we want to crash if there's an error
+  await registry.write();
 
   // console.log(
   //   `[run_local] New CONDITIONAL_ORDER_REGISTRY value: `,
@@ -241,8 +237,9 @@ async function _processConditionalOrder(
   blockNumber: number,
   contract: ComposableCoW,
   multicall: Multicall3,
-  chainContext: ChainContext
+  context: ChainContext
 ): Promise<PollResult> {
+  const { provider, apiUrl } = context;
   try {
     // TODO: Fix model and delete the explicit cast: https://github.com/cowprotocol/tenderly-watch-tower/issues/18
     const [handler, salt, staticInput] = conditionalOrder.params as any as [
@@ -265,7 +262,7 @@ async function _processConditionalOrder(
         blockTimestamp,
         blockNumber,
       },
-      provider: chainContext.provider,
+      provider,
     };
     const conditionalOrderParams = {
       handler,
@@ -316,7 +313,7 @@ async function _processConditionalOrder(
       const placeOrderResult = await _placeOrder(
         orderUid,
         { ...orderToSubmit, from: owner, signature },
-        chainContext.apiUrl
+        apiUrl
       );
 
       // In case of error, return early
