@@ -237,12 +237,9 @@ async function processTx(
   let hasErrors = false;
   const transaction = await provider.getTransaction(tx);
   if (!transaction?.blockNumber) {
-    throw new Error(`The transaction ${tx} is not mined yet (no blockNumber)`);
+    throw new Error(`The transaction ${tx} not found`);
   }
   const block = await provider.getBlock(transaction.blockNumber);
-  if (!transaction) {
-    throw new Error(`[run_local] Transaction ${tx} not found`);
-  }
 
   hasErrors ||= !(await _processTx(
     provider,
