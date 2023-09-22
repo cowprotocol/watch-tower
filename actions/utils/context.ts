@@ -66,9 +66,10 @@ async function _getSlack(
 
   // Init slack
   let slack;
-  const webhookUrl = await context.secrets
-    .get("SLACK_WEBHOOK_URL")
-    .catch(() => "");
+  const webhookUrl = (
+    await context.secrets.get("SLACK_WEBHOOK_URL").catch(() => "")
+  ).trim();
+
   if (!notificationsEnabled) {
     return undefined;
   }
@@ -247,10 +248,10 @@ async function _initLogging(
   chainId: SupportedChainId,
   context: Context
 ) {
-  const logglyToken = await context.secrets.get("LOGGLY_TOKEN").catch(() => "");
+  const logglyToken = (
+    await context.secrets.get("LOGGLY_TOKEN").catch(() => "")
+  ).trim();
   if (logglyToken) {
     initLogging(logglyToken, [transactionName, `chain_${chainId}`]);
-  } else {
-    console.warn("LOGGLY_TOKEN is not set, logging to console only");
   }
 }
