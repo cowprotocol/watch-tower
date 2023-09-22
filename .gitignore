@@ -15,3 +15,6 @@ node_modules/
 /dist/
 .yalc
 yalc.lock
+
+# Databases
+database*
