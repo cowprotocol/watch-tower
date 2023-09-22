@@ -89,27 +89,27 @@ const _checkForAndPlaceOrder: ActionFn = async (
   let ownerCounter = 0;
   let orderCounter = 0;
 
-  if (ownerOrders.size > 0) {
-    console.log(`[checkForAndPlaceOrder] Processing Block ${blockNumber}`);
-  }
-
   const { timestamp: blockTimestamp } = await chainContext.provider.getBlock(
     blockNumber
   );
 
-  console.log("[checkForAndPlaceOrder] Number of orders: ", registry.numOrders);
+  console.log(
+    `[checkForAndPlaceOrder@${blockNumber}] Number of orders: `,
+    registry.numOrders
+  );
 
   for (const [owner, conditionalOrders] of ownerOrders.entries()) {
     ownerCounter++;
     const ordersPendingDelete = [];
     // enumerate all the `ConditionalOrder`s for a given owner
     console.log(
-      `[checkForAndPlaceOrder::${ownerCounter}] Process owner ${owner} (${conditionalOrders.size} orders)`
+      `[checkForAndPlaceOrder::${ownerCounter}@${blockNumber}] Process owner ${owner} (${conditionalOrders.size} orders)`
     );
     for (const conditionalOrder of conditionalOrders) {
       orderCounter++;
-      const logPrefix = `[checkForAndPlaceOrder::${ownerCounter}.${orderCounter}]`;
-      const logOrderDetails = `Order created in TX ${conditionalOrder.tx} with params:`;
+      const orderRef = `${ownerCounter}.${orderCounter}@${blockNumber}`;
+      const logPrefix = `[checkForAndPlaceOrder::${orderRef}]`;
+      const logOrderDetails = `Processing order from TX ${conditionalOrder.tx} with params:`;
 
       const { result: lastResult } = conditionalOrder.pollResult || {};
 
@@ -156,7 +156,8 @@ const _checkForAndPlaceOrder: ActionFn = async (
         blockNumber,
         contract,
         multicall,
-        chainContext
+        chainContext,
+        orderRef
       );
 
       // Don't try again the same order, in case thats the poll result
@@ -220,7 +221,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
       const deleted = conditionalOrders.delete(conditionalOrder);
       const action = deleted ? "Deleted" : "Fail to delete";
       console.log(
-        `[checkForAndPlaceOrder] ${action} conditional order with params:`,
+        `[checkForAndPlaceOrder@${blockNumber}] ${action} conditional order with params:`,
         conditionalOrder.params
       );
     }
@@ -242,12 +243,15 @@ const _checkForAndPlaceOrder: ActionFn = async (
   //   registry.stringifyOrders()
   // );
 
-  console.log("[checkForAndPlaceOrder] Remaining orders: ", registry.numOrders);
+  console.log(
+    `[checkForAndPlaceOrder@${blockNumber}] Remaining orders: `,
+    registry.numOrders
+  );
 
   // Throw execution error if there was at least one error
   if (hasErrors) {
     throw Error(
-      "[checkForAndPlaceOrder] At least one unexpected error processing conditional orders"
+      `[checkForAndPlaceOrder@${blockNumber}] At least one unexpected error processing conditional orders`
     );
   }
 };
@@ -260,7 +264,8 @@ async function _processConditionalOrder(
   blockNumber: number,
   contract: ComposableCoW,
   multicall: Multicall3,
-  chainContext: ChainContext
+  chainContext: ChainContext,
+  orderRef: string
 ): Promise<PollResult> {
   try {
     // TODO: Fix model and delete the explicit cast: https://github.com/cowprotocol/tenderly-watch-tower/issues/18
@@ -293,7 +298,8 @@ async function _processConditionalOrder(
     };
     let pollResult = await pollConditionalOrder(
       pollParams,
-      conditionalOrderParams
+      conditionalOrderParams,
+      orderRef
     );
 
     if (!pollResult) {
@@ -307,7 +313,8 @@ async function _processConditionalOrder(
         contract,
         multicall,
         proof,
-        offchainInput
+        offchainInput,
+        orderRef
       );
     }
 
@@ -335,7 +342,8 @@ async function _processConditionalOrder(
       const placeOrderResult = await _placeOrder(
         orderUid,
         { ...orderToSubmit, from: owner, signature },
-        chainContext.apiUrl
+        chainContext.apiUrl,
+        orderRef
       );
 
       // In case of error, return early
@@ -348,7 +356,7 @@ async function _processConditionalOrder(
     } else {
       const orderStatus = conditionalOrder.orders.get(orderUid);
       console.log(
-        `OrderUid ${orderUid} status: ${
+        `[processConditionalOrder::${orderRef}] OrderUid ${orderUid} status: ${
           orderStatus ? formatStatus(orderStatus) : "Not found"
         }`
       );
@@ -418,12 +426,14 @@ export const _printUnfilledOrders = (orders: Map<BytesLike, OrderStatus>) => {
 async function _placeOrder(
   orderUid: string,
   order: any,
-  apiUrl: string
+  apiUrl: string,
+  orderRef: string
 ): Promise<
   | Omit<PollResultSuccess, "order" | "signature">
   | PollResultTryNextBlock
   | PollResultUnexpectedError
 > {
+  const logPrefix = `[placeOrder::${orderRef}]`;
   try {
     const postData = {
       sellToken: order.sellToken,
@@ -444,8 +454,8 @@ async function _placeOrder(
     };
 
     // if the apiUrl doesn't contain localhost, post
-    console.log(`[placeOrder] Post order ${orderUid} to ${apiUrl}`);
-    console.log(`[placeOrder] Order`, postData);
+    console.log(`${logPrefix} Post order ${orderUid} to ${apiUrl}`);
+    console.log(`${logPrefix} Order`, postData);
     if (!apiUrl.includes("localhost")) {
       const { status, data } = await axios.post(
         `${apiUrl}/api/v1/orders`,
@@ -457,7 +467,7 @@ async function _placeOrder(
           },
         }
       );
-      console.log(`[placeOrder] API response`, { status, data });
+      console.log(`${logPrefix} API response`, { status, data });
     }
   } catch (error: any) {
     let reasonError = "Error placing order in API";
@@ -470,10 +480,10 @@ async function _placeOrder(
       // The request was made and the server responded with a status code
       // that falls out of the range of 2xx
       const log = console[isSuccess ? "warn" : "error"];
-      log(`[placeOrder] Error placing order in API. Result: ${status}`, data);
+      log(`${logPrefix} Error placing order in API. Result: ${status}`, data);
 
       if (isSuccess) {
-        log("All good! continuing with warnings...");
+        log(`${orderRef} All good! continuing with warnings...`);
         return { result: PollResultCode.SUCCESS };
       } else {
         return handleErrorResult;
@@ -539,11 +549,13 @@ async function _pollLegacy(
   contract: ComposableCoW,
   multicall: Multicall3,
   proof: string[],
-  offchainInput: string
+  offchainInput: string,
+  orderRef: string
 ): Promise<PollResult> {
   // as we going to use multicall, with `aggregate3Value`, there is no need to do any simulation as the
   // calls are guaranteed to pass, and will return the results, or the reversion within the ABI-encoded data.
   // By not using `populateTransaction`, we avoid an `eth_estimateGas` RPC call.
+  const logPrefix = `[pollLegacy::${orderRef}]`;
   const to = contract.address;
   const data = contract.interface.encodeFunctionData(
     "getTradeableOrderWithSignature",
@@ -551,7 +563,7 @@ async function _pollLegacy(
   );
 
   console.log(
-    `[pollLegacy] Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${to}&rawFunctionInput=${data}`
+    `${logPrefix} Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${to}&rawFunctionInput=${data}`
   );
 
   try {
@@ -584,17 +596,18 @@ async function _pollLegacy(
   } catch (error: any) {
     // Print and handle the error
     // We need to decide if the error is final or not (if a re-attempt might help). If it doesn't, we delete the order
-    return _handleGetTradableOrderCall(error, owner);
+    return _handleGetTradableOrderCall(error, owner, orderRef);
   }
 }
 
 function _handleGetTradableOrderCall(
   error: any,
-  owner: string
+  owner: string,
+  orderRef: string
 ): PollResultErrors {
+  let logPrefix = `[pollLegacy::${orderRef}]`;
   if (error.code === Logger.errors.CALL_EXCEPTION) {
-    const errorMessagePrefix = "[pollLegacy] Call Exception";
-
+    logPrefix += "Call Exception:";
     // Support raw errors (nethermind issue), and parameterised errors (ethers issue)
     const { errorNameOrSelector } = parseCustomError(error);
     switch (errorNameOrSelector) {
@@ -617,7 +630,7 @@ function _handleGetTradableOrderCall(
         // - for now it doesn't support more advanced cases where the order is auth during a pre-interaction
 
         console.info(
-          `${errorMessagePrefix}: Single order on safe ${owner} not authed. Deleting order...`
+          `${logPrefix} Single order on safe ${owner} not authed. Deleting order...`
         );
         return {
           result: PollResultCode.DONT_TRY_AGAIN,
@@ -631,7 +644,7 @@ function _handleGetTradableOrderCall(
         // - for now it doesn't support more advanced cases where the order is auth during a pre-interaction
 
         console.info(
-          `${errorMessagePrefix}: Proof on safe ${owner} not authed. Deleting order...`
+          `${logPrefix} Proof on safe ${owner} not authed. Deleting order...`
         );
         return {
           result: PollResultCode.DONT_TRY_AGAIN,
@@ -642,10 +655,7 @@ function _handleGetTradableOrderCall(
         // - One reason could be, because the user CANCELLED the order
         // - for now it doesn't support more advanced cases where the order is auth during a pre-interaction
         const errorName = error.errorName ? ` (${error.errorName})` : "";
-        console.error(
-          `${errorMessagePrefix} for unexpected reasons${errorName}`,
-          error
-        );
+        console.error(`${logPrefix} for unexpected reasons${errorName}`, error);
         // If we don't know the reason, is better to not delete the order
         return {
           result: PollResultCode.TRY_NEXT_BLOCK,
@@ -654,7 +664,7 @@ function _handleGetTradableOrderCall(
     }
   }
 
-  console.error("[pollLegacy] Unexpected error", error);
+  console.error(`${logPrefix} Unexpected error`, error);
   // If we don't know the reason, is better to not delete the order
   return {
     result: PollResultCode.TRY_NEXT_BLOCK,
