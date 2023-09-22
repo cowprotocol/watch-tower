@@ -321,12 +321,11 @@ async function _processConditionalOrder(
       staticInput,
       salt,
     };
-    // const result = await pollConditionalOrder(
-    //   pollParams,
-    //   conditionalOrderParams,
-    //   orderRef
-    // );
-    const result = undefined;
+    const result = await pollConditionalOrder(
+      pollParams,
+      conditionalOrderParams,
+      orderRef
+    );
     const { pollResult, conditionalOrderId } = result
       ? result
       : {
@@ -363,51 +362,23 @@ async function _processConditionalOrder(
 
     // calculate the orderUid
     const orderUid = _getOrderUid(chainId, orderToSubmit, owner);
+    const orderToPost = toOrderApi(orderToSubmit, owner, signature);
 
-    // TODO: This order should be typed, and we should use the SDK to post the order (we will do in v2 of the watch tower that is being develop as we speak)
-    const orderPost = {
-      ...orderToSubmit,
-      from: owner,
-      signature,
-      sellAmount: order.sellAmount.toString(),
-      buyAmount: order.buyAmount.toString(),
-      feeAmount: order.feeAmount.toString(),
-      signingScheme: "eip1271",
-    };
-
-    // In case we run in shadow mode, we don't place the order, but we still need to track it
     if (isShadowMode) {
-      const pendingOrderShadowMode = pendingOrdersShadowMode.get(orderUid);
-      if (pendingOrderShadowMode) {
-        const { order, firstSeenBlockTimestamp } = pendingOrderShadowMode;
+      // In case we run in shadow mode, we decide if we post the order or not
+      const shadowModeResult = _handleOrderShadowMode({
+        orderUid,
+        conditionalOrderId,
+        conditionalOrder,
+        blockTimestamp,
+        pendingOrdersShadowMode,
+        orderToPost,
+        logPrefix,
+      });
 
-        if (
-          blockTimestamp - firstSeenBlockTimestamp >
-          SHADOW_MODE_LAG_SECONDS
-        ) {
-          console.error(
-            `${logPrefix} Shadow Mode. Order ${orderUid} has been over ${Math.floor(
-              SHADOW_MODE_LAG_SECONDS / 60
-            )} minutes pending to be posted to the API. Some WatchTower might be down`
-          );
-        }
-      } else {
-        console.log(
-          `${logPrefix} Shadow Mode. Deferring the submission of order ${orderUid}`
-        );
-
-        pendingOrdersShadowMode.set(orderUid, {
-          conditionalOrderId,
-          firstSeenBlockTimestamp: blockTimestamp,
-          order: orderPost,
-          orderUid,
-          conditionalOrder,
-        });
-
-        return {
-          result: PollResultCode.TRY_NEXT_BLOCK,
-          reason: "Shadow Mode",
-        };
+      // If the order shouldn't be posted, we return early
+      if (shadowModeResult) {
+        return shadowModeResult;
       }
     }
 
@@ -416,7 +387,7 @@ async function _processConditionalOrder(
       // Place order
       const placeOrderResult = await _placeOrder({
         orderUid,
-        order: orderPost,
+        order: orderToPost,
         apiUrl: chainContext.apiUrl,
         blockTimestamp,
         orderRef,
@@ -759,6 +730,107 @@ function _handleGetTradableOrderCall(
     reason:
       "UnexpectedErrorName: Unspected error" +
       (error.message ? `: ${error.message}` : ""),
+  };
+}
+
+function _handleOrderShadowMode(params: {
+  orderUid: string;
+  conditionalOrderId: string | undefined;
+  conditionalOrder: ConditionalOrder;
+  blockTimestamp: number;
+  pendingOrdersShadowMode: Map<ethers.utils.BytesLike, PendingOrderShadowMode>;
+  orderToPost: any;
+  logPrefix: string;
+}): PollResultErrors | undefined {
+  const {
+    orderUid,
+    conditionalOrderId,
+    conditionalOrder,
+    blockTimestamp,
+    pendingOrdersShadowMode,
+    orderToPost,
+    logPrefix,
+  } = params;
+  const pendingOrderShadowMode = pendingOrdersShadowMode.get(orderUid);
+  const reasonDescription = `Deferred posting ${orderUid} to the API (running in shadow mode).`;
+  if (pendingOrderShadowMode) {
+    const { firstSeenBlockTimestamp } = pendingOrderShadowMode;
+    const secondsElapsed = blockTimestamp - firstSeenBlockTimestamp;
+    if (secondsElapsed > SHADOW_MODE_LAG_SECONDS) {
+      console.error(
+        `${logPrefix} Shadow Mode. Order ${orderUid} has been over ${Math.floor(
+          SHADOW_MODE_LAG_SECONDS / 60
+        )} minutes pending to be posted to the API. Some WatchTower might be down`
+      );
+      return undefined;
+    } else {
+      console.log(
+        `${logPrefix} Shadow Mode. Deferring the submission of order ${orderUid} (first seen ${secondsElapsed} seconds ago)`
+      );
+      return {
+        result: PollResultCode.TRY_NEXT_BLOCK, // We don't return TRY_AT_EPOCH to try after the lag, because the same conditional order can generate more orders, and some of them could be posted before that
+        reason: `${reasonDescription} Will post it after ${
+          SHADOW_MODE_LAG_SECONDS - secondsElapsed
+        } seconds`,
+      };
+    }
+  } else {
+    console.log(
+      `${logPrefix} Shadow Mode. Deferring the submission of a new order ${orderUid}`
+    );
+
+    pendingOrdersShadowMode.set(orderUid, {
+      conditionalOrderId,
+      firstSeenBlockTimestamp: blockTimestamp,
+      order: orderToPost,
+      orderUid,
+      conditionalOrder,
+    });
+
+    console.log(pendingOrdersShadowMode.get(orderUid));
+
+    return {
+      result: PollResultCode.TRY_NEXT_BLOCK,
+      reason: `${reasonDescription} Will post it after ${Math.floor(
+        SHADOW_MODE_LAG_SECONDS / 60
+      )} minutes`,
+    };
+  }
+}
+
+function toOrderApi(order: Order, owner: string, signature: string): any {
+  // TODO: This order should be typed, and we should use the SDK (@see OrderCreation type)
+  //  Our of the scope, Watch Tower v2 is being done as we speak, so we need to keep the changes minimal and this will likely be rewritten
+  const {
+    sellToken,
+    buyToken,
+    receiver,
+    sellAmount,
+    buyAmount,
+    validTo,
+    appData,
+    feeAmount,
+    kind,
+    partiallyFillable,
+    sellTokenBalance,
+    buyTokenBalance,
+  } = order;
+  return {
+    sellToken,
+    buyToken,
+    receiver,
+    validTo,
+    appData,
+    kind,
+    partiallyFillable,
+    sellTokenBalance,
+    buyTokenBalance,
+    from: owner,
+    signature,
+    sellAmount: sellAmount.toString(),
+    buyAmount: buyAmount.toString(),
+    feeAmount: feeAmount.toString(),
+    signingScheme: "eip1271",
   };
 }
 
