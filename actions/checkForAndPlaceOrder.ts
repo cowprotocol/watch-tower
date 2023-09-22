@@ -44,6 +44,7 @@ import {
   PollResultCode,
   PollResultErrors,
   PollResultSuccess,
+  PollResultUnexpectedError,
   SupportedChainId,
   formatEpoch,
 } from "@cowprotocol/cow-sdk";
@@ -92,6 +93,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
   const { network, blockNumber } = blockEvent;
   const chainId = toChainId(network);
   const chainContext = await ChainContext.create(context, chainId);
+  const { provider, apiUrl } = chainContext;
   const { registry, isShadowMode } = await initContext(
     "checkForAndPlaceOrder",
     chainId,
@@ -104,35 +106,19 @@ const _checkForAndPlaceOrder: ActionFn = async (
   let ownerCounter = 0;
   let orderCounter = 0;
 
-  const { timestamp: blockTimestamp } = await chainContext.provider.getBlock(
-    blockNumber
-  );
+  const { timestamp: blockTimestamp } = await provider.getBlock(blockNumber);
 
-  // In shadow mode, we check all pending orders
+  // In shadow mode, we check all pending orders (and post them to the API if its the right time)
   if (isShadowMode && pendingOrdersShadowMode.size > 0) {
-    const logPrefix = `[shadowCheck@${blockNumber}]`;
-    for (const [orderUid, pendingOrderShadowMode] of Array.from(
-      pendingOrdersShadowMode.entries()
-    )) {
-      const { conditionalOrder, conditionalOrderId, order } =
-        pendingOrderShadowMode;
-      _handleOrderShadowMode({
-        orderUid: orderUid.toString(),
-        conditionalOrderId,
-        conditionalOrder,
-        blockTimestamp,
-        apiUrl: chainContext.apiUrl,
-        pendingOrdersShadowMode,
-        orderToPost: order,
-        logPrefix,
-      }).catch((e) => {
-        // Don't let the pending shadow orders to stop the execution
-        console.error(`${logPrefix} Error handling the order ${orderUid}`, e);
-      });
-    }
     console.log(
       `${logPrefixMain} Shadow mode. Processing ${pendingOrdersShadowMode.size} pending orders`
     );
+    await _handleAllOrdersShadowMode({
+      pendingOrdersShadowMode,
+      blockNumber,
+      apiUrl,
+      blockTimestamp,
+    });
   }
 
   console.log(`${logPrefixMain} Number of orders: `, registry.numOrders);
@@ -186,12 +172,9 @@ const _checkForAndPlaceOrder: ActionFn = async (
       console.log(`${logPrefix} ${logOrderDetails}`, conditionalOrder.params);
       const contract = ComposableCoW__factory.connect(
         conditionalOrder.composableCow,
-        chainContext.provider
+        provider
       );
-      const multicall = Multicall3__factory.connect(
-        MULTICALL3,
-        chainContext.provider
-      );
+      const multicall = Multicall3__factory.connect(MULTICALL3, provider);
 
       const pollResult = await _processConditionalOrder(
         owner,
@@ -213,7 +196,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
         // It can happen if:
         //    - Tenderly RPC node is ahead of our RPC node
         //    - There's a reorg between the registration and the polling
-        const transactionExists = await chainContext.provider
+        const transactionExists = await provider
           .getTransaction(conditionalOrder.tx)
           .then(() => true)
           .catch(() => false);
@@ -502,12 +485,12 @@ async function _placeOrder(params: {
   orderUid: string;
   order: any;
   apiUrl: string;
-  orderRef: string;
+  orderRef: string | undefined;
   blockTimestamp: number;
 }): Promise<Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors> {
   const { orderUid, order, apiUrl, orderRef, blockTimestamp } = params;
 
-  const logPrefix = `[placeOrder::${orderRef}]`;
+  const logPrefix = `[placeOrder${orderRef ? "::" + order : ""}]`;
   try {
     // if the apiUrl doesn't contain localhost, post
     console.log(`${logPrefix} Post order ${orderUid} to ${apiUrl}`);
@@ -756,6 +739,64 @@ function _handleGetTradableOrderCall(
   };
 }
 
+async function _handleAllOrdersShadowMode(params: {
+  blockTimestamp: number;
+  pendingOrdersShadowMode: Map<ethers.utils.BytesLike, PendingOrderShadowMode>;
+  blockNumber: number;
+  apiUrl: string;
+}): Promise<void> {
+  const { blockNumber, blockTimestamp, pendingOrdersShadowMode, apiUrl } =
+    params;
+  const logPrefix = `[shadowCheck@${blockNumber}]`;
+  for (const [orderUid, pendingOrderShadowMode] of Array.from(
+    pendingOrdersShadowMode.entries()
+  )) {
+    const { conditionalOrder, conditionalOrderId, order } =
+      pendingOrderShadowMode;
+    const shadowModeResult = await _handleOrderShadowMode({
+      orderUid: orderUid.toString(),
+      conditionalOrderId,
+      conditionalOrder,
+      blockTimestamp,
+      apiUrl,
+      pendingOrdersShadowMode,
+      orderToPost: order,
+      logPrefix,
+    }).catch((e) => {
+      // Don't let the pending shadow orders to stop the execution
+      const error: PollResultUnexpectedError = {
+        result: PollResultCode.UNEXPECTED_ERROR,
+        reason: `${logPrefix} Error handling the order ${orderUid}: ${e.message}`,
+        error: e,
+      };
+      return error;
+    });
+
+    // We need to post the order to the orderbook
+    if (shadowModeResult === undefined) {
+      const placeOrderResult = await _placeOrder({
+        orderUid: orderUid.toString(),
+        apiUrl,
+        blockTimestamp,
+        order,
+        orderRef: undefined,
+      });
+
+      if (placeOrderResult.result === PollResultCode.SUCCESS) {
+        console.log(
+          `${logPrefix} ☀️ Posted order ${orderUid} to the API. Shadow Watch Tower saved the day!`
+        );
+        pendingOrdersShadowMode.delete(orderUid);
+      } else {
+        console.error(
+          `${logPrefix} Error posting order ${orderUid} to the API`,
+          placeOrderResult
+        );
+      }
+    }
+  }
+}
+
 async function _handleOrderShadowMode(params: {
   orderUid: string;
   conditionalOrderId: string | undefined;
@@ -804,8 +845,6 @@ async function _handleOrderShadowMode(params: {
         // Not returning an error will make the WatchTower to continue and post the order
         return undefined;
       }
-
-      return undefined;
     } else {
       // 🕣 We need to wait longer until we can post the order
       console.log(
