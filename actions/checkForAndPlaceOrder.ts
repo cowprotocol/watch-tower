@@ -55,7 +55,7 @@ const ORDER_BOOK_API_HANDLED_ERRORS = [
 ];
 
 const ApiErrors = OrderPostError.errorType;
-const WAITING_TIME_MINUTES_FOR_NOT_BALANCE = 10; // 10 min
+const WAITING_TIME_SECONDS_FOR_NOT_BALANCE = 10 * 60; // 10 min
 
 /**
  * Watch for new blocks and check for orders to place
@@ -549,15 +549,15 @@ function _handleOrderBookError(params: {
       ].includes(data?.errorType)
     ) {
       const nextPollTimestamp =
-        blockTimestamp + WAITING_TIME_MINUTES_FOR_NOT_BALANCE * 60;
+        blockTimestamp + WAITING_TIME_SECONDS_FOR_NOT_BALANCE;
       return {
         result: PollResultCode.TRY_AT_EPOCH,
-        epoch: blockTimestamp + WAITING_TIME_MINUTES_FOR_NOT_BALANCE,
+        epoch: nextPollTimestamp,
         reason: `Not enough allowance/balance (${
           data?.errorType
-        }). Scheduling next polling in ${WAITING_TIME_MINUTES_FOR_NOT_BALANCE} minutes, at ${nextPollTimestamp} ${formatEpoch(
-          nextPollTimestamp
-        )}`,
+        }). Scheduling next polling in ${Math.floor(
+          WAITING_TIME_SECONDS_FOR_NOT_BALANCE / 60
+        )} minutes, at ${nextPollTimestamp} ${formatEpoch(nextPollTimestamp)}`,
       };
     }
 
