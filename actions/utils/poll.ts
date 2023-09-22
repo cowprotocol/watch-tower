@@ -28,12 +28,20 @@ export async function pollConditionalOrder(
     ? { ...pollParams, blockInfo: undefined }
     : pollParams;
 
+  const orderId = order.id;
+  const orderString = order.toString();
+
   console.log(
-    `${prefix} Polling for ${order.toString()} using block (${
+    `[polling] Polling for ${
+      orderString.includes(orderId)
+        ? orderString
+        : `Order (${orderId}) ${orderString}`
+    } using block (${
       actualPollParams.blockInfo === undefined
         ? "latest"
         : actualPollParams.blockInfo.blockNumber
     })....`
   );
+
   return order.poll(actualPollParams);
 }
