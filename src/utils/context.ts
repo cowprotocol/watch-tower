@@ -1,5 +1,4 @@
 import Slack = require("node-slack");
-import { backOff } from "exponential-backoff";
 import DBService from "./db";
 
 import {
@@ -119,7 +118,7 @@ export async function handleExecutionError(e: any) {
 
     if (notified && executionContext) {
       executionContext.registry.lastNotifiedError = new Date();
-      await writeRegistry();
+      await executionContext.registry.write();
     }
   } catch (error) {
     console.error("Error sending slack notification", error);
@@ -164,67 +163,6 @@ export function sendSlack(message: string): boolean {
     text: message,
   });
   return true;
-}
-
-/**
- * Convenient utility to log in case theres an error writing in the registry and return a boolean with the result of the operation
- *
- * @param registry Tenderly registry
- * @returns a promise that returns true if the registry write was successful
- */
-export async function writeRegistry(): Promise<boolean> {
-  if (executionContext) {
-    return handlePromiseErrors(
-      "Error writing registry. Not more attempts!",
-      backOff(
-        async () => {
-          if (!executionContext) {
-            return undefined;
-          }
-          return executionContext.registry.write();
-        },
-        {
-          numOfAttempts: 10,
-          timeMultiple: 2,
-          retry: (e, attemptNumber) => {
-            console.warn(
-              `Error writing registry. Attempt ${attemptNumber}. Retrying...`,
-              e
-            );
-            return true;
-          },
-        }
-      ).catch((e) => {
-        if (executionContext) {
-          console.error(
-            "Error writing registry. Not more attempts! Dumping the orders",
-            executionContext.registry.stringifyOrders()
-          );
-        }
-        throw e;
-      })
-    );
-  }
-
-  return true;
-}
-
-/**
- * Utility function to handle promise, so they are logged in case of an error. It will return a promise that resolves to true if the promise is successful
- * @param errorMessage message to log in case of an error (together with the original error)
- * @param promise original promise
- * @returns a promise that returns true if the original promise was successful
- */
-function handlePromiseErrors<T>(
-  errorMessage: string,
-  promise: Promise<T>
-): Promise<boolean> {
-  return promise
-    .then(() => true)
-    .catch((error) => {
-      console.error(errorMessage, error);
-      return false;
-    });
 }
 
 /**
