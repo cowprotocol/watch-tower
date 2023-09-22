@@ -52,9 +52,10 @@ const main = async () => {
       `[run_local] Processing ONCE for a specific transaction: ${txEnv}...`
     );
 
-    await processTx(provider, txEnv, chainId, testRuntime).catch(() =>
-      exit(ERROR_CODE_PROCESS_TX)
-    );
+    await processTx(provider, txEnv, chainId, testRuntime).catch((e) => {
+      console.error(e);
+      exit(ERROR_CODE_PROCESS_TX);
+    });
 
     console.log(`[run_local] Transaction ${txEnv} has been processed.`);
   } else if (blockNumberEnv && !contractAddressEnv) {
@@ -235,7 +236,7 @@ async function processTx(
 ) {
   let hasErrors = false;
   const transaction = await provider.getTransaction(tx);
-  if (!transaction.blockNumber) {
+  if (!transaction?.blockNumber) {
     throw new Error(`The transaction ${tx} is not mined yet (no blockNumber)`);
   }
   const block = await provider.getBlock(transaction.blockNumber);

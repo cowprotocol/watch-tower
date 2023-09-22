@@ -119,10 +119,12 @@ const _checkForAndPlaceOrder: ActionFn = async (
       // Check if the order is due (by epoch)
       if (
         lastResult?.result === PollResultCode.TRY_AT_EPOCH &&
-        lastResult.epoch < blockTimestamp
+        blockTimestamp < lastResult.epoch
       ) {
         console.log(
-          `${logPrefix} Skipping conditional. Reason: Not due yet (TRY_AT_EPOCH=${lastResult.epoch}). ${logOrderDetails}`,
+          `${logPrefix} Skipping conditional. Reason: Not due yet (TRY_AT_EPOCH=${
+            lastResult.epoch
+          }, ${formatEpoch(lastResult.epoch)}). ${logOrderDetails}`,
           conditionalOrder.params
         );
         continue;
@@ -131,10 +133,14 @@ const _checkForAndPlaceOrder: ActionFn = async (
       // Check if the order is due (by blockNumber)
       if (
         lastResult?.result === PollResultCode.TRY_ON_BLOCK &&
-        lastResult.blockNumber < blockNumber
+        blockNumber < lastResult.blockNumber
       ) {
         console.log(
-          `${logPrefix} Skipping conditional. Reason: Not due yet (TRY_ON_BLOCK=${lastResult.blockNumber}). ${logOrderDetails}`,
+          `${logPrefix} Skipping conditional. Reason: Not due yet (TRY_ON_BLOCK=${
+            lastResult.blockNumber
+          }, in ${
+            lastResult.blockNumber - blockNumber
+          } blocks). ${logOrderDetails}`,
           conditionalOrder.params
         );
         continue;
