@@ -40,9 +40,6 @@ export async function initContext(
 
   // Init Sentry
   const sentryTransaction = _getSentry(transactionName, chainId, options);
-  if (!sentryTransaction) {
-    console.warn("SENTRY_DSN secret is not set. Sentry will be disabled");
-  }
 
   executionContext = {
     registry,
@@ -82,8 +79,13 @@ function _getSentry(
   options: SingularRunOptions
 ): SentryTransaction | undefined {
   // Init Sentry
+  const sentryDsn = options.sentryDsn?.trim() || "";
+
+  if (!sentryDsn) {
+    return undefined;
+  }
+
   if (!executionContext) {
-    const sentryDsn = options.sentryDsn || "";
     sentryInit({
       dsn: sentryDsn,
       debug: false,
