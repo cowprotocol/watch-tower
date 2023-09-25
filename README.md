@@ -46,6 +46,18 @@ CONTRACT_ADDRESS=0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74
 
 Other environment variables such as the RPC node URL and notifications MUST be set as well.
 
+### Shadow mode
+
+Allows to run an instance that will defer posting orders to the OrderBook API.
+
+This is useful if the WatchTower is not the main one, but it needs to act as a last resource Watch Tower.
+
+To activate this mode, add the following environment variable:
+
+```ini
+SHADOW_MODE=true
+```
+
 ### Deployment
 
 If running your own watch tower, or deploying for production:

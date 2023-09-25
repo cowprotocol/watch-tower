@@ -29,7 +29,13 @@ import {
   toChainId,
   writeRegistry,
 } from "./utils";
-import { ChainContext, ConditionalOrder, OrderStatus } from "./model";
+import {
+  ChainContext,
+  ConditionalOrder,
+  OrderStatus,
+  OrderUid,
+  PendingOrderShadowMode,
+} from "./model";
 import { pollConditionalOrder } from "./utils/poll";
 import {
   OrderPostError,
@@ -38,6 +44,7 @@ import {
   PollResultCode,
   PollResultErrors,
   PollResultSuccess,
+  PollResultUnexpectedError,
   SupportedChainId,
   formatEpoch,
 } from "@cowprotocol/cow-sdk";
@@ -56,6 +63,11 @@ const ORDER_BOOK_API_HANDLED_ERRORS = [
 
 const ApiErrors = OrderPostError.errorType;
 const WAITING_TIME_SECONDS_FOR_NOT_BALANCE = 10 * 60; // 10 min
+
+/**
+ * Shadow mode will lag 2 minutes behind
+ */
+const SHADOW_MODE_LAG_SECONDS = 2 * 60; // 2 min
 
 /**
  * Watch for new blocks and check for orders to place
@@ -81,25 +93,35 @@ const _checkForAndPlaceOrder: ActionFn = async (
   const { network, blockNumber } = blockEvent;
   const chainId = toChainId(network);
   const chainContext = await ChainContext.create(context, chainId);
-  const { registry } = await initContext(
+  const { provider, apiUrl } = chainContext;
+  const { registry, isShadowMode } = await initContext(
     "checkForAndPlaceOrder",
     chainId,
     context
   );
-  const { ownerOrders } = registry;
+  const logPrefixMain = `[checkForAndPlaceOrder@${blockNumber}]`;
+  const { ownerOrders, pendingOrdersShadowMode } = registry;
 
   let hasErrors = false;
   let ownerCounter = 0;
   let orderCounter = 0;
 
-  const { timestamp: blockTimestamp } = await chainContext.provider.getBlock(
-    blockNumber
-  );
+  const { timestamp: blockTimestamp } = await provider.getBlock(blockNumber);
 
-  console.log(
-    `[checkForAndPlaceOrder@${blockNumber}] Number of orders: `,
-    registry.numOrders
-  );
+  // In shadow mode, we check all pending orders (and post them to the API if its the right time)
+  if (isShadowMode && pendingOrdersShadowMode.size > 0) {
+    console.log(
+      `${logPrefixMain} Shadow mode. Processing ${pendingOrdersShadowMode.size} pending orders`
+    );
+    await _handleAllOrdersShadowMode({
+      pendingOrdersShadowMode,
+      blockNumber,
+      apiUrl,
+      blockTimestamp,
+    });
+  }
+
+  console.log(`${logPrefixMain} Number of orders: `, registry.numOrders);
 
   for (const [owner, conditionalOrders] of ownerOrders.entries()) {
     ownerCounter++;
@@ -150,12 +172,9 @@ const _checkForAndPlaceOrder: ActionFn = async (
       console.log(`${logPrefix} ${logOrderDetails}`, conditionalOrder.params);
       const contract = ComposableCoW__factory.connect(
         conditionalOrder.composableCow,
-        chainContext.provider
+        provider
       );
-      const multicall = Multicall3__factory.connect(
-        MULTICALL3,
-        chainContext.provider
-      );
+      const multicall = Multicall3__factory.connect(MULTICALL3, provider);
 
       const pollResult = await _processConditionalOrder(
         owner,
@@ -166,7 +185,9 @@ const _checkForAndPlaceOrder: ActionFn = async (
         contract,
         multicall,
         chainContext,
-        orderRef
+        orderRef,
+        isShadowMode,
+        pendingOrdersShadowMode
       );
 
       // Don't try again the same order, in case thats the poll result
@@ -175,7 +196,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
         // It can happen if:
         //    - Tenderly RPC node is ahead of our RPC node
         //    - There's a reorg between the registration and the polling
-        const transactionExists = await chainContext.provider
+        const transactionExists = await provider
           .getTransaction(conditionalOrder.tx)
           .then(() => true)
           .catch(() => false);
@@ -230,7 +251,7 @@ const _checkForAndPlaceOrder: ActionFn = async (
       const deleted = conditionalOrders.delete(conditionalOrder);
       const action = deleted ? "Deleted" : "Fail to delete";
       console.log(
-        `[checkForAndPlaceOrder@${blockNumber}] ${action} conditional order with params:`,
+        `${logPrefixMain} ${action} conditional order with params:`,
         conditionalOrder.params
       );
     }
@@ -252,15 +273,12 @@ const _checkForAndPlaceOrder: ActionFn = async (
   //   registry.stringifyOrders()
   // );
 
-  console.log(
-    `[checkForAndPlaceOrder@${blockNumber}] Remaining orders: `,
-    registry.numOrders
-  );
+  console.log(`${logPrefixMain} Remaining orders: `, registry.numOrders);
 
   // Throw execution error if there was at least one error
   if (hasErrors) {
     throw Error(
-      `[checkForAndPlaceOrder@${blockNumber}] At least one unexpected error processing conditional orders`
+      `${logPrefixMain} At least one unexpected error processing conditional orders`
     );
   }
 };
@@ -274,9 +292,12 @@ async function _processConditionalOrder(
   contract: ComposableCoW,
   multicall: Multicall3,
   chainContext: ChainContext,
-  orderRef: string
+  orderRef: string,
+  isShadowMode: boolean,
+  pendingOrdersShadowMode: Map<OrderUid, PendingOrderShadowMode>
 ): Promise<PollResult> {
   try {
+    const logPrefix = `[processConditionalOrder::${orderRef}]`;
     // TODO: Fix model and delete the explicit cast: https://github.com/cowprotocol/tenderly-watch-tower/issues/18
     const [handler, salt, staticInput] = conditionalOrder.params as any as [
       string,
@@ -305,27 +326,29 @@ async function _processConditionalOrder(
       staticInput,
       salt,
     };
-    let pollResult = await pollConditionalOrder(
+    const result = await pollConditionalOrder(
       pollParams,
       conditionalOrderParams,
       orderRef
     );
-
-    if (!pollResult) {
-      // Unsupported Order Type (unknown handler)
-      // For now, fallback to legacy behavior
-      // TODO: Decide in the future what to do. Probably, move the error handling to the SDK and kill the poll Legacy
-      pollResult = await _pollLegacy(
-        owner,
-        chainId,
-        conditionalOrder,
-        contract,
-        multicall,
-        proof,
-        offchainInput,
-        orderRef
-      );
-    }
+    const { pollResult, conditionalOrderId } = result
+      ? result
+      : {
+          // Unsupported Order Type (unknown handler)
+          // For now, fallback to legacy behavior
+          // TODO: Decide in the future what to do. Probably, move the error handling to the SDK and kill the poll Legacy
+          conditionalOrderId: undefined,
+          pollResult: await _pollLegacy(
+            owner,
+            chainId,
+            conditionalOrder,
+            contract,
+            multicall,
+            proof,
+            offchainInput,
+            orderRef
+          ),
+        };
 
     // Error polling
     if (pollResult.result !== PollResultCode.SUCCESS) {
@@ -344,13 +367,33 @@ async function _processConditionalOrder(
 
     // calculate the orderUid
     const orderUid = _getOrderUid(chainId, orderToSubmit, owner);
+    const orderToPost = toOrderApi(orderToSubmit, owner, signature);
+
+    if (isShadowMode) {
+      // In case we run in shadow mode, we decide if we post the order or not
+      const shadowModeResult = await _handleOrderShadowMode({
+        orderUid,
+        conditionalOrderId,
+        conditionalOrder,
+        blockTimestamp,
+        pendingOrdersShadowMode,
+        orderToPost,
+        logPrefix,
+        apiUrl: chainContext.apiUrl,
+      });
+
+      // If the order shouldn't be posted, we return early
+      if (shadowModeResult) {
+        return shadowModeResult;
+      }
+    }
 
     // Place order, if the orderUid has not been submitted or filled
     if (!conditionalOrder.orders.has(orderUid)) {
       // Place order
-      const placeOrderResult = await _placeOrder({
+      const { result: placeOrderResult } = await _placeOrder({
         orderUid,
-        order: { ...orderToSubmit, from: owner, signature },
+        order: orderToPost,
         apiUrl: chainContext.apiUrl,
         blockTimestamp,
         orderRef,
@@ -363,10 +406,15 @@ async function _processConditionalOrder(
 
       // Mark order as submitted
       conditionalOrder.orders.set(orderUid, OrderStatus.SUBMITTED);
+
+      // If shadow mode, delete the order from the pending orders
+      if (isShadowMode) {
+        pendingOrdersShadowMode.delete(orderUid);
+      }
     } else {
       const orderStatus = conditionalOrder.orders.get(orderUid);
       console.log(
-        `[processConditionalOrder::${orderRef}] OrderUid ${orderUid} status: ${
+        `${logPrefix} OrderUid ${orderUid} status: ${
           orderStatus ? formatStatus(orderStatus) : "Not found"
         }`
       );
@@ -428,6 +476,10 @@ export const _printUnfilledOrders = (orders: Map<BytesLike, OrderStatus>) => {
   }
 };
 
+interface PlaceOrderResult {
+  result: Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors;
+  statusCode?: number;
+}
 /**
  * Place a new order
  * @param order to be placed on the cow protocol api
@@ -439,36 +491,18 @@ async function _placeOrder(params: {
   apiUrl: string;
   orderRef: string;
   blockTimestamp: number;
-}): Promise<Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors> {
+}): Promise<PlaceOrderResult> {
   const { orderUid, order, apiUrl, orderRef, blockTimestamp } = params;
 
   const logPrefix = `[placeOrder::${orderRef}]`;
   try {
-    const postData = {
-      sellToken: order.sellToken,
-      buyToken: order.buyToken,
-      receiver: order.receiver,
-      sellAmount: order.sellAmount.toString(),
-      buyAmount: order.buyAmount.toString(),
-      validTo: order.validTo,
-      appData: order.appData,
-      feeAmount: order.feeAmount.toString(),
-      kind: order.kind,
-      partiallyFillable: order.partiallyFillable,
-      sellTokenBalance: order.sellTokenBalance,
-      buyTokenBalance: order.buyTokenBalance,
-      signingScheme: "eip1271",
-      signature: order.signature,
-      from: order.from,
-    };
-
     // if the apiUrl doesn't contain localhost, post
     console.log(`${logPrefix} Post order ${orderUid} to ${apiUrl}`);
-    console.log(`${logPrefix} Order`, postData);
+    console.log(`${logPrefix} Order`, order);
     if (!apiUrl.includes("localhost")) {
       const { status, data } = await axios.post(
         `${apiUrl}/api/v1/orders`,
-        postData,
+        order,
         {
           headers: {
             "Content-Type": "application/json",
@@ -498,9 +532,12 @@ async function _placeOrder(params: {
 
       if (isSuccess) {
         log(`${orderRef} All good! continuing with warnings...`);
-        return { result: PollResultCode.SUCCESS };
+        return {
+          result: { result: PollResultCode.SUCCESS },
+          statusCode: status,
+        };
       } else {
-        return handleErrorResult;
+        return { result: handleErrorResult, statusCode: status };
       }
     } else if (error.request) {
       // The request was made but no response was received
@@ -515,13 +552,16 @@ async function _placeOrder(params: {
     }
 
     return {
-      result: PollResultCode.UNEXPECTED_ERROR,
-      reason: reasonError,
-      error,
+      statusCode: undefined,
+      result: {
+        result: PollResultCode.UNEXPECTED_ERROR,
+        reason: reasonError,
+        error,
+      },
     };
   }
 
-  return { result: PollResultCode.SUCCESS };
+  return { result: { result: PollResultCode.SUCCESS }, statusCode: 200 };
 }
 
 function _handleOrderBookError(params: {
@@ -706,6 +746,196 @@ function _handleGetTradableOrderCall(
     reason:
       "UnexpectedErrorName: Unspected error" +
       (error.message ? `: ${error.message}` : ""),
+  };
+}
+
+async function _handleAllOrdersShadowMode(params: {
+  blockTimestamp: number;
+  pendingOrdersShadowMode: Map<ethers.utils.BytesLike, PendingOrderShadowMode>;
+  blockNumber: number;
+  apiUrl: string;
+}): Promise<void> {
+  const { blockNumber, blockTimestamp, pendingOrdersShadowMode, apiUrl } =
+    params;
+  const logPrefix = `[shadowCheck@${blockNumber}]`;
+  for (const [orderUid, pendingOrderShadowMode] of Array.from(
+    pendingOrdersShadowMode.entries()
+  )) {
+    const { conditionalOrder, conditionalOrderId, order } =
+      pendingOrderShadowMode;
+    const shadowModeResult = await _handleOrderShadowMode({
+      orderUid: orderUid.toString(),
+      conditionalOrderId,
+      conditionalOrder,
+      blockTimestamp,
+      apiUrl,
+      pendingOrdersShadowMode,
+      orderToPost: order,
+      logPrefix,
+    }).catch((e) => {
+      // Don't let the pending shadow orders to stop the execution
+      const error: PollResultUnexpectedError = {
+        result: PollResultCode.UNEXPECTED_ERROR,
+        reason: `${logPrefix} Error handling the order ${orderUid}: ${e.message}`,
+        error: e,
+      };
+      return error;
+    });
+
+    // We need to post the order to the orderbook
+    if (shadowModeResult === undefined) {
+      const { result: placeOrderResult, statusCode } = await _placeOrder({
+        orderUid: orderUid.toString(),
+        apiUrl,
+        blockTimestamp,
+        order,
+        orderRef: `_@${blockNumber}`,
+      });
+
+      if (placeOrderResult.result === PollResultCode.SUCCESS) {
+        console.log(
+          `${logPrefix} ☀️ Posted order ${orderUid} to the API. Shadow Watch Tower saved the day!`
+        );
+        pendingOrdersShadowMode.delete(orderUid);
+      } else if (statusCode === 400) {
+        console.error(
+          `${logPrefix} Error posting order ${orderUid} to the API. Deleting because its not a valid order`,
+          placeOrderResult
+        );
+        pendingOrdersShadowMode.delete(orderUid);
+      } else {
+        console.error(
+          `${logPrefix} Error posting order ${orderUid} to the API`,
+          placeOrderResult
+        );
+      }
+    }
+  }
+}
+
+async function _handleOrderShadowMode(params: {
+  orderUid: string;
+  conditionalOrderId: string | undefined;
+  conditionalOrder: ConditionalOrder;
+  blockTimestamp: number;
+  pendingOrdersShadowMode: Map<ethers.utils.BytesLike, PendingOrderShadowMode>;
+  orderToPost: any;
+  logPrefix: string;
+  apiUrl: string;
+}): Promise<PollResultErrors | undefined> {
+  const {
+    orderUid,
+    conditionalOrderId,
+    conditionalOrder,
+    blockTimestamp,
+    pendingOrdersShadowMode,
+    orderToPost,
+    logPrefix,
+    apiUrl,
+  } = params;
+  let doNotPostOrderReason;
+  const reasonDescription = `Deferred posting ${orderUid} to the API (running in shadow mode).`;
+
+  // Check if orderUid is an order we are already tracking
+  const pendingOrderShadowMode = pendingOrdersShadowMode.get(orderUid);
+  if (pendingOrderShadowMode) {
+    const { firstSeenBlockTimestamp } = pendingOrderShadowMode;
+    const secondsElapsed = blockTimestamp - firstSeenBlockTimestamp;
+    if (secondsElapsed > SHADOW_MODE_LAG_SECONDS) {
+      // Check if order exists in orderbook
+      if (await _existsOrderInApi(apiUrl, orderUid)) {
+        // ✅ All good, someone did a good job posting the order
+        doNotPostOrderReason = `Shadow Mode. Great! Order ${orderUid} was placed in the API by someone else`;
+        console.log(`${logPrefix} ${doNotPostOrderReason}`);
+
+        // We won't keep track of the order any more
+        pendingOrdersShadowMode.delete(orderUid);
+      } else {
+        // 🚨 Error, Someone didn't post the order
+        console.error(
+          `${logPrefix} Shadow Mode. Order ${orderUid} has been over ${Math.floor(
+            SHADOW_MODE_LAG_SECONDS / 60
+          )} minutes pending to be posted to the API. Some WatchTower might be down`
+        );
+
+        // Not returning an error will make the WatchTower to continue and post the order
+        return undefined;
+      }
+    } else {
+      // 🕣 We need to wait longer until we can post the order
+      console.log(
+        `${logPrefix} Shadow Mode. Deferring the submission of order ${orderUid} (first seen ${secondsElapsed} seconds ago)`
+      );
+      doNotPostOrderReason = `${reasonDescription} Will post it after ${
+        SHADOW_MODE_LAG_SECONDS - secondsElapsed
+      } seconds`;
+    }
+  } else {
+    // 📒 Register the order for the first time
+    console.log(
+      `${logPrefix} Shadow Mode. Deferring the submission of a new order ${orderUid}`
+    );
+
+    pendingOrdersShadowMode.set(orderUid, {
+      conditionalOrderId,
+      firstSeenBlockTimestamp: blockTimestamp,
+      order: orderToPost,
+      orderUid,
+      conditionalOrder,
+    });
+
+    doNotPostOrderReason = `${reasonDescription} Will post it after ${Math.floor(
+      SHADOW_MODE_LAG_SECONDS / 60
+    )} minutes`;
+  }
+
+  return {
+    result: PollResultCode.TRY_NEXT_BLOCK, // We don't return TRY_AT_EPOCH to try after the lag, because the same conditional order can generate more orders, and some of them could be posted before that
+    reason: doNotPostOrderReason,
+  };
+}
+
+async function _existsOrderInApi(apiUrl: string, orderUid: string) {
+  const { status } = await axios
+    .get(`${apiUrl}/api/v1/orders/${orderUid}`)
+    .catch((err) => err);
+
+  return status === 200;
+}
+
+function toOrderApi(order: Order, owner: string, signature: string): any {
+  // TODO: This order should be typed, and we should use the SDK (@see OrderCreation type)
+  //  Our of the scope, Watch Tower v2 is being done as we speak, so we need to keep the changes minimal and this will likely be rewritten
+  const {
+    sellToken,
+    buyToken,
+    receiver,
+    sellAmount,
+    buyAmount,
+    validTo,
+    appData,
+    feeAmount,
+    kind,
+    partiallyFillable,
+    sellTokenBalance,
+    buyTokenBalance,
+  } = order;
+  return {
+    sellToken,
+    buyToken,
+    receiver,
+    validTo,
+    appData,
+    kind,
+    partiallyFillable,
+    sellTokenBalance,
+    buyTokenBalance,
+    from: owner,
+    signature,
+    sellAmount: sellAmount.toString(),
+    buyAmount: buyAmount.toString(),
+    feeAmount: feeAmount.toString(),
+    signingScheme: "eip1271",
   };
 }
 
