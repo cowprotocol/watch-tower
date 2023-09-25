@@ -278,7 +278,7 @@ async function getEnv(context: Context): Promise<string | undefined> {
 }
 
 /**
- * Wether the watch tower will run in shadow mode. False by default
+ * Whether the watch tower will run in shadow mode. False by default
  */
 async function getIsShadowMode(context: Context): Promise<boolean> {
   return (
