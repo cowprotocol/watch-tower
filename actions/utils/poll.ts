@@ -5,7 +5,6 @@ import {
   PollParams,
   PollResult,
 } from "@cowprotocol/cow-sdk";
-import { type } from "os";
 
 // Watch-tower will index every block, so we will by default the processing block and not the latest.
 const POLL_FROM_LATEST_BLOCK = false;
