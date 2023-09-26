@@ -15,8 +15,10 @@ const ordersFactory = new ConditionalOrderFactory(
 
 export async function pollConditionalOrder(
   pollParams: PollParams,
-  conditionalOrderParams: ConditionalOrderParams
+  conditionalOrderParams: ConditionalOrderParams,
+  orderRef: string
 ): Promise<PollResult | undefined> {
+  const prefix = `[polling::${orderRef}]`;
   const order = ordersFactory.fromParams(conditionalOrderParams);
 
   if (!order) {
@@ -27,7 +29,7 @@ export async function pollConditionalOrder(
     : pollParams;
 
   console.log(
-    `[polling] Polling for ${order.toString()} using block (${
+    `${prefix} Polling for ${order.toString()} using block (${
       actualPollParams.blockInfo === undefined
         ? "latest"
         : actualPollParams.blockInfo.blockNumber
