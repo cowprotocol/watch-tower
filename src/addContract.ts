@@ -11,7 +11,7 @@ import { ComposableCoW__factory } from "./types/generated/factories/ComposableCo
 
 import { isComposableCowCompatible, handleExecutionError } from "./utils";
 import { Owner, Proof, Registry } from "./types/model";
-import { ChainContext } from "./modes";
+import { ChainContext } from "./commands";
 
 /**
  * Listens to these events on the `ComposableCoW` contract:

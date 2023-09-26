@@ -1,6 +1,6 @@
 import { program, Option } from "@commander-js/extra-typings";
 import { ReplayTxOptions } from "./types";
-import { replayBlock, replayTx, run } from "./modes";
+import { replayBlock, replayTx, run } from "./commands";
 
 async function main() {
   program
