@@ -59,17 +59,6 @@ yarn ts-node ./src/index.ts run --rpc <rpc-url> --deployment-block <deployment-b
 
 > Useful for debugging locally the actions. Also could be used to create an order for an old block in case there was a failure of WatchTowers indexing it.
 
-Make sure you setup the environment (so you have your own `.env` file).
-
-Decide in which network you want to run the actions and provide the additional parameters for that network. For example:
-
-```ini
-NETWORK=100
-NODE_URL_100=https://your-rpc-endpoint
-NODE_USER_100=optionally-provide-user-if-auth-is-required
-NODE_PASSWORD_100=optionally-provide-password-if-auth-is-required
-```
-
 ```bash
 # Install dependencies
 yarn
