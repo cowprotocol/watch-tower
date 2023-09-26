@@ -53,7 +53,11 @@ const ORDER_BOOK_API_HANDLED_ERRORS = [
 ];
 
 const ApiErrors = OrderPostError.errorType;
-const WAITING_TIME_SECONDS_FOR_NOT_BALANCE = 10 * 60; // 10 min
+const BACKPRESSURE_DELAY = 10 * 60; // 10 min
+const BACKPRESSURE_API_ERRORS = [
+  ApiErrors.INSUFFICIENT_ALLOWANCE,
+  ApiErrors.INSUFFICIENT_BALANCE,
+];
 
 /**
  * Watch for new blocks and check for orders to place
@@ -110,17 +114,17 @@ async function _checkForAndPlaceOrder(
       const logPrefix = `[checkForAndPlaceOrder::${orderRef}]`;
       const logOrderDetails = `Processing order from TX ${conditionalOrder.tx} with params:`;
 
-      const { result: lastResult } = conditionalOrder.pollResult || {};
+      const { result: lastHint } = conditionalOrder.pollResult || {};
 
       // Check if the order is due (by epoch)
       if (
-        lastResult?.result === PollResultCode.TRY_AT_EPOCH &&
-        blockTimestamp < lastResult.epoch
+        lastHint?.result === PollResultCode.TRY_AT_EPOCH &&
+        blockTimestamp < lastHint.epoch
       ) {
         console.log(
           `${logPrefix} Skipping conditional. Reason: Not due yet (TRY_AT_EPOCH=${
-            lastResult.epoch
-          }, ${formatEpoch(lastResult.epoch)}). ${logOrderDetails}`,
+            lastHint.epoch
+          }, ${formatEpoch(lastHint.epoch)}). ${logOrderDetails}`,
           conditionalOrder.params
         );
         continue;
@@ -128,14 +132,14 @@ async function _checkForAndPlaceOrder(
 
       // Check if the order is due (by blockNumber)
       if (
-        lastResult?.result === PollResultCode.TRY_ON_BLOCK &&
-        blockNumber < lastResult.blockNumber
+        lastHint?.result === PollResultCode.TRY_ON_BLOCK &&
+        blockNumber < lastHint.blockNumber
       ) {
         console.log(
           `${logPrefix} Skipping conditional. Reason: Not due yet (TRY_ON_BLOCK=${
-            lastResult.blockNumber
+            lastHint.blockNumber
           }, in ${
-            lastResult.blockNumber - blockNumber
+            lastHint.blockNumber - blockNumber
           } blocks). ${logOrderDetails}`,
           conditionalOrder.params
         );
@@ -524,21 +528,15 @@ function _handleOrderBookError(
     // It's possible that an order has not enough allowance or balance.
     // Returning DONT_TRY_AGAIN would be to drastic, but we can give the WatchTower a break by scheduling next attempt in a few minutes
     // This why, we don't so it doesn't try in every block
-    if (
-      [
-        ApiErrors.INSUFFICIENT_ALLOWANCE,
-        ApiErrors.INSUFFICIENT_BALANCE,
-      ].includes(data?.errorType)
-    ) {
-      const nextPollTimestamp =
-        blockTimestamp + WAITING_TIME_SECONDS_FOR_NOT_BALANCE;
+    if (BACKPRESSURE_API_ERRORS.includes(data?.errorType)) {
+      const nextPollTimestamp = blockTimestamp + BACKPRESSURE_DELAY;
       return {
         result: PollResultCode.TRY_AT_EPOCH,
         epoch: nextPollTimestamp,
         reason: `Not enough allowance/balance (${
           data?.errorType
         }). Scheduling next polling in ${Math.floor(
-          WAITING_TIME_SECONDS_FOR_NOT_BALANCE / 60
+          BACKPRESSURE_DELAY / 60
         )} minutes, at ${nextPollTimestamp} ${formatEpoch(nextPollTimestamp)}`,
       };
     }
