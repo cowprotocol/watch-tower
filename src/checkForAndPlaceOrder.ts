@@ -37,7 +37,7 @@ import {
   SupportedChainId,
   formatEpoch,
 } from "@cowprotocol/cow-sdk";
-import { ChainContext } from "./modes";
+import { ChainContext } from "./commands";
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
