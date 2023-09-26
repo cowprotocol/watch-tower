@@ -11,14 +11,13 @@ import { ethers } from "ethers";
 import { apiUrl, composableCowContract, DBService } from "../utils";
 
 /**
- * The chain watcher handles watching a single chain for new conditional orders
+ * The chain context handles watching a single chain for new conditional orders
  * and executing them.
  */
-
 export class ChainContext {
   private readonly deploymentBlock: number;
   private readonly pageSize: number;
-  private readonly publish: boolean;
+  private readonly dryRun: boolean;
   private inSync = false;
 
   provider: ethers.providers.Provider;
@@ -32,10 +31,10 @@ export class ChainContext {
     chainId: SupportedChainId,
     registry: Registry
   ) {
-    const { deploymentBlock, pageSize, publish } = options;
+    const { deploymentBlock, pageSize, dryRun } = options;
     this.deploymentBlock = deploymentBlock;
     this.pageSize = pageSize;
-    this.publish = publish;
+    this.dryRun = dryRun;
 
     this.provider = provider;
     this.apiUrl = apiUrl(chainId);
@@ -43,6 +42,12 @@ export class ChainContext {
     this.registry = registry;
   }
 
+  /**
+   * Initialise a chain context.
+   * @param options as parsed by commander from the command line arguments.
+   * @param storage the db singleton that provides persistence.
+   * @returns A chain context that is monitoring for orders on the chain.
+   */
   public static async init(
     options: SingularRunOptions,
     storage: DBService
@@ -64,6 +69,7 @@ export class ChainContext {
   /**
    * Warm up the chain watcher by fetching the latest block number and
    * checking if the chain is in sync.
+   * @param oneShot if true, only warm up the chain watcher and return
    * @returns the run promises for what needs to be watched
    */
   public async warmUp(oneShot?: boolean) {
@@ -211,6 +217,14 @@ export class ChainContext {
   }
 }
 
+/**
+ * Process events in a block.
+ * @param context of the chain who's block is being processed
+ * @param blockNumber from which the events were emitted
+ * @param events an array of conditional order created events
+ * @param blockNumberOverride to override the block number when polling the SDK
+ * @param blockTimestampOverride  to override the block timestamp when polling the SDK
+ */
 async function processBlock(
   context: ChainContext,
   blockNumber: number,
@@ -272,6 +286,7 @@ async function processBlock(
     throw new Error("[run_local] Errors found in processing block");
   }
 }
+
 function pollContractForEvents(
   fromBlock: number,
   toBlock: number | "latest",
@@ -282,6 +297,7 @@ function pollContractForEvents(
   const filter = composableCow.filters.ConditionalOrderCreated();
   return composableCow.queryFilter(filter, fromBlock, toBlock);
 }
+
 function _formatResult(result: boolean) {
   return result ? "✅" : "❌";
 }
