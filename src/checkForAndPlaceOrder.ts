@@ -28,14 +28,14 @@ import {
 import { ConditionalOrder, OrderStatus } from "./types/model";
 import { pollConditionalOrder } from "./utils/poll";
 import {
+  OrderPostError,
   PollParams,
   PollResult,
   PollResultCode,
   PollResultErrors,
   PollResultSuccess,
-  PollResultTryNextBlock,
-  PollResultUnexpectedError,
   SupportedChainId,
+  formatEpoch,
 } from "@cowprotocol/cow-sdk";
 import { ChainContext } from "./modes";
 
@@ -50,6 +50,9 @@ const ORDER_BOOK_API_HANDLED_ERRORS = [
   "InsufficientAllowance",
   "InsufficientFee",
 ];
+
+const ApiErrors = OrderPostError.errorType;
+const WAITING_TIME_SECONDS_FOR_NOT_BALANCE = 10 * 60; // 10 min
 
 /**
  * Watch for new blocks and check for orders to place
@@ -111,10 +114,12 @@ async function _checkForAndPlaceOrder(
       // Check if the order is due (by epoch)
       if (
         lastResult?.result === PollResultCode.TRY_AT_EPOCH &&
-        lastResult.epoch < blockTimestamp
+        blockTimestamp < lastResult.epoch
       ) {
         console.log(
-          `${logPrefix} Skipping conditional. Reason: Not due yet (TRY_AT_EPOCH=${lastResult.epoch}). ${logOrderDetails}`,
+          `${logPrefix} Skipping conditional. Reason: Not due yet (TRY_AT_EPOCH=${
+            lastResult.epoch
+          }, ${formatEpoch(lastResult.epoch)}). ${logOrderDetails}`,
           conditionalOrder.params
         );
         continue;
@@ -123,10 +128,14 @@ async function _checkForAndPlaceOrder(
       // Check if the order is due (by blockNumber)
       if (
         lastResult?.result === PollResultCode.TRY_ON_BLOCK &&
-        lastResult.blockNumber < blockNumber
+        blockNumber < lastResult.blockNumber
       ) {
         console.log(
-          `${logPrefix} Skipping conditional. Reason: Not due yet (TRY_ON_BLOCK=${lastResult.blockNumber}). ${logOrderDetails}`,
+          `${logPrefix} Skipping conditional. Reason: Not due yet (TRY_ON_BLOCK=${
+            lastResult.blockNumber
+          }, in ${
+            lastResult.blockNumber - blockNumber
+          } blocks). ${logOrderDetails}`,
           conditionalOrder.params
         );
         continue;
@@ -322,12 +331,13 @@ async function _processConditionalOrder(
     // Place order, if the orderUid has not been submitted or filled
     if (!conditionalOrder.orders.has(orderUid)) {
       // Place order
-      const placeOrderResult = await _placeOrder(
+      const placeOrderResult = await _placeOrder({
         orderUid,
-        { ...orderToSubmit, from: owner, signature },
+        order: { ...orderToSubmit, from: owner, signature },
         apiUrl,
-        orderRef
-      );
+        blockTimestamp,
+        orderRef,
+      });
 
       // In case of error, return early
       if (placeOrderResult.result !== PollResultCode.SUCCESS) {
@@ -406,16 +416,14 @@ export const _printUnfilledOrders = (orders: Map<BytesLike, OrderStatus>) => {
  * @param order to be placed on the cow protocol api
  * @param apiUrl rest api url
  */
-async function _placeOrder(
-  orderUid: string,
-  order: any,
-  apiUrl: string,
-  orderRef: string
-): Promise<
-  | Omit<PollResultSuccess, "order" | "signature">
-  | PollResultTryNextBlock
-  | PollResultUnexpectedError
-> {
+async function _placeOrder(params: {
+  orderUid: string;
+  order: any;
+  apiUrl: string;
+  orderRef: string;
+  blockTimestamp: number;
+}): Promise<Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors> {
+  const { orderUid, order, apiUrl, orderRef, blockTimestamp } = params;
   const logPrefix = `[placeOrder::${orderRef}]`;
   try {
     const postData = {
@@ -457,7 +465,12 @@ async function _placeOrder(
     if (error.response) {
       const { status, data } = error.response;
 
-      const handleErrorResult = _handleOrderBookError(status, data, error);
+      const handleErrorResult = _handleOrderBookError(
+        status,
+        data,
+        error,
+        blockTimestamp
+      );
       const isSuccess = handleErrorResult.result === PollResultCode.SUCCESS;
 
       // The request was made and the server responded with a status code
@@ -496,16 +509,36 @@ async function _placeOrder(
 function _handleOrderBookError(
   status: any,
   data: any,
-  error: any
-):
-  | Omit<PollResultSuccess, "order" | "signature">
-  | PollResultTryNextBlock
-  | PollResultUnexpectedError {
+  error: any,
+  blockTimestamp: number
+): Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors {
   if (status === 400) {
     // The order is in the OrderBook, all good :)
-    if (data?.errorType === "DuplicatedOrder") {
+    if (data?.errorType === ApiErrors.DUPLICATE_ORDER) {
       return {
         result: PollResultCode.SUCCESS,
+      };
+    }
+
+    // It's possible that an order has not enough allowance or balance.
+    // Returning DONT_TRY_AGAIN would be to drastic, but we can give the WatchTower a break by scheduling next attempt in a few minutes
+    // This why, we don't so it doesn't try in every block
+    if (
+      [
+        ApiErrors.INSUFFICIENT_ALLOWANCE,
+        ApiErrors.INSUFFICIENT_BALANCE,
+      ].includes(data?.errorType)
+    ) {
+      const nextPollTimestamp =
+        blockTimestamp + WAITING_TIME_SECONDS_FOR_NOT_BALANCE;
+      return {
+        result: PollResultCode.TRY_AT_EPOCH,
+        epoch: nextPollTimestamp,
+        reason: `Not enough allowance/balance (${
+          data?.errorType
+        }). Scheduling next polling in ${Math.floor(
+          WAITING_TIME_SECONDS_FOR_NOT_BALANCE / 60
+        )} minutes, at ${nextPollTimestamp} ${formatEpoch(nextPollTimestamp)}`,
       };
     }
 
