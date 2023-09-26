@@ -1,5 +1,9 @@
 import { ethers } from "ethers";
 import { ComposableCoW__factory } from "../types";
+import {
+  COMPOSABLE_COW_CONTRACT_ADDRESS,
+  SupportedChainId,
+} from "@cowprotocol/cow-sdk";
 
 // Selectors that are required to be part of the contract's bytecode in order to be considered compatible
 const REQUIRED_SELECTORS = [
@@ -35,6 +39,16 @@ export function isComposableCowCompatible(code: string): boolean {
     const sighash = composableCow.getSighash(signature);
     return code.includes(sighash.slice(2));
   });
+}
+
+export function composableCowContract(
+  provider: ethers.providers.Provider,
+  chainId: SupportedChainId
+): ComposableCoW {
+  return ComposableCoW__factory.connect(
+    COMPOSABLE_COW_CONTRACT_ADDRESS[chainId],
+    provider
+  );
 }
 
 type ParsedError = {

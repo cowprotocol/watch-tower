@@ -10,10 +10,10 @@ import {
   Owner,
   Proof,
   Registry,
-} from "./types";
+} from "../types";
 
-import { isComposableCowCompatible, handleExecutionError } from "./utils";
-import { ChainContext } from "./commands";
+import { isComposableCowCompatible, handleExecutionError } from "../utils";
+import { ChainContext } from "./chainContext";
 
 /**
  * Listens to these events on the `ComposableCoW` contract:

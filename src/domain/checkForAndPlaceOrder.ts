@@ -17,7 +17,7 @@ import {
   Multicall3__factory,
   ConditionalOrder,
   OrderStatus,
-} from "./types";
+} from "../types";
 import {
   LowLevelError,
   ORDER_NOT_VALID_SELECTOR,
@@ -27,7 +27,7 @@ import {
   handleExecutionError,
   parseCustomError,
   pollConditionalOrder,
-} from "./utils";
+} from "../utils";
 import {
   OrderPostError,
   PollParams,
@@ -38,7 +38,7 @@ import {
   SupportedChainId,
   formatEpoch,
 } from "@cowprotocol/cow-sdk";
-import { ChainContext } from "./commands";
+import { ChainContext } from "./chainContext";
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
