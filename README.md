@@ -1,6 +1,6 @@
 # Watch Tower for Composable CoWs 🐮🎶
 
-A watchdog has been implementing using [Tenderly Actions](https://docs.tenderly.co/web3-actions/intro-to-web3-actions). By means of _emitted Event_ and new block monitoring, conditional orders can run autonomously.
+A watch tower has been implementing using standalone ethers.js. By means of _emitted Event_ and new block monitoring, conditional orders can run autonomously.
 
 Notably, with the `ConditionalOrderCreated` and `MerkleRootSet` events, multiple conditional orders can be created for one safe - in doing so, the actions maintain a registry of:
 
@@ -17,40 +17,22 @@ This is assuming that you have followed the instructions for deploying the stack
 From the root directory of the repository:
 
 ```bash
-yarn build
-yarn ts-node ./actions/test/run_local.ts
+yarn
+yarn ts-node ./src/index.ts run --rpc http://127.0.0.1:8545 --deployment-block <deployment-block> --contract-address <contract-address> --page-size 0
 ```
 
 ### Watch tower state
 
-As the Tenderly watch tower stores data in an abstracted manner, and there have been cases witnessed in production where the storage
-has reported odd errors, it is useful to be able to rebuild the state of what _should_ be in the watch tower for quality assurance /
-resilience purposes.
-
-To run the state rebuilder locally, use the previous command in [Local testing](#Local-testing) and set the environment variables:
-
-- `BLOCK_NUMBER`: The block number to start from (defaults to `0`)
-- `PAGE_SIZE`: The page size for `eth_getLogs` (defaults to `5000` to support Infura)
-- `CONTRACT_ADDRESS`: The address of the `ComposableCoW` contract.
-
-Other environment variables such as the RPC node URL and notifications MUST be set as well.
+The watch tower stores data in a leveldb database. The database is stored by default in the `./database` directory. Writes to the database are batched, and if writes fail, the watch tower will throw an error and exit. On restarting, the watch tower will attempt to re-process the last block that was indexed.
 
 ### Deployment
 
 If running your own watch tower, or deploying for production:
 
 ```bash
-tenderly actions deploy
+yarn
+yarn ts-node ./src/index.ts run --rpc <rpc-url> --deployment-block <deployment-block> --contract-address <contract-address> --page-size 0
 ```
-
-Make sure you configure the secrets in Tenderly:
-
-- `NODE_URL_${network}`: RPC Node URL
-- `NODE_USER_${network}`: (optional) RPC Node user name for basic auth.
-- `NODE_PASSWORD_${network}`: (optional) RPC Node password name for basic auth.
-- `NOTIFICATIONS_ENABLED`: (default `true`) Set to `false` to disable Slack notifications
-- `SLACK_WEBHOOK_URL`: Slack Webhook (required only if notifications are enabled)
-- `SENTRY_DSN`: (optional) Sentry DSN code. If present, it will enable Sentry notifications
 
 ## Developers
 
@@ -59,7 +41,6 @@ Make sure you configure the secrets in Tenderly:
 - `node` (`>= v16.18.0`)
 - `yarn`
 - `npm`
-- `tenderly`
 
 ### Environment setup
 
@@ -69,7 +50,12 @@ Copy the `.env.example` to `.env` and set the applicable configuration variables
 
 For local integration testing, such as local debugging of tenderly actions, it may be useful deploying to a _forked_ mainnet environment. Information on how to do this is available in the [ComposableCoW repository](https://github.com/cowprotocol/composable-cow).
 
-#### Run Tenderly Web3 Actions locally
+#### Run the standalone watch tower
+
+```bash
+yarn
+yarn ts-node ./src/index.ts run --rpc <rpc-url> --deployment-block <deployment-block> --page-size 0
+```
 
 > Useful for debugging locally the actions. Also could be used to create an order for an old block in case there was a failure of WatchTowers indexing it.
 
@@ -85,16 +71,12 @@ NODE_PASSWORD_100=optionally-provide-password-if-auth-is-required
 ```
 
 ```bash
-# Build Actions
-yarn build:actions
+# Install dependencies
+yarn
 
 # Run actions locally
+#   - It will synchronize the database with the blockchain from the deployment block
 #   - It will start watching and processing new blocks
 #   - As a result, new Composable Cow orders will be discovered and posted to the OrderBook API
-yarn start:actions
-
-# You can re-process an old block by:
-#   - Add an env BLOCK_NUMBER
-#   - Run actions locally
-yarn start:actions
+yarn ts-node ./src/index.ts run --rpc <rpc-url> --deployment-block <deployment-block> --page-size 0
 ```
