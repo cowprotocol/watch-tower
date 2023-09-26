@@ -58,29 +58,29 @@ const ORDER_BOOK_API_HANDLED_ERRORS = [
  * @param context tenderly context
  * @param event block event
  */
-export const checkForAndPlaceOrder = async (
+export async function checkForAndPlaceOrder(
   context: ChainWatcher,
   block: ethers.providers.Block,
   blockNumberOverride?: number,
   blockTimestampOverride?: number
-) => {
+) {
   return _checkForAndPlaceOrder(
     context,
     block,
     blockNumberOverride,
     blockTimestampOverride
   ).catch(handleExecutionError);
-};
+}
 
 /**
- * Asyncronous version of checkForAndPlaceOrder. It will process all the orders, and will throw an error at the end if there was at least one error
+ * Asynchronous version of checkForAndPlaceOrder. It will process all the orders, and will throw an error at the end if there was at least one error
  */
-const _checkForAndPlaceOrder = async (
+async function _checkForAndPlaceOrder(
   context: ChainWatcher,
   block: ethers.providers.Block,
   blockNumberOverride?: number,
   blockTimestampOverride?: number
-) => {
+) {
   const { chainContext, registry } = context;
   const { chainId } = chainContext;
   const { ownerOrders } = registry;
@@ -231,7 +231,7 @@ const _checkForAndPlaceOrder = async (
       "[checkForAndPlaceOrder] At least one unexpected error processing conditional orders"
     );
   }
-};
+}
 
 async function _processConditionalOrder(
   owner: string,
