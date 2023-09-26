@@ -15,7 +15,9 @@ import {
   ComposableCoW__factory,
   Multicall3,
   Multicall3__factory,
-} from "./types/generated";
+  ConditionalOrder,
+  OrderStatus,
+} from "./types";
 import {
   LowLevelError,
   ORDER_NOT_VALID_SELECTOR,
@@ -24,9 +26,8 @@ import {
   formatStatus,
   handleExecutionError,
   parseCustomError,
+  pollConditionalOrder,
 } from "./utils";
-import { ConditionalOrder, OrderStatus } from "./types/model";
-import { pollConditionalOrder } from "./utils/poll";
 import {
   OrderPostError,
   PollParams,

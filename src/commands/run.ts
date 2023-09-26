@@ -1,16 +1,20 @@
-import { RunOptions, SingularRunOptions } from "../types";
-import { Registry, ReplayPlan } from "../types/model";
-import DBService from "../utils/db";
-import { ComposableCoW, ComposableCoW__factory } from "../types/generated";
+import {
+  RunOptions,
+  SingularRunOptions,
+  Registry,
+  ReplayPlan,
+  ComposableCoW,
+  ComposableCoW__factory,
+  ConditionalOrderCreatedEvent,
+} from "../types";
 import {
   COMPOSABLE_COW_CONTRACT_ADDRESS,
   SupportedChainId,
 } from "@cowprotocol/cow-sdk";
-import { ConditionalOrderCreatedEvent } from "../types/generated/ComposableCoW";
 import { addContract } from "../addContract";
 import { checkForAndPlaceOrder } from "../checkForAndPlaceOrder";
 import { ethers } from "ethers";
-import { apiUrl } from "../utils";
+import { apiUrl, DBService } from "../utils";
 
 /**
  * Run the watch-tower 👀🐮

@@ -29,3 +29,7 @@ export interface ReplayBlockOptions extends WatchtowerReplayOptions {
 export interface ReplayTxOptions extends WatchtowerReplayOptions {
   tx: string;
 }
+
+export * from "./model";
+export * from "./generated";
+export * from "./generated/ComposableCoW";
