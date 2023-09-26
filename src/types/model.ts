@@ -8,7 +8,7 @@ import type {
   IConditionalOrder,
 } from "./generated/ComposableCoW";
 import { PollResult } from "@cowprotocol/cow-sdk";
-import DBService from "../utils/db";
+import { DBService } from "../utils";
 
 // Standardise the storage key
 const LAST_NOTIFIED_ERROR_STORAGE_KEY = "LAST_NOTIFIED_ERROR";

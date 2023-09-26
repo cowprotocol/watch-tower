@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { ComposableCoW__factory } from "../types";
+import { ComposableCoW, ComposableCoW__factory } from "../types";
 import {
   COMPOSABLE_COW_CONTRACT_ADDRESS,
   SupportedChainId,
