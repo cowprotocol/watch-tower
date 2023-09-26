@@ -1,4 +1,6 @@
-import { Level } from "level";
+import { DatabaseOptions, Level } from "level";
+
+const DEFAULT_DB_LOCATION = "./database";
 
 export type DBLevel = Level<string, string>;
 
@@ -7,27 +9,20 @@ export default class DBService {
 
   private static _instance: DBService = new DBService();
 
-  protected constructor() {
+  protected constructor(path = DEFAULT_DB_LOCATION) {
     if (DBService._instance) {
       throw new Error(
         "Error: Instantiation failed: Use DBService.getInstance() instead of new."
       );
     }
     DBService._instance = this;
+    const options: DatabaseOptions<string, string> = {
+      valueEncoding: "json",
+      createIfMissing: true,
+      errorIfExists: false,
+    };
 
-    if (process.env.NODE_IS_TEST === "true") {
-      this.db = new Level<string, string>("./database_test", {
-        valueEncoding: "json",
-        createIfMissing: true,
-        errorIfExists: false,
-      });
-    } else {
-      this.db = new Level<string, string>("./database", {
-        valueEncoding: "json",
-        createIfMissing: true,
-        errorIfExists: false,
-      });
-    }
+    this.db = new Level<string, string>(path, options);
   }
 
   public static getInstance(): DBService {

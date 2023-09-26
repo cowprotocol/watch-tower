@@ -133,21 +133,18 @@ export class Registry {
     network: string,
     genesisBlockNumber: number
   ): Promise<Registry> {
-    const str = await storage
-      .getDB()
-      .get(
-        getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY, network)
-      );
-    const lastNotifiedError = await storage
-      .getDB()
+    const db = storage.getDB();
+    const str = await db.get(
+      getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY, network)
+    );
+    const lastNotifiedError = await db
       .get(getNetworkStorageKey(LAST_NOTIFIED_ERROR_STORAGE_KEY, network))
       .then((isoDate: string | number | Date) =>
         isoDate ? new Date(isoDate) : null
       )
       .catch(() => null);
 
-    const lastProcessedBlock = await storage
-      .getDB()
+    const lastProcessedBlock = await db
       .get(getNetworkStorageKey(LAST_PROCESSED_BLOCK_STORAGE_KEY, network))
       .then((blockNumber: string | number) =>
         blockNumber ? Number(blockNumber) : genesisBlockNumber
@@ -155,8 +152,7 @@ export class Registry {
       .catch(() => null);
 
     // Get the persisted registry version
-    const version = await storage
-      .getDB()
+    const version = await db
       .get(
         getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_VERSION_KEY, network)
       )
