@@ -5,7 +5,7 @@ import { replayBlock, replayTx, run } from "./modes";
 async function main() {
   program
     .name("watchtower")
-    .description("Monitoring composable cows on the blockchain 🐮")
+    .description("Monitoring Composable CoW smart orders on the blockchain 🐮")
     .version("0.2.0");
 
   program
@@ -20,12 +20,16 @@ async function main() {
       "--deployment-block <deploymentBlock...>",
       "Block number at which the contracts were deployed"
     )
-    .requiredOption(
+    .option(
       "--page-size <pageSize>",
-      "Number of events to fetch per page",
+      "Number of blocks to fetch per page",
       "5000"
     )
     .option("--publish", "Publish orders to the OrderBook API", true)
+    .addHelpText(
+      "before",
+      "RPC and deployment blocks must be the same length, and in the same order"
+    )
     .action((options: RunOptions) => {
       // Need to assert that the RPCs and deployment blocks are the same length
       const { rpc, deploymentBlock } = options;
