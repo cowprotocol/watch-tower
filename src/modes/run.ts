@@ -26,6 +26,7 @@ export async function run(options: RunOptions) {
     process.exit(0);
   });
 
+  let exitCode = 0;
   try {
     const chainWatchers = await Promise.all(
       rpc.map((rpc, index) => {
@@ -49,10 +50,10 @@ export async function run(options: RunOptions) {
     await Promise.all(runPromises);
   } catch (error) {
     console.error(error);
-    await DBService.getInstance().close();
-    process.exit(1);
+    exitCode = 1;
   } finally {
     await DBService.getInstance().close();
+    process.exit(exitCode);
   }
 }
 
@@ -204,9 +205,6 @@ export class ChainWatcher {
 
     _(oneShot ? "Chain watcher is in sync" : "Chain watcher is warmed up");
     _(`Last processed block: ${this.registry.lastProcessedBlock}`);
-
-    // Notifying that the chain watcher is in sync
-    this.inSync = true;
 
     // If one-shot, return
     if (oneShot) {
