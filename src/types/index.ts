@@ -1,5 +1,5 @@
 export interface WatchtowerOptions {
-  publish: boolean;
+  dryRun: boolean;
 }
 
 export interface WatchtowerReplayOptions extends WatchtowerOptions {

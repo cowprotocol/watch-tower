@@ -25,7 +25,7 @@ async function main() {
       "Number of blocks to fetch per page",
       "5000"
     )
-    .option("--publish", "Publish orders to the OrderBook API", true)
+    .option("--dry-run", "Do not publish orders to the OrderBook API", false)
     .addOption(
       new Option("--silent", "Disable notifications (local logging only)")
         .conflicts(["slackWebhook", "sentryDsn", "logglyToken"])
@@ -68,11 +68,7 @@ async function main() {
     .description("Replay a block")
     .requiredOption("--rpc <rpc>", "Chain RPC endpoint to execute on")
     .requiredOption("--block <block>", "Block number to replay")
-    .option(
-      "--publish",
-      "Publish any new discrete orders to the OrderBook API",
-      true
-    )
+    .option("--dry-run", "Do not publish orders to the OrderBook API", false)
     .action((options) => {
       // Ensure that the block is a number
       const block = Number(options.block);
@@ -88,11 +84,7 @@ async function main() {
     .description("Reply a transaction")
     .requiredOption("--rpc <rpc>", "Chain RPC endpoint to execute on")
     .requiredOption("--tx <tx>", "Transaction hash to replay")
-    .option(
-      "--publish",
-      "Publish any new discrete orders to the OrderBook API",
-      true
-    )
+    .option("--dry-run", "Do not publish orders to the OrderBook API", false)
     .action((options: ReplayTxOptions) => replayTx(options));
 
   await program.parseAsync();
