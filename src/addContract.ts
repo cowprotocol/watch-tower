@@ -24,17 +24,17 @@ import { ChainWatcher } from "./modes";
  * @param chainWatcher chain watcher
  * @param event transaction event
  */
-export const addContract = async (
+export async function addContract(
   chainWatcher: ChainWatcher,
   event: ConditionalOrderCreatedEvent
-) => {
+) {
   return _addContract(chainWatcher, event).catch(handleExecutionError);
-};
+}
 
-const _addContract = async (
+async function _addContract(
   context: ChainWatcher,
   event: ConditionalOrderCreatedEvent
-) => {
+) {
   const composableCow = ComposableCoW__factory.createInterface();
   const { chainContext, registry } = context;
   const { provider } = chainContext;
@@ -67,7 +67,7 @@ const _addContract = async (
       "[addContract] Error adding conditional order. Event: " + event
     );
   }
-};
+}
 
 export async function _registerNewOrder(
   event: ConditionalOrderCreatedEvent | MerkleRootSetEvent,
@@ -161,14 +161,14 @@ export async function _registerNewOrder(
  * @param composableCow address of the contract that emitted the event
  * @param registry of all conditional orders
  */
-export const add = async (
+export function add(
   tx: string,
   owner: Owner,
   params: IConditionalOrder.ConditionalOrderParamsStruct,
   proof: Proof | null,
   composableCow: string,
   registry: Registry
-) => {
+) {
   const { handler, salt, staticInput } = params;
   if (registry.ownerOrders.has(owner)) {
     const conditionalOrders = registry.ownerOrders.get(owner);
@@ -206,7 +206,7 @@ export const add = async (
       new Set([{ tx, params, proof, orders: new Map(), composableCow }])
     );
   }
-};
+}
 
 /**
  * Flush the conditional orders of an owner that do not have the merkle root set
@@ -214,11 +214,7 @@ export const add = async (
  * @param root the merkle root to check against
  * @param registry of all conditional orders
  */
-export const flush = async (
-  owner: Owner,
-  root: BytesLike,
-  registry: Registry
-) => {
+export function flush(owner: Owner, root: BytesLike, registry: Registry) {
   if (registry.ownerOrders.has(owner)) {
     const conditionalOrders = registry.ownerOrders.get(owner);
     if (conditionalOrders !== undefined) {
@@ -233,4 +229,4 @@ export const flush = async (
       }
     }
   }
-};
+}
