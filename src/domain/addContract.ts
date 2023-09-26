@@ -99,14 +99,7 @@ export async function _registerNewOrder(
       ) as [string, IConditionalOrder.ConditionalOrderParamsStruct];
 
       // Attempt to add the conditional order to the registry
-      await add(
-        log.transactionHash,
-        owner,
-        params,
-        null,
-        log.address,
-        registry
-      );
+      add(log.transactionHash, owner, params, null, log.address, registry);
       added = true;
     } else if (
       event.topics[0] == composableCow.getEventTopic("MerkleRootSet")
@@ -139,7 +132,7 @@ export async function _registerNewOrder(
             order as BytesLike
           );
           // Attempt to add the conditional order to the registry
-          await add(
+          add(
             event.transactionHash,
             owner,
             decodedOrder[1],
