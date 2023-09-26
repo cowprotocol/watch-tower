@@ -1,5 +1,5 @@
 import Slack = require("node-slack");
-import DBService from "./db";
+import { DBService } from "./db";
 
 import {
   init as sentryInit,
@@ -8,10 +8,9 @@ import {
 } from "@sentry/node";
 import { CaptureConsole as CaptureConsoleIntegration } from "@sentry/integrations";
 
-import { ExecutionContext, Registry } from "../types/model";
+import { ExecutionContext, Registry, SingularRunOptions } from "../types";
 import { SupportedChainId } from "@cowprotocol/cow-sdk";
 import { initLogging } from "./logging";
-import { SingularRunOptions } from "../types";
 
 const NOTIFICATION_WAIT_PERIOD = 1000 * 60 * 60 * 2; // 2h - Don't send more than one notification every 2h
 

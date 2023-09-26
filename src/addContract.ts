@@ -1,16 +1,18 @@
 import { BytesLike, ethers } from "ethers";
 
-import type {
+import {
   ComposableCoW,
   ComposableCoWInterface,
   ConditionalOrderCreatedEvent,
   IConditionalOrder,
   MerkleRootSetEvent,
-} from "./types/generated/ComposableCoW";
-import { ComposableCoW__factory } from "./types/generated/factories/ComposableCoW__factory";
+  ComposableCoW__factory,
+  Owner,
+  Proof,
+  Registry,
+} from "./types";
 
 import { isComposableCowCompatible, handleExecutionError } from "./utils";
-import { Owner, Proof, Registry } from "./types/model";
 import { ChainContext } from "./commands";
 
 /**

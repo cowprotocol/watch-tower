@@ -4,7 +4,7 @@ const DEFAULT_DB_LOCATION = "./database";
 
 export type DBLevel = Level<string, string>;
 
-export default class DBService {
+export class DBService {
   protected db: DBLevel;
 
   private static _instance: DBService = new DBService();

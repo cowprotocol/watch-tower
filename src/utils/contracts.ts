@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { ComposableCoW__factory } from "../types/generated";
+import { ComposableCoW__factory } from "../types";
 
 // Selectors that are required to be part of the contract's bytecode in order to be considered compatible
 const REQUIRED_SELECTORS = [

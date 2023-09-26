@@ -1,4 +1,4 @@
-import { OrderStatus } from "../types/model";
+import { OrderStatus } from "../types";
 import {
   ALL_SUPPORTED_CHAIN_IDS,
   SupportedChainId,
