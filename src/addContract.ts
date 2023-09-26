@@ -33,6 +33,7 @@ async function _addContract(
 ) {
   const composableCow = ComposableCoW__factory.createInterface();
   const { provider, registry } = context;
+  const { transactionHash: tx, blockNumber } = event;
 
   // Process the logs
   let hasErrors = false;
@@ -51,20 +52,27 @@ async function _addContract(
   );
   if (added) {
     numContractsAdded++;
+  } else {
+    console.error(
+      `[addContract] Failed to register Smart Order from tx ${tx} on block ${blockNumber}. Error: ${error}`
+    );
   }
   hasErrors ||= error;
 
   console.log(`[addContract] Added ${numContractsAdded} contracts`);
 
-  // save the registry - don't catch errors here, as it's now a docker container
-  // and we want to crash if there's an error
-  await registry.write();
+  if (numContractsAdded > 0) {
+    console.log(`[addContract] Added ${numContractsAdded} contracts`);
 
-  // Throw execution error if there was at least one error
-  if (hasErrors) {
-    throw Error(
-      "[addContract] Error adding conditional order. Event: " + event
-    );
+    // Write the registry to disk. Don't catch errors, let them bubble up
+    await registry.write();
+
+    // Throw execution error if there was at least one error
+    if (hasErrors) {
+      throw Error(
+        "[addContract] Error adding conditional order. Event: " + event
+      );
+    }
   }
 }
 
@@ -73,6 +81,7 @@ export async function _registerNewOrder(
   composableCow: ComposableCoWInterface,
   registry: Registry
 ): Promise<{ error: boolean; added: boolean }> {
+  const { transactionHash: tx } = event;
   let added = false;
   try {
     // Check if the log is a ConditionalOrderCreated event
@@ -142,7 +151,7 @@ export async function _registerNewOrder(
     }
   } catch (error) {
     console.error(
-      "[addContract] Error handling ConditionalOrderCreated/MerkleRootSet event" +
+      `[addContract] Error handling ConditionalOrderCreated/MerkleRootSet event for tx: ${tx}` +
         error
     );
     return { error: true, added };
