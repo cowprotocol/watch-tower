@@ -4,26 +4,26 @@ import {
   ReplayPlan,
   ConditionalOrderCreatedEvent,
 } from "../types";
-import { SupportedChainId } from "@cowprotocol/cow-sdk";
+import { SupportedChainId, OrderBookApi } from "@cowprotocol/cow-sdk";
 import { addContract } from "./addContract";
 import { checkForAndPlaceOrder } from "./checkForAndPlaceOrder";
 import { ethers } from "ethers";
-import { apiUrl, composableCowContract, DBService } from "../utils";
+import { composableCowContract, DBService } from "../utils";
 
 /**
  * The chain context handles watching a single chain for new conditional orders
  * and executing them.
  */
 export class ChainContext {
-  private readonly deploymentBlock: number;
-  private readonly pageSize: number;
-  private readonly dryRun: boolean;
+  readonly deploymentBlock: number;
+  readonly pageSize: number;
+  readonly dryRun: boolean;
   private inSync = false;
 
   provider: ethers.providers.Provider;
-  apiUrl: string;
   chainId: SupportedChainId;
   registry: Registry;
+  orderBook: OrderBookApi;
 
   protected constructor(
     options: SingularRunOptions,
@@ -37,9 +37,9 @@ export class ChainContext {
     this.dryRun = dryRun;
 
     this.provider = provider;
-    this.apiUrl = apiUrl(chainId);
     this.chainId = chainId;
     this.registry = registry;
+    this.orderBook = new OrderBookApi({ chainId: this.chainId });
   }
 
   /**
