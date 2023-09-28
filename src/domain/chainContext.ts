@@ -10,6 +10,9 @@ import { checkForAndPlaceOrder } from "./checkForAndPlaceOrder";
 import { ethers } from "ethers";
 import { composableCowContract, DBService } from "../utils";
 
+const WATCHDOG_FREQUENCY = 5 * 1000; // 5 seconds
+const WATCHDOG_KILL_THRESHOLD = 30 * 1000; // 30 seconds
+
 /**
  * The chain context handles watching a single chain for new conditional orders
  * and executing them.
@@ -183,15 +186,23 @@ export class ChainContext {
    * 1. Check if there are any `ConditionalOrderCreated` events, and index these.
    * 2. Check if any orders want to create discrete orders.
    */
-  public async runBlockWatcher() {
-    const { provider, chainId } = this;
+  private async runBlockWatcher() {
+    const { provider, registry, chainId } = this;
     const _ = (s: string) =>
       console.log(`[runBlockWatcher:chainId:${chainId}] ${s}`);
     // Watch for new blocks
     _("Subscribe to new blocks");
+    let lastBlockReceived = 0;
+    let timeLastBlockProcessed = 0;
     provider.on("block", async (blockNumber: number) => {
       try {
         _(`New block ${blockNumber}`);
+        timeLastBlockProcessed = new Date().getTime();
+        if (blockNumber <= lastBlockReceived) {
+          // This may be a re-org, so process the block again
+          _(`Re-org detected, re-processing block ${blockNumber}`);
+        }
+        lastBlockReceived = blockNumber;
 
         const events = await pollContractForEvents(
           blockNumber,
@@ -209,11 +220,32 @@ export class ChainContext {
         _(`Block ${blockNumber} has been processed.`);
       } catch (error) {
         console.error(
-          `[runBlockWatcher:chainId:${chainId}] Error in processBlock`,
+          `[runBlockWatcher:chainId:${chainId}] Error in pollContractForEvents for block ${blockNumber}`,
           error
         );
       }
     });
+
+    // We run a watchdog to check if we are receiving blocks.
+    while (true) {
+      // sleep for 5 seconds
+      await new Promise((resolve) => setTimeout(resolve, WATCHDOG_FREQUENCY));
+      if (timeLastBlockProcessed === 0) {
+        // We haven't processed any blocks yet, so continue
+        continue;
+      }
+      const currentTime = new Date().getTime();
+      const diff = currentTime - timeLastBlockProcessed;
+      // Todo: set this as trace to avoid spamming the logs
+      console.log(`[runBlockWatcher:chainId:${chainId}] diff: ${diff}ms`);
+
+      // If we haven't received a block in 30 seconds, restart the watcher
+      if (diff >= WATCHDOG_KILL_THRESHOLD) {
+        console.error(`[runBlockWatcher:chainId:${chainId}] Watchdog timeout`);
+        await registry.storage.close();
+        process.exit(1);
+      }
+    }
   }
 }
 
