@@ -121,6 +121,20 @@ export class Registry {
   }
 
   /**
+   * Get the raw conditional orders key from the registry.
+   * @param storage The storage service to use
+   * @param network The network to dump the registry for
+   * @returns The conditional orders that should also be present in the tenderly version
+   */
+  public static async dump(
+    storage: DBService,
+    network: string
+  ): Promise<string> {
+    const ownerOrders = await loadOwnerOrders(storage, network);
+    return JSON.stringify(ownerOrders, replacer);
+  }
+
+  /**
    * Load the registry from storage.
    * @param context from which to load the registry
    * @param network that the registry is for
@@ -132,19 +146,7 @@ export class Registry {
     genesisBlockNumber: number
   ): Promise<Registry> {
     const db = storage.getDB();
-    const str = await db
-      .get(
-        getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY, network)
-      )
-      .then((str) => str)
-      .catch((err) => {
-        if (err.code === "LEVEL_NOT_FOUND") {
-          console.log(`Initialising registry for network ${network}...`);
-          return undefined;
-        }
-
-        throw Error(`Unexpected error while loading registry ${err}`);
-      });
+    const ownerOrders = await loadOwnerOrders(storage, network);
     const lastNotifiedError = await db
       .get(getNetworkStorageKey(LAST_NOTIFIED_ERROR_STORAGE_KEY, network))
       .then((isoDate: string | number | Date) =>
@@ -158,20 +160,6 @@ export class Registry {
         blockNumber ? Number(blockNumber) : genesisBlockNumber
       )
       .catch(() => null);
-
-    // Get the persisted registry version
-    const version = await db
-      .get(
-        getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_VERSION_KEY, network)
-      )
-      .then((versionString) => Number(versionString))
-      .catch(() => undefined);
-
-    // Parse conditional orders registry (for the persisted version, converting it to the last version)
-    const ownerOrders = parseConditionalOrders(
-      !!str ? str : undefined,
-      version
-    );
 
     // Return registry (on its latest version)
     return new Registry(
@@ -268,6 +256,30 @@ export function replacer(_key: any, value: any) {
     return value;
   }
 }
+
+async function loadOwnerOrders(
+  storage: DBService,
+  network: string
+): Promise<Map<string, Set<ConditionalOrder>>> {
+  // Get the owner orders
+  const db = storage.getDB();
+  const str = await db.get(
+    getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY, network)
+  );
+  // Get the persisted registry version
+  const version = await db.get(
+    getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_VERSION_KEY, network)
+  );
+
+  // Parse conditional orders registry (for the persisted version, converting it to the last version)
+  const ownerOrders = parseConditionalOrders(
+    !!str ? str : undefined,
+    Number(version)
+  );
+
+  return ownerOrders;
+}
+
 function parseConditionalOrders(
   serializedConditionalOrders: string | undefined,
   _version: number | undefined

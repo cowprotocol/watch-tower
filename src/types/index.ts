@@ -30,6 +30,10 @@ export interface ReplayTxOptions extends WatchtowerReplayOptions {
   tx: string;
 }
 
+export interface DumpDbOptions {
+  chainId: number;
+}
+
 export * from "./model";
 export * from "./generated";
 export * from "./generated/ComposableCoW";

@@ -1,6 +1,6 @@
 import { program, Option } from "@commander-js/extra-typings";
 import { ReplayTxOptions } from "./types";
-import { replayBlock, replayTx, run } from "./commands";
+import { dumpDb, replayBlock, replayTx, run } from "./commands";
 
 async function main() {
   program
@@ -61,6 +61,21 @@ async function main() {
 
       // Run the watchtower
       run({ ...options, deploymentBlock, pageSize });
+    });
+
+  program
+    .command("dump-db")
+    .description("Dump database as JSON to STDOUT")
+    .requiredOption("--chain-id <chainId>", "Chain ID to dump")
+    .action((options) => {
+      // Ensure that the chain ID is a number
+      const chainId = Number(options.chainId);
+      if (isNaN(chainId)) {
+        throw new Error("Chain ID must be a number");
+      }
+
+      // Dump the database
+      dumpDb({ chainId });
     });
 
   program
