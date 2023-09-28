@@ -193,7 +193,7 @@ export class ChainContext {
     // Watch for new blocks
     _("Subscribe to new blocks");
     let lastBlockReceived = 0;
-    let timeLastBlockProcessed = 0;
+    let timeLastBlockProcessed = new Date().getTime();
     provider.on("block", async (blockNumber: number) => {
       try {
         _(`New block ${blockNumber}`);
@@ -230,17 +230,15 @@ export class ChainContext {
     while (true) {
       // sleep for 5 seconds
       await new Promise((resolve) => setTimeout(resolve, WATCHDOG_FREQUENCY));
-      if (timeLastBlockProcessed === 0) {
-        // We haven't processed any blocks yet, so continue
-        continue;
-      }
       const currentTime = new Date().getTime();
-      const diff = currentTime - timeLastBlockProcessed;
+      const timeElapsed = currentTime - timeLastBlockProcessed;
       // Todo: set this as trace to avoid spamming the logs
-      console.log(`[runBlockWatcher:chainId:${chainId}] diff: ${diff}ms`);
+      console.log(
+        `[runBlockWatcher:chainId:${chainId}] diff: ${timeElapsed}ms`
+      );
 
       // If we haven't received a block in 30 seconds, restart the watcher
-      if (diff >= WATCHDOG_KILL_THRESHOLD) {
+      if (timeElapsed >= WATCHDOG_KILL_THRESHOLD) {
         console.error(`[runBlockWatcher:chainId:${chainId}] Watchdog timeout`);
         await registry.storage.close();
         process.exit(1);
