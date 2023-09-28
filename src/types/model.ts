@@ -146,7 +146,9 @@ export class Registry {
     genesisBlockNumber: number
   ): Promise<Registry> {
     const db = storage.getDB();
-    const ownerOrders = await loadOwnerOrders(storage, network);
+    const ownerOrders = await loadOwnerOrders(storage, network)
+      .then((orders) => orders)
+      .catch(() => createNewOrderMap());
     const lastNotifiedError = await db
       .get(getNetworkStorageKey(LAST_NOTIFIED_ERROR_STORAGE_KEY, network))
       .then((isoDate: string | number | Date) =>
@@ -285,7 +287,11 @@ function parseConditionalOrders(
   _version: number | undefined
 ): Map<Owner, Set<ConditionalOrder>> {
   if (!serializedConditionalOrders) {
-    return new Map<Owner, Set<ConditionalOrder>>();
+    return createNewOrderMap();
   }
   return JSON.parse(serializedConditionalOrders, _reviver);
+}
+
+function createNewOrderMap(): Map<Owner, Set<ConditionalOrder>> {
+  return new Map<Owner, Set<ConditionalOrder>>();
 }
