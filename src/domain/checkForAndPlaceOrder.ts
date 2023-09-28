@@ -5,8 +5,6 @@ import {
   computeOrderUid,
 } from "@cowprotocol/contracts";
 
-import axios from "axios";
-
 import { ethers } from "ethers";
 import { BytesLike, Logger } from "ethers/lib/utils";
 
@@ -29,6 +27,7 @@ import {
   pollConditionalOrder,
 } from "../utils";
 import {
+  OrderBookApi,
   OrderPostError,
   PollParams,
   PollResult,
@@ -266,7 +265,7 @@ async function _processConditionalOrder(
   context: ChainContext,
   orderRef: string
 ): Promise<PollResult> {
-  const { provider, apiUrl } = context;
+  const { provider, orderBook, dryRun } = context;
   try {
     // TODO: Fix model and delete the explicit cast: https://github.com/cowprotocol/tenderly-watch-tower/issues/18
     const [handler, salt, staticInput] = conditionalOrder.params as any as [
@@ -342,9 +341,10 @@ async function _processConditionalOrder(
       const placeOrderResult = await _placeOrder({
         orderUid,
         order: { ...orderToSubmit, from: owner, signature },
-        apiUrl,
+        orderBook,
         blockTimestamp,
         orderRef,
+        dryRun,
       });
 
       // In case of error, return early
@@ -427,55 +427,41 @@ export const _printUnfilledOrders = (orders: Map<BytesLike, OrderStatus>) => {
 async function _placeOrder(params: {
   orderUid: string;
   order: any;
-  apiUrl: string;
+  orderBook: OrderBookApi;
   orderRef: string;
   blockTimestamp: number;
+  dryRun: boolean;
 }): Promise<Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors> {
-  const { orderUid, order, apiUrl, orderRef, blockTimestamp } = params;
+  const { orderUid, order, orderBook, orderRef, blockTimestamp, dryRun } =
+    params;
   const logPrefix = `[placeOrder::${orderRef}]`;
   try {
     const postData = {
-      sellToken: order.sellToken,
-      buyToken: order.buyToken,
-      receiver: order.receiver,
+      ...order,
       sellAmount: order.sellAmount.toString(),
       buyAmount: order.buyAmount.toString(),
-      validTo: order.validTo,
-      appData: order.appData,
       feeAmount: order.feeAmount.toString(),
-      kind: order.kind,
-      partiallyFillable: order.partiallyFillable,
-      sellTokenBalance: order.sellTokenBalance,
-      buyTokenBalance: order.buyTokenBalance,
       signingScheme: "eip1271",
-      signature: order.signature,
-      from: order.from,
     };
 
-    // if the apiUrl doesn't contain localhost, post
-    console.log(`${logPrefix} Post order ${orderUid} to ${apiUrl}`);
+    // If the order is a dry run, don't post to the API
+    console.log(
+      `${logPrefix} Post order ${orderUid} to OrderBook on chain ${orderBook.context.chainId}`
+    );
     console.log(`${logPrefix} Order`, postData);
-    if (!apiUrl.includes("localhost")) {
-      const { status, data } = await axios.post(
-        `${apiUrl}/api/v1/orders`,
-        postData,
-        {
-          headers: {
-            "Content-Type": "application/json",
-            accept: "application/json",
-          },
-        }
-      );
-      console.log(`${logPrefix} API response`, { status, data });
+    if (!dryRun) {
+      const orderUid = await orderBook.sendOrder({ ...postData });
+      console.log(`${logPrefix} API response`, { orderUid });
     }
   } catch (error: any) {
     let reasonError = "Error placing order in API";
     if (error.response) {
-      const { status, data } = error.response;
+      const { status } = error.response;
+      const { body } = error;
 
       const handleErrorResult = _handleOrderBookError(
         status,
-        data,
+        body,
         error,
         blockTimestamp
       );
@@ -484,7 +470,7 @@ async function _placeOrder(params: {
       // The request was made and the server responded with a status code
       // that falls out of the range of 2xx
       const log = console[isSuccess ? "warn" : "error"];
-      log(`${logPrefix} Error placing order in API. Result: ${status}`, data);
+      log(`${logPrefix} Error placing order in API. Result: ${status}`, body);
 
       if (isSuccess) {
         log(`${orderRef} All good! continuing with warnings...`);
@@ -516,13 +502,14 @@ async function _placeOrder(params: {
 
 function _handleOrderBookError(
   status: any,
-  data: any,
+  body: any,
   error: any,
   blockTimestamp: number
 ): Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors {
+  const apiError = body?.errorType as OrderPostError.errorType;
   if (status === 400) {
     // The order is in the OrderBook, all good :)
-    if (data?.errorType === ApiErrors.DUPLICATE_ORDER) {
+    if (apiError === ApiErrors.DUPLICATE_ORDER) {
       return {
         result: PollResultCode.SUCCESS,
       };
@@ -531,33 +518,30 @@ function _handleOrderBookError(
     // It's possible that an order has not enough allowance or balance.
     // Returning DONT_TRY_AGAIN would be to drastic, but we can give the WatchTower a break by scheduling next attempt in a few minutes
     // This why, we don't so it doesn't try in every block
-    const apiError = data?.errorType as OrderPostError.errorType;
     const backOffDelay = API_ERRORS_BACKOFF[apiError];
     if (backOffDelay) {
       const nextPollTimestamp = blockTimestamp + backOffDelay;
       return {
         result: PollResultCode.TRY_AT_EPOCH,
         epoch: nextPollTimestamp,
-        reason: `Not enough allowance/balance (${
-          data?.errorType
-        }). Scheduling next polling in ${Math.floor(
+        reason: `Not enough allowance/balance (${apiError}). Scheduling next polling in ${Math.floor(
           backOffDelay / 60
         )} minutes, at ${nextPollTimestamp} ${formatEpoch(nextPollTimestamp)}`,
       };
     }
 
     // Handle some errors, that might be solved in the next block
-    if (API_ERRORS_TRY_NEXT_BLOCK.includes(data?.errorType)) {
+    if (API_ERRORS_TRY_NEXT_BLOCK.includes(apiError)) {
       return {
         result: PollResultCode.TRY_NEXT_BLOCK,
-        reason: `OrderBook API Known Error: ${data?.errorType}, ${data?.description}`,
+        reason: `OrderBook API Known Error: ${apiError}, ${body?.description}`,
       };
     }
   }
 
   return {
     result: PollResultCode.UNEXPECTED_ERROR,
-    reason: `OrderBook API Unknown Error: ${data?.errorType}, ${data?.description}`,
+    reason: `OrderBook API Unknown Error: ${apiError}, ${body?.description}`,
     error,
   };
 }
