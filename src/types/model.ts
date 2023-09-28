@@ -132,9 +132,12 @@ export class Registry {
     genesisBlockNumber: number
   ): Promise<Registry> {
     const db = storage.getDB();
-    const str = await db.get(
-      getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY, network)
-    );
+    const str = await db
+      .get(
+        getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY, network)
+      )
+      .then((str) => str)
+      .catch(() => undefined);
     const lastNotifiedError = await db
       .get(getNetworkStorageKey(LAST_NOTIFIED_ERROR_STORAGE_KEY, network))
       .then((isoDate: string | number | Date) =>
