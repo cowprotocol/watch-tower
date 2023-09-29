@@ -43,21 +43,24 @@ import { ChainContext } from "./chainContext";
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
+const ApiErrors = OrderPostError.errorType;
+type NextBlockApiErrorsArray = Array<OrderPostError.errorType>;
+type BackOffApiErrorsDelays = {
+  [K in OrderPostError.errorType]?: number;
+};
+
 /**
  * Handle error that will return `TRY_NEXT_BLOCK`, so it doesn't throw but is re-attempted on next block
  */
-const ORDER_BOOK_API_HANDLED_ERRORS = [
-  "InsufficientBalance",
-  "InsufficientAllowance",
-  "InsufficientFee",
+const API_ERRORS_TRY_NEXT_BLOCK: NextBlockApiErrorsArray = [
+  ApiErrors.INSUFFICIENT_FEE,
 ];
 
-const ApiErrors = OrderPostError.errorType;
-const BACKPRESSURE_DELAY = 10 * 60; // 10 min
-const BACKPRESSURE_API_ERRORS = [
-  ApiErrors.INSUFFICIENT_ALLOWANCE,
-  ApiErrors.INSUFFICIENT_BALANCE,
-];
+const TEN_MINS = 10 * 60;
+const API_ERRORS_BACKOFF: BackOffApiErrorsDelays = {
+  [ApiErrors.INSUFFICIENT_ALLOWANCE]: TEN_MINS,
+  [ApiErrors.INSUFFICIENT_BALANCE]: TEN_MINS,
+};
 
 /**
  * Watch for new blocks and check for orders to place
@@ -528,21 +531,23 @@ function _handleOrderBookError(
     // It's possible that an order has not enough allowance or balance.
     // Returning DONT_TRY_AGAIN would be to drastic, but we can give the WatchTower a break by scheduling next attempt in a few minutes
     // This why, we don't so it doesn't try in every block
-    if (BACKPRESSURE_API_ERRORS.includes(data?.errorType)) {
-      const nextPollTimestamp = blockTimestamp + BACKPRESSURE_DELAY;
+    const apiError = data?.errorType as OrderPostError.errorType;
+    const backOffDelay = API_ERRORS_BACKOFF[apiError];
+    if (backOffDelay) {
+      const nextPollTimestamp = blockTimestamp + backOffDelay;
       return {
         result: PollResultCode.TRY_AT_EPOCH,
         epoch: nextPollTimestamp,
         reason: `Not enough allowance/balance (${
           data?.errorType
         }). Scheduling next polling in ${Math.floor(
-          BACKPRESSURE_DELAY / 60
+          backOffDelay / 60
         )} minutes, at ${nextPollTimestamp} ${formatEpoch(nextPollTimestamp)}`,
       };
     }
 
     // Handle some errors, that might be solved in the next block
-    if (ORDER_BOOK_API_HANDLED_ERRORS.includes(data?.errorType)) {
+    if (API_ERRORS_TRY_NEXT_BLOCK.includes(data?.errorType)) {
       return {
         result: PollResultCode.TRY_NEXT_BLOCK,
         reason: `OrderBook API Known Error: ${data?.errorType}, ${data?.description}`,
