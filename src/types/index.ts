@@ -1,4 +1,8 @@
-export interface WatchtowerOptions {
+export interface LogOptions {
+  logLevel: string;
+}
+
+export interface WatchtowerOptions extends LogOptions {
   dryRun: boolean;
 }
 
@@ -28,7 +32,7 @@ export interface ReplayTxOptions extends WatchtowerReplayOptions {
   tx: string;
 }
 
-export interface DumpDbOptions {
+export interface DumpDbOptions extends LogOptions {
   chainId: number;
 }
 
