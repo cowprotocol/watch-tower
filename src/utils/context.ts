@@ -3,7 +3,7 @@ import { DBService } from "./db";
 
 import { ExecutionContext, Registry, SingularRunOptions } from "../types";
 import { SupportedChainId } from "@cowprotocol/cow-sdk";
-import { logger } from "./logging";
+import { getLogger } from "./logging";
 
 const NOTIFICATION_WAIT_PERIOD = 1000 * 60 * 60 * 2; // 2h - Don't send more than one notification every 2h
 
@@ -59,7 +59,7 @@ function _getSlack(options: SingularRunOptions): Slack | undefined {
 }
 
 export async function handleExecutionError(e: any) {
-  const log = logger.getLogger("context:handleExecutionError");
+  const log = getLogger("context:handleExecutionError");
   try {
     const errorMessage = e?.message || "Unknown error";
     const notified = sendSlack(
@@ -80,7 +80,7 @@ export async function handleExecutionError(e: any) {
 }
 
 export function sendSlack(message: string): boolean {
-  const log = logger.getLogger("context:sendSlack");
+  const log = getLogger("context:sendSlack");
   if (!executionContext) {
     log.warn("Slack not initialized, ignoring message", message);
     return false;

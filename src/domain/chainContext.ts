@@ -8,7 +8,7 @@ import { SupportedChainId, OrderBookApi } from "@cowprotocol/cow-sdk";
 import { addContract } from "./addContract";
 import { checkForAndPlaceOrder } from "./checkForAndPlaceOrder";
 import { ethers } from "ethers";
-import { logger, composableCowContract, DBService } from "../utils";
+import { composableCowContract, DBService, getLogger } from "../utils";
 
 const WATCHDOG_FREQUENCY = 5 * 1000; // 5 seconds
 const WATCHDOG_KILL_THRESHOLD = 30 * 1000; // 30 seconds
@@ -77,7 +77,7 @@ export class ChainContext {
    */
   public async warmUp(oneShot?: boolean) {
     const { provider, chainId } = this;
-    const log = logger.getLogger(`chainContext:warmUp:${chainId}`);
+    const log = getLogger(`chainContext:warmUp:${chainId}`);
     const { lastProcessedBlock } = this.registry;
     const { pageSize } = this;
 
@@ -191,7 +191,7 @@ export class ChainContext {
    */
   private async runBlockWatcher() {
     const { provider, registry, chainId } = this;
-    const log = logger.getLogger(`chainContext:warmUp:${chainId}`);
+    const log = getLogger(`chainContext:warmUp:${chainId}`);
     // Watch for new blocks
     log.info("Running block watcher");
     let lastBlockReceived = 0;
@@ -262,9 +262,7 @@ async function processBlock(
   blockTimestampOverride?: number
 ) {
   const { provider, chainId } = context;
-  const log = logger.getLogger(
-    `chainContext:processBlock:${chainId}:${blockNumber}`
-  );
+  const log = getLogger(`chainContext:processBlock:${chainId}:${blockNumber}`);
   const block = await provider.getBlock(blockNumber);
 
   // Transaction watcher for adding new contracts

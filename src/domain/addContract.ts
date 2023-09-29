@@ -1,4 +1,4 @@
-import { logger } from "../utils";
+import { getLogger } from "../utils";
 import { BytesLike, ethers } from "ethers";
 
 import {
@@ -34,7 +34,7 @@ async function _addContract(
   context: ChainContext,
   event: ConditionalOrderCreatedEvent
 ) {
-  const log = logger.getLogger("addContract:_addContract");
+  const log = getLogger("addContract:_addContract");
   const composableCow = ComposableCoW__factory.createInterface();
   const { provider, registry } = context;
   const { transactionHash: tx, blockNumber } = event;
@@ -83,7 +83,7 @@ export async function _registerNewOrder(
   composableCow: ComposableCoWInterface,
   registry: Registry
 ): Promise<{ error: boolean; added: boolean }> {
-  const log = logger.getLogger("addContract:_registerNewOrder");
+  const log = getLogger("addContract:_registerNewOrder");
   const { transactionHash: tx } = event;
   let added = false;
   try {
@@ -180,7 +180,7 @@ export function add(
   composableCow: string,
   registry: Registry
 ) {
-  const log = logger.getLogger("addContract:add");
+  const log = getLogger("addContract:add");
   const { handler, salt, staticInput } = params;
   if (registry.ownerOrders.has(owner)) {
     const conditionalOrders = registry.ownerOrders.get(owner);

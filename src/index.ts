@@ -1,11 +1,7 @@
 import { program, Option } from "@commander-js/extra-typings";
 import { ReplayTxOptions } from "./types";
 import { dumpDb, replayBlock, replayTx, run } from "./commands";
-import { logger } from "./utils";
-
-type LogLevelNames = {
-  [K in keyof typeof logger.levels]: K;
-};
+import { setRootLogLevel } from "./utils";
 
 const logLevelOption = new Option("--log-level <logLevel>", "Log level")
   .choices(["INFO", "DEBUG", "TRACE", "WARN", "ERROR", "SILENT"] as const)
@@ -47,7 +43,7 @@ async function main() {
     .action((options) => {
       const { logLevel } = options;
 
-      logger.setDefaultLevel(logLevel as LogLevelNames[keyof LogLevelNames]);
+      setRootLogLevel(logLevel);
       const {
         rpc,
         deploymentBlock: deploymentBlockEnv,

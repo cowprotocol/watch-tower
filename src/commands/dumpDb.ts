@@ -1,12 +1,12 @@
 import { DumpDbOptions, Registry } from "../types";
-import { logger, DBService } from "../utils";
+import { DBService, getLogger } from "../utils";
 
 /**
  * Dump the database as JSON to STDOUT for a given chain ID
  * @param options A dict, but essentially just the chainId
  */
 export async function dumpDb(options: DumpDbOptions) {
-  const log = logger.getLogger("commands:dumpDb");
+  const log = getLogger("commands:dumpDb");
   const { chainId } = options;
 
   Registry.dump(DBService.getInstance(), chainId.toString())
