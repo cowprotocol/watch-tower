@@ -22,4 +22,4 @@ prefix.apply(log, {
   },
 });
 
-export default log;
+export { log as logger };

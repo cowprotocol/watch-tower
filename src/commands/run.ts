@@ -1,5 +1,5 @@
 import { RunOptions } from "../types";
-import { DBService } from "../utils";
+import { logger, DBService } from "../utils";
 import { ChainContext } from "../domain";
 
 /**
@@ -7,16 +7,17 @@ import { ChainContext } from "../domain";
  * @param options Specified by the CLI / environment for running the watch-tower
  */
 export async function run(options: RunOptions) {
+  const log = logger.getLogger("commands:run");
   const { rpc, deploymentBlock, oneShot } = options;
 
   process.on("unhandledRejection", async (error) => {
-    console.log(error);
+    log.error("Unhandled promise rejection", error);
     await DBService.getInstance().close();
     process.exit(1);
   });
 
   process.on("SIGINT", async function () {
-    console.log("️⚠️ Caught interrupt signal. Closing DB connection.");
+    log.info("Caught interrupt signal. Closing DB connection.");
     await DBService.getInstance().close();
     process.exit(0);
   });
@@ -44,7 +45,7 @@ export async function run(options: RunOptions) {
     // Run all the chain contexts
     await Promise.all(runPromises);
   } catch (error) {
-    console.error(error);
+    log.error("Unexpected error thrown when running watchtower", error);
     exitCode = 1;
   } finally {
     await DBService.getInstance().close();

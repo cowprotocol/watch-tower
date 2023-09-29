@@ -1,6 +1,16 @@
 import { program, Option } from "@commander-js/extra-typings";
 import { ReplayTxOptions } from "./types";
 import { dumpDb, replayBlock, replayTx, run } from "./commands";
+import { logger } from "./utils";
+
+type LogLevelNames = {
+  [K in keyof typeof logger.levels]: K;
+};
+
+const logLevelOption = new Option("--log-level <logLevel>", "Log level")
+  .choices(["INFO", "DEBUG", "TRACE", "WARN", "ERROR", "SILENT"] as const)
+  .default("INFO")
+  .env("LOG_LEVEL");
 
 async function main() {
   program
@@ -33,7 +43,11 @@ async function main() {
     )
     .option("--slack-webhook <slackWebhook>", "Slack webhook URL")
     .option("--one-shot", "Run the watchtower once and exit", false)
+    .addOption(logLevelOption)
     .action((options) => {
+      const { logLevel } = options;
+
+      logger.setDefaultLevel(logLevel as LogLevelNames[keyof LogLevelNames]);
       const {
         rpc,
         deploymentBlock: deploymentBlockEnv,
@@ -65,6 +79,7 @@ async function main() {
     .command("dump-db")
     .description("Dump database as JSON to STDOUT")
     .requiredOption("--chain-id <chainId>", "Chain ID to dump")
+    .addOption(logLevelOption)
     .action((options) => {
       // Ensure that the chain ID is a number
       const chainId = Number(options.chainId);
@@ -73,7 +88,7 @@ async function main() {
       }
 
       // Dump the database
-      dumpDb({ chainId });
+      dumpDb({ ...options, chainId });
     });
 
   program
@@ -82,6 +97,7 @@ async function main() {
     .requiredOption("--rpc <rpc>", "Chain RPC endpoint to execute on")
     .requiredOption("--block <block>", "Block number to replay")
     .option("--dry-run", "Do not publish orders to the OrderBook API", false)
+    .addOption(logLevelOption)
     .action((options) => {
       // Ensure that the block is a number
       const block = Number(options.block);
@@ -98,6 +114,7 @@ async function main() {
     .requiredOption("--rpc <rpc>", "Chain RPC endpoint to execute on")
     .requiredOption("--tx <tx>", "Transaction hash to replay")
     .option("--dry-run", "Do not publish orders to the OrderBook API", false)
+    .addOption(logLevelOption)
     .action((options: ReplayTxOptions) => replayTx(options));
 
   await program.parseAsync();

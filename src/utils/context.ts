@@ -3,6 +3,7 @@ import { DBService } from "./db";
 
 import { ExecutionContext, Registry, SingularRunOptions } from "../types";
 import { SupportedChainId } from "@cowprotocol/cow-sdk";
+import { logger } from "./logging";
 
 const NOTIFICATION_WAIT_PERIOD = 1000 * 60 * 60 * 2; // 2h - Don't send more than one notification every 2h
 
@@ -58,6 +59,7 @@ function _getSlack(options: SingularRunOptions): Slack | undefined {
 }
 
 export async function handleExecutionError(e: any) {
+  const log = logger.getLogger("context:handleExecutionError");
   try {
     const errorMessage = e?.message || "Unknown error";
     const notified = sendSlack(
@@ -70,7 +72,7 @@ export async function handleExecutionError(e: any) {
       await executionContext.registry.write();
     }
   } catch (error) {
-    console.error("Error sending slack notification", error);
+    log.error("Error sending slack notification", error);
   }
 
   // Re-throws the original error
@@ -78,11 +80,9 @@ export async function handleExecutionError(e: any) {
 }
 
 export function sendSlack(message: string): boolean {
+  const log = logger.getLogger("context:sendSlack");
   if (!executionContext) {
-    console.warn(
-      "[sendSlack] Slack not initialized, ignoring message",
-      message
-    );
+    log.warn("Slack not initialized, ignoring message", message);
     return false;
   }
 
@@ -97,8 +97,8 @@ export function sendSlack(message: string): boolean {
     const nextErrorNotificationTime =
       registry.lastNotifiedError.getTime() + NOTIFICATION_WAIT_PERIOD;
     if (Date.now() < nextErrorNotificationTime) {
-      console.warn(
-        `[sendSlack] Last error notification happened earlier than ${
+      log.warn(
+        `Last error notification happened earlier than ${
           NOTIFICATION_WAIT_PERIOD / 60_000
         } minutes ago. Next notification will happen after ${new Date(
           nextErrorNotificationTime
