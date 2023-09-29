@@ -137,7 +137,14 @@ export class Registry {
         getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY, network)
       )
       .then((str) => str)
-      .catch(() => undefined);
+      .catch((err) => {
+        if (err.code === "LEVEL_NOT_FOUND") {
+          console.log(`Initialising registry for network ${network}...`);
+          return undefined;
+        }
+
+        throw Error(`Unexpected error while loading registry ${err}`);
+      });
     const lastNotifiedError = await db
       .get(getNetworkStorageKey(LAST_NOTIFIED_ERROR_STORAGE_KEY, network))
       .then((isoDate: string | number | Date) =>
