@@ -28,6 +28,7 @@ import {
 } from "../utils";
 import {
   OrderBookApi,
+  OrderCreation,
   OrderPostError,
   PollParams,
   PollResult,
@@ -436,7 +437,7 @@ async function _placeOrder(params: {
     params;
   const logPrefix = `[placeOrder::${orderRef}]`;
   try {
-    const postData = {
+    const postOrder: OrderCreation = {
       ...order,
       sellAmount: order.sellAmount.toString(),
       buyAmount: order.buyAmount.toString(),
@@ -444,13 +445,13 @@ async function _placeOrder(params: {
       signingScheme: "eip1271",
     };
 
-    // If the order is a dry run, don't post to the API
+    // If the operation is a dry run, don't post to the API
     console.log(
       `${logPrefix} Post order ${orderUid} to OrderBook on chain ${orderBook.context.chainId}`
     );
-    console.log(`${logPrefix} Order`, postData);
+    console.log(`${logPrefix} Order`, postOrder);
     if (!dryRun) {
-      const orderUid = await orderBook.sendOrder({ ...postData });
+      const orderUid = await orderBook.sendOrder(postOrder);
       console.log(`${logPrefix} API response`, { orderUid });
     }
   } catch (error: any) {
