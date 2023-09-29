@@ -12,8 +12,6 @@ export interface RunOptions extends WatchtowerOptions {
   pageSize: number;
   silent: boolean;
   slackWebhook?: string;
-  sentryDsn?: string;
-  logglyToken?: string;
   oneShot: boolean;
 }
 

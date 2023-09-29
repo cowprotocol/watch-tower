@@ -1,6 +1,5 @@
 import Slack = require("node-slack");
 
-import { Transaction as SentryTransaction } from "@sentry/node";
 import { BytesLike } from "ethers";
 
 import type {
@@ -26,7 +25,6 @@ export interface ExecutionContext {
   registry: Registry;
   notificationsEnabled: boolean;
   slack?: Slack;
-  sentryTransaction?: SentryTransaction;
   storage: DBService;
 }
 

@@ -28,12 +28,10 @@ async function main() {
     .option("--dry-run", "Do not publish orders to the OrderBook API", false)
     .addOption(
       new Option("--silent", "Disable notifications (local logging only)")
-        .conflicts(["slackWebhook", "sentryDsn", "logglyToken"])
+        .conflicts(["slackWebhook"])
         .default(false)
     )
     .option("--slack-webhook <slackWebhook>", "Slack webhook URL")
-    .option("--sentry-dsn <sentryDsn>", "Sentry DSN")
-    .option("--loggly-token <logglyToken>", "Loggly token")
     .option("--one-shot", "Run the watchtower once and exit", false)
     .action((options) => {
       const {
