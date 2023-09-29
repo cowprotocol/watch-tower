@@ -229,7 +229,7 @@ export class ChainContext {
     // We run a watchdog to check if we are receiving blocks.
     while (true) {
       // sleep for 5 seconds
-      await new Promise((resolve) => setTimeout(resolve, WATCHDOG_FREQUENCY));
+      await asyncSleep(WATCHDOG_FREQUENCY);
       const currentTime = new Date().getTime();
       const timeElapsed = currentTime - timeLastBlockProcessed;
       // Todo: set this as trace to avoid spamming the logs
@@ -237,7 +237,7 @@ export class ChainContext {
         `[runBlockWatcher:chainId:${chainId}] diff: ${timeElapsed}ms`
       );
 
-      // If we haven't received a block in 30 seconds, restart the watcher
+      // If we haven't received a block in 30 seconds, exit so that the process manager can restart us
       if (timeElapsed >= WATCHDOG_KILL_THRESHOLD) {
         console.error(`[runBlockWatcher:chainId:${chainId}] Watchdog timeout`);
         await registry.storage.close();
@@ -330,4 +330,8 @@ function pollContractForEvents(
 
 function _formatResult(result: boolean) {
   return result ? "✅" : "❌";
+}
+
+async function asyncSleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
