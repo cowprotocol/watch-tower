@@ -11,7 +11,7 @@ export async function dumpDb(options: DumpDbOptions) {
   Registry.dump(DBService.getInstance(), chainId.toString())
     .then((dump) => console.log(dump))
     .catch((error) => {
-      console.error(error);
+      console.error("Error dumping DB", error);
       process.exit(1);
     });
 }

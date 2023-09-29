@@ -131,7 +131,7 @@ export class Registry {
     network: string
   ): Promise<string> {
     const ownerOrders = await loadOwnerOrders(storage, network);
-    return JSON.stringify(ownerOrders, replacer);
+    return JSON.stringify(ownerOrders, replacer, 2);
   }
 
   /**
@@ -146,9 +146,9 @@ export class Registry {
     genesisBlockNumber: number
   ): Promise<Registry> {
     const db = storage.getDB();
-    const ownerOrders = await loadOwnerOrders(storage, network)
-      .then((orders) => orders)
-      .catch(() => createNewOrderMap());
+    const ownerOrders = await loadOwnerOrders(storage, network).catch(() =>
+      createNewOrderMap()
+    );
     const lastNotifiedError = await db
       .get(getNetworkStorageKey(LAST_NOTIFIED_ERROR_STORAGE_KEY, network))
       .then((isoDate: string | number | Date) =>
