@@ -17,12 +17,12 @@ import {
   OrderStatus,
 } from "../types";
 import {
-  logger,
   LowLevelError,
   ORDER_NOT_VALID_SELECTOR,
   PROOF_NOT_AUTHED_SELECTOR,
   SINGLE_ORDER_NOT_AUTHED_SELECTOR,
   formatStatus,
+  getLogger,
   handleExecutionError,
   parseCustomError,
   pollConditionalOrder,
@@ -103,12 +103,12 @@ async function _checkForAndPlaceOrder(
   let orderCounter = 0;
 
   const logPrefix = `checkForAndPlaceOrder:_checkForAndPlaceOrder:${chainId}:${blockNumber}`;
-  const log = logger.getLogger(logPrefix);
+  const log = getLogger(logPrefix);
   log.info(`Number of orders: ${numOrders}`);
 
   for (const [owner, conditionalOrders] of ownerOrders.entries()) {
     ownerCounter++;
-    const log = logger.getLogger(`${logPrefix}:${ownerCounter}`);
+    const log = getLogger(`${logPrefix}:${ownerCounter}`);
     const ordersPendingDelete = [];
     // enumerate all the `ConditionalOrder`s for a given owner
     log.info(
@@ -119,7 +119,7 @@ async function _checkForAndPlaceOrder(
       orderCounter++;
       const ownerRef = `${ownerCounter}.${orderCounter}`;
       const orderRef = `${chainId}:${ownerRef}@${blockNumber}`;
-      const log = logger.getLogger(`${logPrefix}:${ownerRef}}`);
+      const log = getLogger(`${logPrefix}:${ownerRef}}`);
       const logOrderDetails = `Processing order from TX ${conditionalOrder.tx} with params:`;
 
       const { result: lastHint } = conditionalOrder.pollResult || {};
@@ -258,7 +258,7 @@ async function _processConditionalOrder(
   orderRef: string
 ): Promise<PollResult> {
   const { provider, orderBook, dryRun, chainId } = context;
-  const log = logger.getLogger(
+  const log = getLogger(
     `checkForAndPlaceOrder:_processConditionalOrder:${orderRef}`
   );
   try {
@@ -429,7 +429,7 @@ async function _placeOrder(params: {
 }): Promise<Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors> {
   const { orderUid, order, orderBook, orderRef, blockTimestamp, dryRun } =
     params;
-  const log = logger.getLogger(`checkForAndPlaceOrder:_placeOrder:${orderRef}`);
+  const log = getLogger(`checkForAndPlaceOrder:_placeOrder:${orderRef}`);
   try {
     const postOrder: OrderCreation = {
       ...order,
@@ -556,7 +556,7 @@ async function _pollLegacy(
   // as we going to use multicall, with `aggregate3Value`, there is no need to do any simulation as the
   // calls are guaranteed to pass, and will return the results, or the reversion within the ABI-encoded data.
   // By not using `populateTransaction`, we avoid an `eth_estimateGas` RPC call.
-  const log = logger.getLogger(`checkForAndPlaceOrder:_pollLegacy:${orderRef}`);
+  const log = getLogger(`checkForAndPlaceOrder:_pollLegacy:${orderRef}`);
   const to = contract.address;
   const data = contract.interface.encodeFunctionData(
     "getTradeableOrderWithSignature",
@@ -607,9 +607,9 @@ function _handleGetTradableOrderCall(
   orderRef: string
 ): PollResultErrors {
   const logPrefix = `checkForAndPlaceOrder:_handleGetTradableOrderCall:${orderRef}`;
-  const log = logger.getLogger(logPrefix);
+  const log = getLogger(logPrefix);
   if (error.code === Logger.errors.CALL_EXCEPTION) {
-    const log = logger.getLogger(`${logPrefix}: CALL_EXCEPTION`);
+    const log = getLogger(`${logPrefix}: CALL_EXCEPTION`);
 
     // Support raw errors (nethermind issue), and parameterised errors (ethers issue)
     const { errorNameOrSelector } = parseCustomError(error);

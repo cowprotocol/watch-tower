@@ -1,5 +1,5 @@
 import { RunOptions } from "../types";
-import { logger, DBService } from "../utils";
+import { getLogger, DBService } from "../utils";
 import { ChainContext } from "../domain";
 
 /**
@@ -7,7 +7,7 @@ import { ChainContext } from "../domain";
  * @param options Specified by the CLI / environment for running the watch-tower
  */
 export async function run(options: RunOptions) {
-  const log = logger.getLogger("commands:run");
+  const log = getLogger("commands:run");
   const { rpc, deploymentBlock, oneShot } = options;
 
   process.on("unhandledRejection", async (error) => {
