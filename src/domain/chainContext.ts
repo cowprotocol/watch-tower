@@ -234,7 +234,7 @@ export class ChainContext {
       const currentTime = new Date().getTime();
       const timeElapsed = currentTime - timeLastBlockProcessed;
 
-      log.trace(`diff: ${timeElapsed}ms`);
+      log.trace(`Time since last block processed: ${timeElapsed}ms`);
 
       // If we haven't received a block in 30 seconds, exit so that the process manager can restart us
       if (timeElapsed >= WATCHDOG_KILL_THRESHOLD) {
@@ -273,15 +273,12 @@ async function processBlock(
     const receipt = await provider.getTransactionReceipt(event.transactionHash);
     if (receipt) {
       // run action
-      log.info(`Run "addContract" action for TX ${event.transactionHash}`);
+      log.info(`Running "addContract" action for TX ${event.transactionHash}`);
       const result = await addContract(context, event)
         .then(() => true)
         .catch((e) => {
           hasErrors = true;
-          log.error(
-            `[run_local] Error running "addContract" action for TX:`,
-            e
-          );
+          log.error(`Error running "addContract" action for TX:`, e);
           return false;
         });
       log.info(
