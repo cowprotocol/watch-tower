@@ -129,7 +129,7 @@ async function _checkForAndPlaceOrder(
         lastHint?.result === PollResultCode.TRY_AT_EPOCH &&
         blockTimestamp < lastHint.epoch
       ) {
-        log.info(
+        log.debug(
           `Skipping conditional. Reason: Not due yet (TRY_AT_EPOCH=${
             lastHint.epoch
           }, ${formatEpoch(lastHint.epoch)}). ${logOrderDetails}`,
@@ -143,7 +143,7 @@ async function _checkForAndPlaceOrder(
         lastHint?.result === PollResultCode.TRY_ON_BLOCK &&
         blockNumber < lastHint.blockNumber
       ) {
-        log.info(
+        log.debug(
           `Skipping conditional. Reason: Not due yet (TRY_ON_BLOCK=${
             lastHint.blockNumber
           }, in ${
