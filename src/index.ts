@@ -38,6 +38,8 @@ async function main() {
         .conflicts(["slackWebhook"])
         .default(false)
     )
+    .option("--enable-api", "Enable the REST API", true)
+    .option("--api-port <apiPort>", "Port for the REST API", "8080")
     .option("--slack-webhook <slackWebhook>", "Slack webhook URL")
     .option("--one-shot", "Run the watchtower once and exit", false)
     .addOption(logLevelOption)
@@ -63,13 +65,19 @@ async function main() {
         throw new Error("Page size must be a number");
       }
 
+      // Ensure that the port is a number
+      const apiPort = Number(options.apiPort);
+      if (isNaN(apiPort)) {
+        throw new Error("API port must be a number");
+      }
+
       // Ensure that the RPCs and deployment blocks are the same length
       if (rpc.length !== deploymentBlock.length) {
         throw new Error("RPC and deployment blocks must be the same length");
       }
 
       // Run the watchtower
-      run({ ...options, deploymentBlock, pageSize });
+      run({ ...options, deploymentBlock, pageSize, apiPort });
     });
 
   program
