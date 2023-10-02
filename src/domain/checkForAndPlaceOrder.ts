@@ -8,14 +8,7 @@ import {
 import { ethers } from "ethers";
 import { BytesLike, Logger } from "ethers/lib/utils";
 
-import {
-  ComposableCoW,
-  ComposableCoW__factory,
-  Multicall3,
-  Multicall3__factory,
-  ConditionalOrder,
-  OrderStatus,
-} from "../types";
+import { ConditionalOrder, OrderStatus } from "../types";
 import {
   LowLevelError,
   ORDER_NOT_VALID_SELECTOR,
@@ -41,7 +34,6 @@ import {
 import { ChainContext } from "./chainContext";
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
-const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 const ApiErrors = OrderPostError.errorType;
 type NextBlockApiErrorsArray = Array<OrderPostError.errorType>;
@@ -74,7 +66,7 @@ export async function checkForAndPlaceOrder(
   blockNumberOverride?: number,
   blockTimestampOverride?: number
 ) {
-  const { chainId, registry, provider } = context;
+  const { chainId, registry } = context;
   const { ownerOrders, numOrders } = registry;
 
   const blockNumber = blockNumberOverride || block.number;
@@ -137,19 +129,12 @@ export async function checkForAndPlaceOrder(
 
       // Proceed with the normal check
       log.info(`${logOrderDetails}`, conditionalOrder.params);
-      const contract = ComposableCoW__factory.connect(
-        conditionalOrder.composableCow,
-        provider
-      );
-      const multicall = Multicall3__factory.connect(MULTICALL3, provider);
 
       const pollResult = await _processConditionalOrder(
         owner,
         conditionalOrder,
         blockTimestamp,
         blockNumber,
-        contract,
-        multicall,
         context,
         orderRef
       );
@@ -224,8 +209,6 @@ async function _processConditionalOrder(
   conditionalOrder: ConditionalOrder,
   blockTimestamp: number,
   blockNumber: number,
-  contract: ComposableCoW,
-  multicall: Multicall3,
   context: ChainContext,
   orderRef: string
 ): Promise<PollResult> {
@@ -261,11 +244,9 @@ async function _processConditionalOrder(
       // For now, fallback to legacy behavior
       // TODO: Decide in the future what to do. Probably, move the error handling to the SDK and kill the poll Legacy
       pollResult = await _pollLegacy(
-        chainId,
+        context,
         owner,
         conditionalOrder,
-        contract,
-        multicall,
         proof,
         offchainInput,
         orderRef
@@ -504,15 +485,14 @@ function _handleOrderBookError(
 }
 
 async function _pollLegacy(
-  chainId: SupportedChainId,
+  context: ChainContext,
   owner: string,
   conditionalOrder: ConditionalOrder,
-  contract: ComposableCoW,
-  multicall: Multicall3,
   proof: string[],
   offchainInput: string,
   orderRef: string
 ): Promise<PollResult> {
+  const { chainId, contract, multicall } = context;
   // as we going to use multicall, with `aggregate3Value`, there is no need to do any simulation as the
   // calls are guaranteed to pass, and will return the results, or the reversion within the ABI-encoded data.
   // By not using `populateTransaction`, we avoid an `eth_estimateGas` RPC call.
