@@ -19,7 +19,7 @@
   "devDependencies": {
     "@commitlint/cli": "^17.6.7",
     "@commitlint/config-conventional": "^17.6.7",
-    "@typechain/ethers-v5": "^10.2.0",
+    "@typechain/ethers-v5": "^11.1.1",
     "@types/jest": "^29.5.3",
     "@types/node": "^18.16.3",
     "@types/node-slack": "^0.0.31",
@@ -35,7 +35,7 @@
     "lint-staged": "^14.0.1",
     "prettier": "^2.8.8",
     "ts-node": "^10.9.1",
-    "typechain": "^8.1.1"
+    "typechain": "^8.3.1"
   },
   "dependencies": {
     "@commander-js/extra-typings": "^11.0.0",
