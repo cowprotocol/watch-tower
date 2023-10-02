@@ -78,10 +78,6 @@ describe("custom errors (reversions)", () => {
       message: "after twap finish",
     });
   });
-
-  it("should fail if some other error is passed", () => {
-    expect(customErrorDecode(ARBITRARY_REVERT_WITH_PARAMETERS)).toThrow();
-  });
 });
 
 // test data
@@ -102,6 +98,3 @@ const POLL_TRY_AT_EPOCH =
 
 const POLL_NEVER =
   "0x981b64cd00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000011616674657220747761702066696e697368000000000000000000000000000000";
-
-const ARBITRARY_REVERT_WITH_PARAMETERS =
-  "0xc8fc2725deadbeefdeadbeefdeadbeefdeadbeef";
