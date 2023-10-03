@@ -523,10 +523,6 @@ async function _pollLegacy(
     [owner, conditionalOrder.params, offchainInput, proof]
   );
 
-  log.debug(
-    `Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${to}&rawFunctionInput=${data}`
-  );
-
   try {
     const lowLevelCall = await multicall.callStatic.aggregate3Value([
       {
@@ -555,6 +551,10 @@ async function _pollLegacy(
       signature,
     };
   } catch (error: any) {
+    log.error(
+      `Error on CALL to getTradeableOrderWithSignature. Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${to}&rawFunctionInput=${data}`
+    );
+
     // Print and handle the error
     // We need to decide if the error is final or not (if a re-attempt might help). If it doesn't, we delete the order
     return _handleGetTradableOrderCall(error, owner, orderRef);
