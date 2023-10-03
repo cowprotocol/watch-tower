@@ -2,11 +2,8 @@ import Slack = require("node-slack");
 
 import { BytesLike } from "ethers";
 
-import type {
-  ConditionalOrderCreatedEvent,
-  IConditionalOrder,
-} from "./generated/ComposableCoW";
-import { PollResult } from "@cowprotocol/cow-sdk";
+import type { ConditionalOrderCreatedEvent } from "./generated/ComposableCoW";
+import { ConditionalOrderParams, PollResult } from "@cowprotocol/cow-sdk";
 import { DBService } from "../utils";
 
 // Standardise the storage key
@@ -59,7 +56,7 @@ export type ConditionalOrder = {
   /**
    * The parameters of the conditional order
    */
-  params: IConditionalOrder.ConditionalOrderParamsStruct; // TODO: We should not use the raw `ConditionalOrderParamsStruct` instead we should do some plain object `ConditionalOrderParams` with the handler,salt,staticInput as properties. See https://github.com/cowprotocol/tenderly-watch-tower/issues/18
+  params: ConditionalOrderParams;
 
   /**
    * The merkle proof if the conditional order is belonging to a merkle root

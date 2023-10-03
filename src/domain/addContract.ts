@@ -1,4 +1,4 @@
-import { getLogger } from "../utils";
+import { toConditionalOrderParams, getLogger } from "../utils";
 import { BytesLike, ethers } from "ethers";
 
 import {
@@ -15,6 +15,7 @@ import {
 
 import { isComposableCowCompatible, handleExecutionError } from "../utils";
 import { ChainContext } from "./chainContext";
+import { ConditionalOrderParams } from "@cowprotocol/cow-sdk";
 
 /**
  * Listens to these events on the `ComposableCoW` contract:
@@ -34,7 +35,7 @@ async function _addContract(
   context: ChainContext,
   event: ConditionalOrderCreatedEvent
 ) {
-  const log = getLogger("addContract:_addContract");
+  const log = getLogger("addContract");
   const composableCow = ComposableCoW__factory.createInterface();
   const { provider, registry } = context;
   const { transactionHash: tx, blockNumber } = event;
@@ -64,7 +65,7 @@ async function _addContract(
   hasErrors ||= error;
 
   if (numContractsAdded > 0) {
-    log.info(`Added ${numContractsAdded} contracts`);
+    log.debug(`Added ${numContractsAdded} contracts`);
 
     // Write the registry to disk. Don't catch errors, let them bubble up
     await registry.write();
@@ -103,7 +104,7 @@ export async function _registerNewOrder(
       add(
         eventLog.transactionHash,
         owner,
-        params,
+        toConditionalOrderParams(params),
         null,
         eventLog.address,
         registry
@@ -143,7 +144,7 @@ export async function _registerNewOrder(
           add(
             event.transactionHash,
             owner,
-            decodedOrder[1],
+            toConditionalOrderParams(decodedOrder[1]),
             { merkleRoot: root, path: decodedOrder[0] },
             eventLog.address,
             registry
@@ -175,7 +176,7 @@ export async function _registerNewOrder(
 export function add(
   tx: string,
   owner: Owner,
-  params: IConditionalOrder.ConditionalOrderParamsStruct,
+  params: ConditionalOrderParams,
   proof: Proof | null,
   composableCow: string,
   registry: Registry
@@ -202,7 +203,7 @@ export function add(
     if (!exists) {
       conditionalOrders?.add({
         tx,
-        params,
+        params: { handler, salt, staticInput },
         proof,
         orders: new Map(),
         composableCow,

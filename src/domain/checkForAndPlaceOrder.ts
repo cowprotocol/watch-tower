@@ -192,9 +192,9 @@ export async function checkForAndPlaceOrder(
     // Delete orders we don't want to keep watching
     for (const conditionalOrder of ordersPendingDelete) {
       const deleted = conditionalOrders.delete(conditionalOrder);
-      const action = deleted ? "Stop Watching" : "Fail to delete";
+      const action = deleted ? "Stop Watching" : "Failed to stop watching";
 
-      log.info(`${action} conditional order from TX ${conditionalOrder.tx}`);
+      log.debug(`${action} conditional order from TX ${conditionalOrder.tx}`);
     }
   }
 
@@ -210,7 +210,9 @@ export async function checkForAndPlaceOrder(
   // and we want to crash if there's an error
   await registry.write();
 
-  log.info(`Remaining orders: `, registry.numOrders);
+  log.debug(
+    `Total orders after processing all conditional orders: ${registry.numOrders}`
+  );
 
   // Throw execution error if there was at least one error
   if (hasErrors) {
@@ -232,13 +234,6 @@ async function _processConditionalOrder(
     `checkForAndPlaceOrder:_processConditionalOrder:${orderRef}`
   );
   try {
-    // TODO: Fix model and delete the explicit cast: https://github.com/cowprotocol/tenderly-watch-tower/issues/18
-    const [handler, salt, staticInput] = conditionalOrder.params as any as [
-      string,
-      string,
-      string
-    ];
-
     const proof = conditionalOrder.proof
       ? conditionalOrder.proof.path.map((c) => c.toString())
       : [];
@@ -255,14 +250,9 @@ async function _processConditionalOrder(
       },
       provider,
     };
-    const conditionalOrderParams = {
-      handler,
-      staticInput,
-      salt,
-    };
     let pollResult = await pollConditionalOrder(
       pollParams,
-      conditionalOrderParams,
+      conditionalOrder.params,
       orderRef
     );
 
