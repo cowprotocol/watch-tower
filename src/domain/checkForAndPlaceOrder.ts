@@ -430,7 +430,7 @@ async function _placeOrder(params: {
       );
 
       if (isSuccess) {
-        log.info(`All good! continuing with warnings...`);
+        log.debug(`All good! continuing with warnings...`);
         return { result: PollResultCode.SUCCESS };
       } else {
         return handleErrorResult;
