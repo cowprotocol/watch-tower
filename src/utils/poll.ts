@@ -19,7 +19,7 @@ export async function pollConditionalOrder(
   conditionalOrderParams: ConditionalOrderParams,
   orderRef: string
 ): Promise<PollResult | undefined> {
-  const log = getLogger(`polling:pollConditionalOrder:${orderRef}`);
+  const log = getLogger(`pollConditionalOrder:${orderRef}`);
   const order = ordersFactory.fromParams(conditionalOrderParams);
 
   if (!order) {
@@ -29,7 +29,7 @@ export async function pollConditionalOrder(
     ? { ...pollParams, blockInfo: undefined }
     : pollParams;
 
-  log.trace(
+  log.info(
     `Polling for ${order.toString()} using block (${
       actualPollParams.blockInfo === undefined
         ? "latest"

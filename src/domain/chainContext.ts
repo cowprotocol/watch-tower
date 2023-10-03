@@ -98,27 +98,29 @@ export class ChainContext {
           currentBlockNumber = await provider.getBlockNumber();
           toBlock = toBlock > currentBlockNumber ? currentBlockNumber : toBlock;
 
-          if (printSyncInfo) {
-            printSyncInfo = false;
-            log.info(
-              `🔄 Start sync with from block ${fromBlock} to ${toBlock}. Pending ${
-                toBlock - fromBlock
-              } blocks (~${Math.ceil((toBlock - fromBlock) / pageSize)} pages)`
-            );
-          }
-
-          log.trace(
+          log.debug(
             `Reaching tip of chain, current block number: ${currentBlockNumber}`
           );
         }
 
-        log.trace(
+        if (printSyncInfo && typeof toBlock === "number") {
+          printSyncInfo = false;
+          log.info(
+            `🔄 Start sync with from block ${fromBlock} to ${toBlock}. Pending ${
+              toBlock - fromBlock
+            } blocks (~${Math.ceil((toBlock - fromBlock) / pageSize)} pages)`
+          );
+        }
+
+        log.debug(
           `Processing events from block ${fromBlock} to block ${toBlock}`
         );
 
         const events = await pollContractForEvents(fromBlock, toBlock, this);
 
-        log.trace(`Found ${events.length} events`);
+        if (events.length > 0) {
+          log.debug(`Found ${events.length} events`);
+        }
 
         // process the events
         for (const event of events) {
@@ -205,7 +207,7 @@ export class ChainContext {
     const { provider, registry, chainId } = this;
     const log = getLogger(`chainContext:runBlockWatcher:${chainId}`);
     // Watch for new blocks
-    log.info("Running block watcher");
+    log.info("Start block watcher");
     let lastBlockReceived = 0;
     let timeLastBlockProcessed = new Date().getTime();
     provider.on("block", async (blockNumber: number) => {
@@ -312,7 +314,7 @@ async function processBlock(
       log.error(`Error running "checkForAndPlaceOrder" action`);
       return false;
     });
-  log.info(
+  log.debug(
     `Result of "checkForAndPlaceOrder" action for block ${blockNumber}: ${_formatResult(
       result
     )}`
