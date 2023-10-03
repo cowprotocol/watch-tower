@@ -84,7 +84,7 @@ export async function checkForAndPlaceOrder(
   let ownerCounter = 0;
   let orderCounter = 0;
 
-  const logPrefix = `checkForAndPlaceOrder:checkForAndPlaceOrder:${chainId}:${blockNumber}`;
+  const logPrefix = `checkForAndPlaceOrder:${chainId}:${blockNumber}`;
   const log = getLogger(logPrefix);
   log.debug(`Total number of orders: ${numOrders}`);
 
