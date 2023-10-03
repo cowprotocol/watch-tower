@@ -36,6 +36,8 @@ export interface DumpDbOptions extends LogOptions {
   chainId: number;
 }
 
+export type ToBlock = "latest" | number;
+
 export * from "./model";
 export * from "./generated";
 export * from "./generated/ComposableCoW";

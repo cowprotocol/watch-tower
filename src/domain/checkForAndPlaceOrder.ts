@@ -196,14 +196,7 @@ async function _checkForAndPlaceOrder(
         pollResult.result +
         (isError && pollResult.reason ? `. Reason: ${pollResult.reason}` : "");
 
-      const logLevel =
-        pollResult.result === PollResultCode.SUCCESS
-          ? "info"
-          : pollResult.result === PollResultCode.UNEXPECTED_ERROR
-          ? "error"
-          : "warn";
-
-      log[logLevel](
+      log[unexpectedError ? "error" : "info"](
         `Check conditional order result: ${getEmojiByPollResult(
           pollResult?.result
         )} ${resultDescription}`
