@@ -23,7 +23,6 @@ import {
   SINGLE_ORDER_NOT_AUTHED_SELECTOR,
   formatStatus,
   getLogger,
-  handleExecutionError,
   parseCustomError,
   pollConditionalOrder,
 } from "../utils";
@@ -75,23 +74,6 @@ export async function checkForAndPlaceOrder(
   blockNumberOverride?: number,
   blockTimestampOverride?: number
 ) {
-  return _checkForAndPlaceOrder(
-    context,
-    block,
-    blockNumberOverride,
-    blockTimestampOverride
-  ).catch(handleExecutionError);
-}
-
-/**
- * Asynchronous version of checkForAndPlaceOrder. It will process all the orders, and will throw an error at the end if there was at least one error
- */
-async function _checkForAndPlaceOrder(
-  context: ChainContext,
-  block: ethers.providers.Block,
-  blockNumberOverride?: number,
-  blockTimestampOverride?: number
-) {
   const { chainId, registry, provider } = context;
   const { ownerOrders, numOrders } = registry;
 
@@ -102,18 +84,17 @@ async function _checkForAndPlaceOrder(
   let ownerCounter = 0;
   let orderCounter = 0;
 
-  const logPrefix = `checkForAndPlaceOrder:_checkForAndPlaceOrder:${chainId}:${blockNumber}`;
+  const logPrefix = `checkForAndPlaceOrder:checkForAndPlaceOrder:${chainId}:${blockNumber}`;
   const log = getLogger(logPrefix);
-  log.info(`Number of orders: ${numOrders}`);
+  log.debug(`Total number of orders: ${numOrders}`);
 
   for (const [owner, conditionalOrders] of ownerOrders.entries()) {
     ownerCounter++;
     const log = getLogger(`${logPrefix}:${ownerCounter}`);
     const ordersPendingDelete = [];
     // enumerate all the `ConditionalOrder`s for a given owner
-    log.info(
-      `Process owner ${owner} (${conditionalOrders.size} orders)`,
-      registry.numOrders
+    log.debug(
+      `Process owner ${owner} (${conditionalOrders.size} orders): ${registry.numOrders}`
     );
     for (const conditionalOrder of conditionalOrders) {
       orderCounter++;
@@ -211,12 +192,9 @@ async function _checkForAndPlaceOrder(
     // Delete orders we don't want to keep watching
     for (const conditionalOrder of ordersPendingDelete) {
       const deleted = conditionalOrders.delete(conditionalOrder);
-      const action = deleted ? "Deleted" : "Fail to delete";
+      const action = deleted ? "Stop Watching" : "Fail to delete";
 
-      log.info(
-        `${action} conditional order with params:`,
-        conditionalOrder.params
-      );
+      log.info(`${action} conditional order from TX ${conditionalOrder.tx}`);
     }
   }
 
@@ -239,7 +217,6 @@ async function _checkForAndPlaceOrder(
     throw Error(`At least one unexpected error processing conditional orders`);
   }
 }
-
 async function _processConditionalOrder(
   owner: string,
   conditionalOrder: ConditionalOrder,
