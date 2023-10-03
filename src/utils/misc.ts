@@ -35,7 +35,7 @@ export function toConditionalOrderParams({
   | IConditionalOrder.ConditionalOrderParamsStructOutput
   | IConditionalOrder.ConditionalOrderParamsStruct): ConditionalOrderParams {
   return {
-    handler,
+    handler: handler.toString(),
     salt: salt.toString(),
     staticInput: staticInput.toString(),
   };
