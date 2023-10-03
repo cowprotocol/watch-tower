@@ -207,7 +207,7 @@ export class ChainContext {
     const { provider, registry, chainId } = this;
     const log = getLogger(`chainContext:runBlockWatcher:${chainId}`);
     // Watch for new blocks
-    log.info("Start block watcher");
+    log.info("👀 Start block watcher");
     let lastBlockReceived = 0;
     let timeLastBlockProcessed = new Date().getTime();
     provider.on("block", async (blockNumber: number) => {
@@ -285,7 +285,7 @@ async function processBlock(
     const receipt = await provider.getTransactionReceipt(event.transactionHash);
     if (receipt) {
       // run action
-      log.info(`Running "addContract" action for TX ${event.transactionHash}`);
+      log.debug(`Running "addContract" action for TX ${event.transactionHash}`);
       const result = await addContract(context, event)
         .then(() => true)
         .catch((e) => {
@@ -293,11 +293,7 @@ async function processBlock(
           log.error(`Error running "addContract" action for TX:`, e);
           return false;
         });
-      log.info(
-        `Result of "addContract" action for TX ${
-          event.transactionHash
-        }: ${_formatResult(result)}`
-      );
+      log.info(`Result of "addContract": ${_formatResult(result)}`);
     }
   }
 

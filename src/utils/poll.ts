@@ -29,7 +29,7 @@ export async function pollConditionalOrder(
     ? { ...pollParams, blockInfo: undefined }
     : pollParams;
 
-  log.info(
+  log.debug(
     `Polling for ${order.toString()} using block (${
       actualPollParams.blockInfo === undefined
         ? "latest"
