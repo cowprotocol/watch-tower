@@ -300,7 +300,6 @@ async function processBlock(
   }
 
   // run action
-  log.info(`Run "checkForAndPlaceOrder" action for block ${blockNumber}`);
   const result = await checkForAndPlaceOrder(
     context,
     block,
