@@ -87,6 +87,7 @@ export class ChainContext {
       : this.deploymentBlock;
     let currentBlockNumber = await provider.getBlockNumber();
 
+    let printSyncInfo = true; // Print sync info only once
     let plan: ReplayPlan = {};
     let toBlock: "latest" | number = 0;
     do {
@@ -96,6 +97,15 @@ export class ChainContext {
           // refresh the current block number
           currentBlockNumber = await provider.getBlockNumber();
           toBlock = toBlock > currentBlockNumber ? currentBlockNumber : toBlock;
+
+          if (printSyncInfo) {
+            printSyncInfo = false;
+            log.info(
+              `🔄 Start sync with from block ${fromBlock} to ${toBlock}. Pending ${
+                toBlock - fromBlock
+              } blocks (~${Math.ceil((toBlock - fromBlock) / pageSize)} pages)`
+            );
+          }
 
           log.trace(
             `Reaching tip of chain, current block number: ${currentBlockNumber}`
@@ -171,7 +181,9 @@ export class ChainContext {
     } while (!this.inSync);
 
     log.info(
-      oneShot ? "Chain watcher is in sync" : "Chain watcher is warmed up"
+      `💚 ${
+        oneShot ? "Chain watcher is in sync" : "Chain watcher is warmed up"
+      }`
     );
     log.debug(`Last processed block: ${this.registry.lastProcessedBlock}`);
 
@@ -191,7 +203,7 @@ export class ChainContext {
    */
   private async runBlockWatcher() {
     const { provider, registry, chainId } = this;
-    const log = getLogger(`chainContext:warmUp:${chainId}`);
+    const log = getLogger(`chainContext:runBlockWatcher:${chainId}`);
     // Watch for new blocks
     log.info("Running block watcher");
     let lastBlockReceived = 0;
