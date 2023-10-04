@@ -3,10 +3,9 @@ import "dotenv/config";
 import { program, Option } from "@commander-js/extra-typings";
 import { ReplayTxOptions } from "./types";
 import { dumpDb, replayBlock, replayTx, run } from "./commands";
-import { setRootLogLevel } from "./utils";
+import { initLogging } from "./utils";
 
 const logLevelOption = new Option("--log-level <logLevel>", "Log level")
-  .choices(["INFO", "DEBUG", "TRACE", "WARN", "ERROR", "SILENT"] as const)
   .default("INFO")
   .env("LOG_LEVEL");
 
@@ -45,7 +44,7 @@ async function main() {
     .action((options) => {
       const { logLevel } = options;
 
-      setRootLogLevel(logLevel);
+      initLogging({ logLevel });
       const {
         rpc,
         deploymentBlock: deploymentBlockEnv,
@@ -79,6 +78,9 @@ async function main() {
     .requiredOption("--chain-id <chainId>", "Chain ID to dump")
     .addOption(logLevelOption)
     .action((options) => {
+      const { logLevel } = options;
+      initLogging({ logLevel });
+
       // Ensure that the chain ID is a number
       const chainId = Number(options.chainId);
       if (isNaN(chainId)) {
@@ -97,6 +99,9 @@ async function main() {
     .option("--dry-run", "Do not publish orders to the OrderBook API", false)
     .addOption(logLevelOption)
     .action((options) => {
+      const { logLevel } = options;
+      initLogging({ logLevel });
+
       // Ensure that the block is a number
       const block = Number(options.block);
       if (isNaN(block)) {
@@ -113,7 +118,12 @@ async function main() {
     .requiredOption("--tx <tx>", "Transaction hash to replay")
     .option("--dry-run", "Do not publish orders to the OrderBook API", false)
     .addOption(logLevelOption)
-    .action((options: ReplayTxOptions) => replayTx(options));
+    .action((options: ReplayTxOptions) => {
+      const { logLevel } = options;
+      initLogging({ logLevel });
+
+      replayTx(options);
+    });
 
   await program.parseAsync();
 }

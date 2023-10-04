@@ -141,7 +141,7 @@ export class ChainContext {
 
       // Replay only the blocks that had some events.
       for (const [blockNumber, events] of Object.entries(plan)) {
-        log.trace(`[run_rebuild] Processing block ${blockNumber}`);
+        log.debug(`[run_rebuild] Processing block ${blockNumber}`);
         try {
           await processBlock(
             this,
@@ -158,7 +158,7 @@ export class ChainContext {
           log.error(`Error processing block ${blockNumber}`, err);
         }
 
-        log.trace(`Block ${blockNumber} has been processed`);
+        log.debug(`Block ${blockNumber} has been processed`);
       }
 
       // Set the last processed block to the current block number
@@ -248,7 +248,7 @@ export class ChainContext {
       const currentTime = new Date().getTime();
       const timeElapsed = currentTime - timeLastBlockProcessed;
 
-      log.trace(`Time since last block processed: ${timeElapsed}ms`);
+      log.debug(`Time since last block processed: ${timeElapsed}ms`);
 
       // If we haven't received a block in 30 seconds, exit so that the process manager can restart us
       if (timeElapsed >= WATCHDOG_KILL_THRESHOLD) {

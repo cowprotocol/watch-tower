@@ -78,17 +78,22 @@ To control logging level, you can set the `LOG_LEVEL` environment variable with 
 LOG_LEVEL=WARN
 ```
 
-Additionally, you can enable module specific logging by setting the `DEBUG` environment variable with a comma separated list of modules:
+Additionally, you can enable module specific logging by specifying the log level for the module name:
 
 ```ini
 # Enable logging for an specific module (chainContext in this case)
-DEBUG=chainContext=INFO
+LOG_LEVEL=chainContext=INFO
+
+# Of-course, you can provide the root log level, and the override at the same time
+#   - All loggers will have WARN level
+#   - Except the "chainContext" which will have INFO level
+LOG_LEVEL=WARN,chainContext=INFO
 ```
 
 You can specify more than one overrides
 
 ```ini
-DEBUG=chainContext=INFO,_placeOrder=TRACE
+LOG_LEVEL=chainContext=INFO,_placeOrder=TRACE
 ```
 
 The module definition is actually a regex pattern, so you can make more complex definitions:
@@ -98,17 +103,17 @@ The module definition is actually a regex pattern, so you can make more complex 
 #  Matches: chainContext:processBlock:100:30212964
 #  Matches: chainContext:processBlock:1:30212964
 #  Matches: chainContext:processBlock:5:30212964
-DEBUG=chainContext:processBlock:(\d{1,3}):(\d*)$
+LOG_LEVEL=chainContext:processBlock:(\d{1,3}):(\d*)$=DEBUG
 
 # Another example
 #  Matches: chainContext:processBlock:100:30212964
 #  Matches: chainContext:processBlock:1:30212964
 #  But not: chainContext:processBlock:5:30212964
-DEBUG=chainContext:processBlock:(100|1):(\d*)$
+LOG_LEVEL=chainContext:processBlock:(100|1):(\d*)$=DEBUG
 ```
 
 Combine all of the above to control the log level of any modules:
 
 ```ini
- LOG_LEVEL=WARN DEBUG="commands=DEBUG,^checkForAndPlaceOrder=WARN,^chainContext=INFO,_checkForAndPlaceOrder:1:=INFO" yarn ts-node ./src/index.ts
+ LOG_LEVEL="WARN,commands=DEBUG,^checkForAndPlaceOrder=WARN,^chainContext=INFO,_checkForAndPlaceOrder:1:=INFO" yarn ts-node ./src/index.ts
 ```
