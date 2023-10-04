@@ -1,7 +1,7 @@
 {
   "name": "@cowprotocol/watch-tower",
   "license": "GPL-3.0-or-later",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0",
   "description": "A standalone watch tower, keeping an eye on Composable Cows  👀🐮",
   "author": {
     "name": "Cow Protocol"
