@@ -6,14 +6,15 @@ import { getLogger } from "./logging";
 import { DBService } from "./db";
 import { Registry } from "../types";
 import { MetricsService } from "./metrics";
+import { version, name, description } from "../../package.json";
 
 export class ApiService {
-  protected PORT: number;
+  protected port: number;
   protected app: Express;
   protected server: Server | null = null;
 
   constructor(port: number) {
-    this.PORT = port;
+    this.port = port;
     this.app = express();
     this.bootstrap();
   }
@@ -25,7 +26,7 @@ export class ApiService {
     this.app.use(express.json());
     this.app.use(express.urlencoded({ extended: true }));
     this.app.get("/", (_req: Request, res: Response) => {
-      res.send("Moooo!");
+      res.send("🐮 Moooo!");
       MetricsService.apiRequestCounter.labels("GET", "/", "200").inc();
     });
     this.app.use("/api", router);
@@ -47,8 +48,10 @@ export class ApiService {
         if (this.server?.listening) {
           throw new Error("Server is already running");
         }
-        this.server = this.app.listen(this.PORT, () => {
-          log.info(`Starting Rest API server on port ${this.PORT}`);
+        this.server = this.app.listen(this.port, () => {
+          log.info(
+            `Starting Rest API server on port ${this.port}. See http://localhost:8080/api/about`
+          );
         });
 
         resolve(this.server);
@@ -92,8 +95,20 @@ const dumpRoute = (router: Router) => {
   });
 };
 
+const aboutRoute = (router: Router) => {
+  router.get("/about", async (req: Request, res: Response) => {
+    res.setHeader("Content-Type", "application/json");
+    res.send({
+      version,
+      name,
+      description,
+      dockerImageTag: process.env.DOCKER_IMAGE_TAG, // Optional: convenient way to inform about the used docker image tag in docker environments
+    });
+  });
+};
+
 export type RouterInitializer = (router: Router) => void;
-const routeInitializers: RouterInitializer[] = [dumpRoute];
+const routeInitializers: RouterInitializer[] = [aboutRoute, dumpRoute];
 
 const router = Router();
 for (const routeInitialize of routeInitializers) {

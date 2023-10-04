@@ -117,3 +117,20 @@ Combine all of the above to control the log level of any modules:
 ```ini
  LOG_LEVEL="WARN,commands=DEBUG,^checkForAndPlaceOrder=WARN,^chainContext=INFO,_checkForAndPlaceOrder:1:=INFO" yarn ts-node ./src/index.ts
 ```
+
+## API Server
+
+The run command will expose by default a server on port `8080`.
+
+The server exposes automatically:
+
+- An API, with:
+  - About info: [http://localhost:8080/api/about](http://localhost:8080/api/about)
+  - Dump Database: `http://localhost:8080/api/dump/:chainId` e.g. [http://localhost:8080/api/dump/1](http://localhost:8080/api/dump/1)
+- Prometheus Metrics: [http://localhost:8080/metrics](http://localhost:8080/metrics)
+
+You can prevent the server from starting by setting the `--enable-api` flag for the `run` command.
+
+Additionally, you can change the port by setting the flag `--api-port <apiPort>`
+
+The `/api/about` endpoint, exposes the information in the package.json. This can be helpful to identify the version of the watch tower. Additionally, for environments using docker, the environment variable `DOCKER_IMAGE_TAG` can be used to specify the Docker image tag used.
