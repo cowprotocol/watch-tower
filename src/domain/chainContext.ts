@@ -87,6 +87,7 @@ export class ChainContext {
       : this.deploymentBlock;
     let currentBlockNumber = await provider.getBlockNumber();
 
+    let printSyncInfo = true; // Print sync info only once
     let plan: ReplayPlan = {};
     let toBlock: "latest" | number = 0;
     do {
@@ -97,18 +98,29 @@ export class ChainContext {
           currentBlockNumber = await provider.getBlockNumber();
           toBlock = toBlock > currentBlockNumber ? currentBlockNumber : toBlock;
 
-          log.trace(
+          log.debug(
             `Reaching tip of chain, current block number: ${currentBlockNumber}`
           );
         }
 
-        log.trace(
+        if (printSyncInfo && typeof toBlock === "number") {
+          printSyncInfo = false;
+          log.info(
+            `🔄 Start sync with from block ${fromBlock} to ${toBlock}. Pending ${
+              toBlock - fromBlock
+            } blocks (~${Math.ceil((toBlock - fromBlock) / pageSize)} pages)`
+          );
+        }
+
+        log.debug(
           `Processing events from block ${fromBlock} to block ${toBlock}`
         );
 
         const events = await pollContractForEvents(fromBlock, toBlock, this);
 
-        log.trace(`Found ${events.length} events`);
+        if (events.length > 0) {
+          log.debug(`Found ${events.length} events`);
+        }
 
         // process the events
         for (const event of events) {
@@ -171,7 +183,9 @@ export class ChainContext {
     } while (!this.inSync);
 
     log.info(
-      oneShot ? "Chain watcher is in sync" : "Chain watcher is warmed up"
+      `💚 ${
+        oneShot ? "Chain watcher is in sync" : "Chain watcher is warmed up"
+      }`
     );
     log.debug(`Last processed block: ${this.registry.lastProcessedBlock}`);
 
@@ -191,9 +205,9 @@ export class ChainContext {
    */
   private async runBlockWatcher() {
     const { provider, registry, chainId } = this;
-    const log = getLogger(`chainContext:warmUp:${chainId}`);
+    const log = getLogger(`chainContext:runBlockWatcher:${chainId}`);
     // Watch for new blocks
-    log.info("Running block watcher");
+    log.info("👀 Start block watcher");
     let lastBlockReceived = 0;
     let timeLastBlockProcessed = new Date().getTime();
     provider.on("block", async (blockNumber: number) => {
@@ -271,7 +285,7 @@ async function processBlock(
     const receipt = await provider.getTransactionReceipt(event.transactionHash);
     if (receipt) {
       // run action
-      log.info(`Running "addContract" action for TX ${event.transactionHash}`);
+      log.debug(`Running "addContract" action for TX ${event.transactionHash}`);
       const result = await addContract(context, event)
         .then(() => true)
         .catch((e) => {
@@ -279,16 +293,11 @@ async function processBlock(
           log.error(`Error running "addContract" action for TX:`, e);
           return false;
         });
-      log.info(
-        `Result of "addContract" action for TX ${
-          event.transactionHash
-        }: ${_formatResult(result)}`
-      );
+      log.info(`Result of "addContract": ${_formatResult(result)}`);
     }
   }
 
   // run action
-  log.info(`Run "checkForAndPlaceOrder" action for block ${blockNumber}`);
   const result = await checkForAndPlaceOrder(
     context,
     block,
@@ -301,7 +310,7 @@ async function processBlock(
       log.error(`Error running "checkForAndPlaceOrder" action`);
       return false;
     });
-  log.info(
+  log.debug(
     `Result of "checkForAndPlaceOrder" action for block ${blockNumber}: ${_formatResult(
       result
     )}`

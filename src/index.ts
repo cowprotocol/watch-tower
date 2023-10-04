@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 import { program, Option } from "@commander-js/extra-typings";
 import { ReplayTxOptions } from "./types";
 import { dumpDb, replayBlock, replayTx, run } from "./commands";

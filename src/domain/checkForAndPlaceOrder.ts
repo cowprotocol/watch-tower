@@ -23,7 +23,6 @@ import {
   SINGLE_ORDER_NOT_AUTHED_SELECTOR,
   formatStatus,
   getLogger,
-  handleExecutionError,
   parseCustomError,
   pollConditionalOrder,
 } from "../utils";
@@ -75,23 +74,6 @@ export async function checkForAndPlaceOrder(
   blockNumberOverride?: number,
   blockTimestampOverride?: number
 ) {
-  return _checkForAndPlaceOrder(
-    context,
-    block,
-    blockNumberOverride,
-    blockTimestampOverride
-  ).catch(handleExecutionError);
-}
-
-/**
- * Asynchronous version of checkForAndPlaceOrder. It will process all the orders, and will throw an error at the end if there was at least one error
- */
-async function _checkForAndPlaceOrder(
-  context: ChainContext,
-  block: ethers.providers.Block,
-  blockNumberOverride?: number,
-  blockTimestampOverride?: number
-) {
   const { chainId, registry, provider } = context;
   const { ownerOrders, numOrders } = registry;
 
@@ -102,18 +84,17 @@ async function _checkForAndPlaceOrder(
   let ownerCounter = 0;
   let orderCounter = 0;
 
-  const logPrefix = `checkForAndPlaceOrder:_checkForAndPlaceOrder:${chainId}:${blockNumber}`;
+  const logPrefix = `checkForAndPlaceOrder:${chainId}:${blockNumber}`;
   const log = getLogger(logPrefix);
-  log.info(`Number of orders: ${numOrders}`);
+  log.debug(`Total number of orders: ${numOrders}`);
 
   for (const [owner, conditionalOrders] of ownerOrders.entries()) {
     ownerCounter++;
     const log = getLogger(`${logPrefix}:${ownerCounter}`);
     const ordersPendingDelete = [];
     // enumerate all the `ConditionalOrder`s for a given owner
-    log.info(
-      `Process owner ${owner} (${conditionalOrders.size} orders)`,
-      registry.numOrders
+    log.debug(
+      `Process owner ${owner} (${conditionalOrders.size} orders): ${registry.numOrders}`
     );
     for (const conditionalOrder of conditionalOrders) {
       orderCounter++;
@@ -196,14 +177,7 @@ async function _checkForAndPlaceOrder(
         pollResult.result +
         (isError && pollResult.reason ? `. Reason: ${pollResult.reason}` : "");
 
-      const logLevel =
-        pollResult.result === PollResultCode.SUCCESS
-          ? "info"
-          : pollResult.result === PollResultCode.UNEXPECTED_ERROR
-          ? "error"
-          : "warn";
-
-      log[logLevel](
+      log[unexpectedError ? "error" : "info"](
         `Check conditional order result: ${getEmojiByPollResult(
           pollResult?.result
         )} ${resultDescription}`
@@ -218,12 +192,9 @@ async function _checkForAndPlaceOrder(
     // Delete orders we don't want to keep watching
     for (const conditionalOrder of ordersPendingDelete) {
       const deleted = conditionalOrders.delete(conditionalOrder);
-      const action = deleted ? "Deleted" : "Fail to delete";
+      const action = deleted ? "Stop Watching" : "Failed to stop watching";
 
-      log.info(
-        `${action} conditional order with params:`,
-        conditionalOrder.params
-      );
+      log.debug(`${action} conditional order from TX ${conditionalOrder.tx}`);
     }
   }
 
@@ -239,14 +210,15 @@ async function _checkForAndPlaceOrder(
   // and we want to crash if there's an error
   await registry.write();
 
-  log.info(`Remaining orders: `, registry.numOrders);
+  log.debug(
+    `Total orders after processing all conditional orders: ${registry.numOrders}`
+  );
 
   // Throw execution error if there was at least one error
   if (hasErrors) {
     throw Error(`At least one unexpected error processing conditional orders`);
   }
 }
-
 async function _processConditionalOrder(
   owner: string,
   conditionalOrder: ConditionalOrder,
@@ -262,13 +234,6 @@ async function _processConditionalOrder(
     `checkForAndPlaceOrder:_processConditionalOrder:${orderRef}`
   );
   try {
-    // TODO: Fix model and delete the explicit cast: https://github.com/cowprotocol/tenderly-watch-tower/issues/18
-    const [handler, salt, staticInput] = conditionalOrder.params as any as [
-      string,
-      string,
-      string
-    ];
-
     const proof = conditionalOrder.proof
       ? conditionalOrder.proof.path.map((c) => c.toString())
       : [];
@@ -285,14 +250,9 @@ async function _processConditionalOrder(
       },
       provider,
     };
-    const conditionalOrderParams = {
-      handler,
-      staticInput,
-      salt,
-    };
     let pollResult = await pollConditionalOrder(
       pollParams,
-      conditionalOrderParams,
+      conditionalOrder.params,
       orderRef
     );
 
@@ -470,7 +430,7 @@ async function _placeOrder(params: {
       );
 
       if (isSuccess) {
-        log.info(`All good! continuing with warnings...`);
+        log.debug(`All good! continuing with warnings...`);
         return { result: PollResultCode.SUCCESS };
       } else {
         return handleErrorResult;
@@ -563,10 +523,6 @@ async function _pollLegacy(
     [owner, conditionalOrder.params, offchainInput, proof]
   );
 
-  log.debug(
-    `Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${to}&rawFunctionInput=${data}`
-  );
-
   try {
     const lowLevelCall = await multicall.callStatic.aggregate3Value([
       {
@@ -595,6 +551,10 @@ async function _pollLegacy(
       signature,
     };
   } catch (error: any) {
+    log.error(
+      `Error on CALL to getTradeableOrderWithSignature. Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${to}&rawFunctionInput=${data}`
+    );
+
     // Print and handle the error
     // We need to decide if the error is final or not (if a re-attempt might help). If it doesn't, we delete the order
     return _handleGetTradableOrderCall(error, owner, orderRef);
