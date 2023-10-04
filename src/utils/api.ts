@@ -102,7 +102,7 @@ const aboutRoute = (router: Router) => {
       version,
       name,
       description,
-      dockerImageTag: process.env.DOCKER_IMAGE_TAG,
+      dockerImageTag: process.env.DOCKER_IMAGE_TAG, // Optional: convenient way to inform about the used docker image tag in docker environments
     });
   });
 };

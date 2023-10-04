@@ -132,3 +132,5 @@ The server exposes automatically:
 You can prevent the server from starting by setting the `--enable-api` flag for the `run` command.
 
 Additionally, you can change the port by setting the flag `--api-port <apiPort>`
+
+The `/api/about` endpoint, exposes the information in the package.json. This can be helpful to identify the version of the watch tower. Additionally, for environments using docker, the environment variable `DOCKER_IMAGE_TAG` can be used to specify the Docker image tag used.
