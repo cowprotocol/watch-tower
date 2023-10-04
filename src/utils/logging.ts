@@ -68,7 +68,7 @@ function setRootLogLevel(level: string) {
 }
 
 function setLogLevel(logLevel = DEFAULT_LOG_LEVEL) {
-  const rootLogLevelDefined = false;
+  let rootLogLevelDefined = false;
 
   // Get the log level overrides
   let logLevelOverrides: LogLevelOverride[];
@@ -82,6 +82,7 @@ function setLogLevel(logLevel = DEFAULT_LOG_LEVEL) {
         if (!loggerDefinition.includes("=")) {
           // If the loggerDefinition does not include a "=" character then it refers to the root logger
           setRootLogLevel(loggerDefinition);
+          rootLogLevelDefined = true;
           return acc;
         }
 
