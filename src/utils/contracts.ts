@@ -11,11 +11,32 @@ const REQUIRED_SELECTORS = [
   "getTradeableOrderWithSignature(address,(address,bytes32,bytes),bytes,bytes32[])",
 ];
 
-// These are the `sighash` of the custom errors, with sighashes being calculated the same way for custom
-// errors as they are for functions in solidity.
-export const ORDER_NOT_VALID_SELECTOR = "0xc8fc2725";
-export const SINGLE_ORDER_NOT_AUTHED_SELECTOR = "0x7a933234";
-export const PROOF_NOT_AUTHED_SELECTOR = "0x4a821464";
+const CUSTOM_ERROR_ABI_MAP = {
+  PROOF_NOT_AUTHED: "ProofNotAuthed()",
+  SINGLE_ORDER_NOT_AUTHED: "SingleOrderNotAuthed()",
+  SWAP_GUARD_RESTRICTED: "SwapGuardRestricted()",
+  INVALID_HANDLER: "InvalidHandler()",
+  INVALID_FALLBACK_HANDLER: "InvalidFallbackHandler()",
+  INTERFACE_NOT_SUPPORTED: "InterfaceNotSupported()",
+  ORDER_NOT_VALID: "OrderNotValid(string)",
+  POLL_TRY_NEXT_BLOCK: "PollTryNextBlock(string)",
+  POLL_NEVER: "PollNever(string)",
+  POLL_TRY_AT_BLOCK: "PollTryAtBlock(uint256,string)",
+  POLL_TRY_AT_EPOCH: "PollTryAtEpoch(uint256,string)",
+};
+
+// Just export the keys of the CUSTOM_ERROR_ABI_MAP as a type
+export type CustomError = keyof typeof CUSTOM_ERROR_ABI_MAP;
+
+// To be able to do fast lookup of the selector given the id, we need to reverse the map
+// This should be a one-time operation, and cached for future use
+const CUSTOM_ERROR_ID_TO_NAME_MAP = Object.entries(CUSTOM_ERROR_ABI_MAP).reduce(
+  (acc, [name, selector]) => {
+    acc[ethers.utils.id(selector).slice(0, 10)] = name as CustomError;
+    return acc;
+  },
+  {} as Record<string, CustomError>
+);
 
 /**
  * Attempts to verify that the contract at the given address implements the interface of the `ComposableCoW`
@@ -52,91 +73,63 @@ export function composableCowContract(
 }
 
 type ParsedError = {
-  errorNameOrSelector?: string;
+  selector: string;
   message?: string;
+  blockNumberOrEpoch?: number;
 };
 
 /**
  * Given a raw ABI-encoded custom error returned from a revert, extract the selector and optionally a message.
- * @param abi of the custom error, which may or may not be parameterised.
+ * @param errorData ABI-encoded custom error, which may or may not be parameterized.
  * @returns an empty parsed error if assumptions don't hold, otherwise the selector and message if applicable.
  */
-const rawErrorDecode = (abi: string): ParsedError => {
-  if (abi.length === 10) {
-    return { errorNameOrSelector: abi };
-  } else {
+export function customErrorDecode(errorData: string): ParsedError {
+  // only proceed if the return data is at least 10 bytes long
+  if (errorData.length >= 10) {
+    const rawSelector = errorData.slice(0, 10);
+    // if the raw selector is not in the map, break early
+    if (!(rawSelector in CUSTOM_ERROR_ID_TO_NAME_MAP)) {
+      return { selector: rawSelector, message: `Unknown error: ${errorData}` };
+    }
+
+    const selector = CUSTOM_ERROR_ID_TO_NAME_MAP[errorData.slice(0, 10)];
     try {
-      const selector = abi.slice(0, 10);
-      const message = ethers.utils.defaultAbiCoder.decode(
-        ["string"],
-        "0x" + abi.slice(10) // trim off the selector
-      )[0];
-      return { errorNameOrSelector: selector, message };
-    } catch {
-      // some weird parameter, just return and let the caller deal with it
-      return {};
+      switch (selector) {
+        case "PROOF_NOT_AUTHED":
+        case "SINGLE_ORDER_NOT_AUTHED":
+        case "INTERFACE_NOT_SUPPORTED":
+        case "INVALID_FALLBACK_HANDLER":
+        case "INVALID_HANDLER":
+        case "SWAP_GUARD_RESTRICTED":
+          return { selector };
+        case "ORDER_NOT_VALID":
+        case "POLL_TRY_NEXT_BLOCK":
+        case "POLL_NEVER":
+          const message = ethers.utils.defaultAbiCoder.decode(
+            ["string"],
+            "0x" + errorData.slice(10) // trim off the selector
+          )[0];
+          return { selector, message };
+        case "POLL_TRY_AT_BLOCK":
+        case "POLL_TRY_AT_EPOCH":
+          const [blockNumberOrEpoch, msg] = ethers.utils.defaultAbiCoder.decode(
+            ["uint256", "string"],
+            "0x" + errorData.slice(10) // trim off the selector
+          );
+          return {
+            selector,
+            message: msg,
+            blockNumberOrEpoch: blockNumberOrEpoch.toNumber(),
+          };
+      }
+    } catch (err) {
+      // This can only return an error if the ABI decoding fails, which should never happen
+      // except for a bug in the smart contract code or the ABI encoding. In this case, we
+      // just bubble up the error.
+      throw err;
     }
   }
-};
 
-/**
- * Parse custom reversion errors, irrespective of the RPC node's software
- *
- * Background: `ComposableCoW` makes extensive use of `revert` to provide custom error messages. Unfortunately,
- *             different RPC nodes handle these errors differently. For example, Nethermind returns a zero-bytes
- *             `error.data` in all cases, and the error selector is buried in `error.error.error.data`. Other
- *             nodes return the error selector in `error.data`.
- *
- *             In all cases, if the error selector contains a parameterised error message, the error message is
- *             encoded in the `error.data` field. For example, `OrderNotValid` contains a parameterised error
- *             message, and the error message is encoded in `error.data`.
- *
- * Assumptions:
- * - `error.data` exists for all tested RPC nodes, and parameterised / non-parameterised custom errors.
- * - All calls to the smart contract if they revert, return a non-zero result at **EVM** level.
- * - Nethermind, irrespective of the revert reason, returns a zero-bytes `error.data` due to odd message
- *   padding on the RPC return value from Nethermind.
- * Therefore:
- * - Nethermind: `error.data` in a revert case is `0x` (empty string), with the revert reason buried in
- *   `error.error.error.data`.
- * - Other nodes: `error.data` in a revert case we expected the revert reason / custom error selector.
- * @param error returned by ethers
- */
-export const parseCustomError = (error: any): ParsedError => {
-  const { errorName, data } = error;
-
-  // In all cases, data must be defined. If it isn't, return early - bad assumptions.
-  if (!data) {
-    return {};
-  }
-
-  // If error.errorName is defined:
-  // - The node has formatted the error message in a way that ethers can parse
-  // - It's not a parameterised custom error - no message
-  // - We can return early
-  if (errorName) {
-    return { errorNameOrSelector: errorName };
-  }
-
-  // If error.data is not zero-bytes, then it's not a Nethermind node, assume it's a string parameterised
-  // custom error. Attempt to decode and return.
-  if (data !== "0x") {
-    return rawErrorDecode(data);
-  } else {
-    // This is a Nethermind node, as `data` *must* be equal to `0x`, but we know we always revert with an
-    // message, so - we have to go digging ⛏️🙄
-    //
-    // Verify our assumption that `error.error.error.data` is defined and is a string.
-    const rawNethermind = error?.error?.error?.data;
-    if (typeof rawNethermind === "string") {
-      // For some reason, Nethermind pad their message with `Reverted `, so, we need to slice off the
-      // extraneous part of the message, and just get the data - that we wanted in the first place!
-      const nethermindData = rawNethermind.slice("Reverted ".length);
-      return rawErrorDecode(nethermindData);
-    } else {
-      // the nested error-ception for some reason failed and our assumptions are therefore incorrect.
-      // return the unknown state to the caller.
-      return {};
-    }
-  }
-};
+  // If we get here, we have a selector that is not in the map, or the return data is too short
+  throw new Error(`Invalid error data: ${errorData}`);
+}

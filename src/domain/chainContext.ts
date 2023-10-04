@@ -3,6 +3,9 @@ import {
   Registry,
   ReplayPlan,
   ConditionalOrderCreatedEvent,
+  Multicall3,
+  ComposableCoW,
+  Multicall3__factory,
 } from "../types";
 import { SupportedChainId, OrderBookApi } from "@cowprotocol/cow-sdk";
 import { addContract } from "./addContract";
@@ -12,6 +15,8 @@ import { composableCowContract, DBService, getLogger } from "../utils";
 
 const WATCHDOG_FREQUENCY = 5 * 1000; // 5 seconds
 const WATCHDOG_KILL_THRESHOLD = 30 * 1000; // 30 seconds
+
+const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 /**
  * The chain context handles watching a single chain for new conditional orders
@@ -27,6 +32,8 @@ export class ChainContext {
   chainId: SupportedChainId;
   registry: Registry;
   orderBook: OrderBookApi;
+  contract: ComposableCoW;
+  multicall: Multicall3;
 
   protected constructor(
     options: SingularRunOptions,
@@ -43,6 +50,9 @@ export class ChainContext {
     this.chainId = chainId;
     this.registry = registry;
     this.orderBook = new OrderBookApi({ chainId: this.chainId });
+
+    this.contract = composableCowContract(this.provider, this.chainId);
+    this.multicall = Multicall3__factory.connect(MULTICALL3, this.provider);
   }
 
   /**
