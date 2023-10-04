@@ -1,4 +1,8 @@
-export interface WatchtowerOptions {
+export interface LogOptions {
+  logLevel: string;
+}
+
+export interface WatchtowerOptions extends LogOptions {
   dryRun: boolean;
 }
 
@@ -12,9 +16,9 @@ export interface RunOptions extends WatchtowerOptions {
   pageSize: number;
   silent: boolean;
   slackWebhook?: string;
-  sentryDsn?: string;
-  logglyToken?: string;
   oneShot: boolean;
+  enableApi: boolean;
+  apiPort: number;
 }
 
 export type SingularRunOptions = Omit<RunOptions, "rpc" | "deploymentBlock"> & {
@@ -30,9 +34,11 @@ export interface ReplayTxOptions extends WatchtowerReplayOptions {
   tx: string;
 }
 
-export interface DumpDbOptions {
+export interface DumpDbOptions extends LogOptions {
   chainId: number;
 }
+
+export type ToBlock = "latest" | number;
 
 export * from "./model";
 export * from "./generated";

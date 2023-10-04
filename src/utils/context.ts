@@ -1,16 +1,9 @@
 import Slack = require("node-slack");
 import { DBService } from "./db";
 
-import {
-  init as sentryInit,
-  startTransaction as sentryStartTransaction,
-  Transaction as SentryTransaction,
-} from "@sentry/node";
-import { CaptureConsole as CaptureConsoleIntegration } from "@sentry/integrations";
-
 import { ExecutionContext, Registry, SingularRunOptions } from "../types";
 import { SupportedChainId } from "@cowprotocol/cow-sdk";
-import { initLogging } from "./logging";
+import { getLogger } from "./logging";
 
 const NOTIFICATION_WAIT_PERIOD = 1000 * 60 * 60 * 2; // 2h - Don't send more than one notification every 2h
 
@@ -21,9 +14,6 @@ export async function initContext(
   chainId: SupportedChainId,
   options: SingularRunOptions
 ): Promise<ExecutionContext> {
-  // Init Logging
-  _initLogging(transactionName, chainId, options);
-
   // Init storage
   const storage = DBService.getInstance();
 
@@ -37,13 +27,9 @@ export async function initContext(
   // Init slack
   const slack = _getSlack(options);
 
-  // Init Sentry
-  const sentryTransaction = _getSentry(transactionName, chainId, options);
-
   executionContext = {
     registry,
     slack,
-    sentryTransaction,
     notificationsEnabled: !options.silent,
     storage,
   };
@@ -72,44 +58,8 @@ function _getSlack(options: SingularRunOptions): Slack | undefined {
   return new Slack(webhookUrl);
 }
 
-function _getSentry(
-  transactionName: string,
-  chainId: SupportedChainId,
-  options: SingularRunOptions
-): SentryTransaction | undefined {
-  // Init Sentry
-  const sentryDsn = options.sentryDsn?.trim() || "";
-
-  if (!sentryDsn) {
-    return undefined;
-  }
-
-  if (!executionContext) {
-    sentryInit({
-      dsn: sentryDsn,
-      debug: false,
-      tracesSampleRate: 1.0, // Capture 100% of the transactions. Consider reducing in production.
-      integrations: [
-        new CaptureConsoleIntegration({
-          levels: ["error", "warn", "log", "info"],
-        }),
-      ],
-      initialScope: {
-        tags: {
-          network: chainId,
-        },
-      },
-    });
-  }
-
-  // Return transaction
-  return sentryStartTransaction({
-    name: transactionName,
-    op: "action",
-  });
-}
-
 export async function handleExecutionError(e: any) {
+  const log = getLogger("context:handleExecutionError");
   try {
     const errorMessage = e?.message || "Unknown error";
     const notified = sendSlack(
@@ -122,7 +72,7 @@ export async function handleExecutionError(e: any) {
       await executionContext.registry.write();
     }
   } catch (error) {
-    console.error("Error sending slack notification", error);
+    log.error("Error sending slack notification", error);
   }
 
   // Re-throws the original error
@@ -130,11 +80,9 @@ export async function handleExecutionError(e: any) {
 }
 
 export function sendSlack(message: string): boolean {
+  const log = getLogger("context:sendSlack");
   if (!executionContext) {
-    console.warn(
-      "[sendSlack] Slack not initialized, ignoring message",
-      message
-    );
+    log.warn("Slack not initialized, ignoring message", message);
     return false;
   }
 
@@ -149,8 +97,8 @@ export function sendSlack(message: string): boolean {
     const nextErrorNotificationTime =
       registry.lastNotifiedError.getTime() + NOTIFICATION_WAIT_PERIOD;
     if (Date.now() < nextErrorNotificationTime) {
-      console.warn(
-        `[sendSlack] Last error notification happened earlier than ${
+      log.warn(
+        `Last error notification happened earlier than ${
           NOTIFICATION_WAIT_PERIOD / 60_000
         } minutes ago. Next notification will happen after ${new Date(
           nextErrorNotificationTime
@@ -164,20 +112,4 @@ export function sendSlack(message: string): boolean {
     text: message,
   });
   return true;
-}
-
-/**
- * Init Logging with Loggly
- */
-function _initLogging(
-  transactionName: string,
-  chainId: SupportedChainId,
-  options: SingularRunOptions
-) {
-  const { logglyToken } = options;
-  if (logglyToken) {
-    initLogging(logglyToken, [transactionName, `chain_${chainId}`]);
-  } else {
-    console.warn("LOGGLY_TOKEN is not set, logging to console only");
-  }
 }

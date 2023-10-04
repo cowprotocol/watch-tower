@@ -1,6 +1,13 @@
+import "dotenv/config";
+
 import { program, Option } from "@commander-js/extra-typings";
 import { ReplayTxOptions } from "./types";
 import { dumpDb, replayBlock, replayTx, run } from "./commands";
+import { initLogging } from "./utils";
+
+const logLevelOption = new Option("--log-level <logLevel>", "Log level")
+  .default("INFO")
+  .env("LOG_LEVEL");
 
 async function main() {
   program
@@ -28,14 +35,18 @@ async function main() {
     .option("--dry-run", "Do not publish orders to the OrderBook API", false)
     .addOption(
       new Option("--silent", "Disable notifications (local logging only)")
-        .conflicts(["slackWebhook", "sentryDsn", "logglyToken"])
+        .conflicts(["slackWebhook"])
         .default(false)
     )
+    .option("--enable-api", "Enable the REST API", true)
+    .option("--api-port <apiPort>", "Port for the REST API", "8080")
     .option("--slack-webhook <slackWebhook>", "Slack webhook URL")
-    .option("--sentry-dsn <sentryDsn>", "Sentry DSN")
-    .option("--loggly-token <logglyToken>", "Loggly token")
     .option("--one-shot", "Run the watchtower once and exit", false)
+    .addOption(logLevelOption)
     .action((options) => {
+      const { logLevel } = options;
+
+      initLogging({ logLevel });
       const {
         rpc,
         deploymentBlock: deploymentBlockEnv,
@@ -54,20 +65,30 @@ async function main() {
         throw new Error("Page size must be a number");
       }
 
+      // Ensure that the port is a number
+      const apiPort = Number(options.apiPort);
+      if (isNaN(apiPort)) {
+        throw new Error("API port must be a number");
+      }
+
       // Ensure that the RPCs and deployment blocks are the same length
       if (rpc.length !== deploymentBlock.length) {
         throw new Error("RPC and deployment blocks must be the same length");
       }
 
       // Run the watchtower
-      run({ ...options, deploymentBlock, pageSize });
+      run({ ...options, deploymentBlock, pageSize, apiPort });
     });
 
   program
     .command("dump-db")
     .description("Dump database as JSON to STDOUT")
     .requiredOption("--chain-id <chainId>", "Chain ID to dump")
+    .addOption(logLevelOption)
     .action((options) => {
+      const { logLevel } = options;
+      initLogging({ logLevel });
+
       // Ensure that the chain ID is a number
       const chainId = Number(options.chainId);
       if (isNaN(chainId)) {
@@ -75,7 +96,7 @@ async function main() {
       }
 
       // Dump the database
-      dumpDb({ chainId });
+      dumpDb({ ...options, chainId });
     });
 
   program
@@ -84,7 +105,11 @@ async function main() {
     .requiredOption("--rpc <rpc>", "Chain RPC endpoint to execute on")
     .requiredOption("--block <block>", "Block number to replay")
     .option("--dry-run", "Do not publish orders to the OrderBook API", false)
+    .addOption(logLevelOption)
     .action((options) => {
+      const { logLevel } = options;
+      initLogging({ logLevel });
+
       // Ensure that the block is a number
       const block = Number(options.block);
       if (isNaN(block)) {
@@ -100,7 +125,13 @@ async function main() {
     .requiredOption("--rpc <rpc>", "Chain RPC endpoint to execute on")
     .requiredOption("--tx <tx>", "Transaction hash to replay")
     .option("--dry-run", "Do not publish orders to the OrderBook API", false)
-    .action((options: ReplayTxOptions) => replayTx(options));
+    .addOption(logLevelOption)
+    .action((options: ReplayTxOptions) => {
+      const { logLevel } = options;
+      initLogging({ logLevel });
+
+      replayTx(options);
+    });
 
   await program.parseAsync();
 }

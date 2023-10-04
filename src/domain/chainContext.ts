@@ -3,15 +3,30 @@ import {
   Registry,
   ReplayPlan,
   ConditionalOrderCreatedEvent,
+  Multicall3,
+  ComposableCoW,
+  Multicall3__factory,
 } from "../types";
 import { SupportedChainId, OrderBookApi } from "@cowprotocol/cow-sdk";
 import { addContract } from "./addContract";
 import { checkForAndPlaceOrder } from "./checkForAndPlaceOrder";
 import { ethers } from "ethers";
-import { composableCowContract, DBService } from "../utils";
+import { composableCowContract, DBService, getLogger } from "../utils";
+import { MetricsService } from "../utils/metrics";
 
 const WATCHDOG_FREQUENCY = 5 * 1000; // 5 seconds
 const WATCHDOG_KILL_THRESHOLD = 30 * 1000; // 30 seconds
+
+const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
+
+// Metrics
+const {
+  blockWatcherBlockHeight,
+  blockWatcherReorgCount,
+  blockWatcherBlockTime,
+  blockWatcherNumEventsProcessed,
+  processBlockDuration,
+} = MetricsService;
 
 /**
  * The chain context handles watching a single chain for new conditional orders
@@ -27,6 +42,8 @@ export class ChainContext {
   chainId: SupportedChainId;
   registry: Registry;
   orderBook: OrderBookApi;
+  contract: ComposableCoW;
+  multicall: Multicall3;
 
   protected constructor(
     options: SingularRunOptions,
@@ -43,6 +60,9 @@ export class ChainContext {
     this.chainId = chainId;
     this.registry = registry;
     this.orderBook = new OrderBookApi({ chainId: this.chainId });
+
+    this.contract = composableCowContract(this.provider, this.chainId);
+    this.multicall = Multicall3__factory.connect(MULTICALL3, this.provider);
   }
 
   /**
@@ -77,9 +97,14 @@ export class ChainContext {
    */
   public async warmUp(oneShot?: boolean) {
     const { provider, chainId } = this;
+    const log = getLogger(`chainContext:warmUp:${chainId}`);
     const { lastProcessedBlock } = this.registry;
     const { pageSize } = this;
-    const _ = (s: string) => console.log(`[warmUp:chainId:${chainId}] ${s}`);
+
+    // Set the block height metric
+    blockWatcherBlockHeight
+      .labels(chainId.toString())
+      .set(lastProcessedBlock ?? 0);
 
     // Start watching from (not including) the last processed block (if any)
     let fromBlock = lastProcessedBlock
@@ -87,6 +112,7 @@ export class ChainContext {
       : this.deploymentBlock;
     let currentBlockNumber = await provider.getBlockNumber();
 
+    let printSyncInfo = true; // Print sync info only once
     let plan: ReplayPlan = {};
     let toBlock: "latest" | number = 0;
     do {
@@ -97,16 +123,29 @@ export class ChainContext {
           currentBlockNumber = await provider.getBlockNumber();
           toBlock = toBlock > currentBlockNumber ? currentBlockNumber : toBlock;
 
-          _(
+          log.debug(
             `Reaching tip of chain, current block number: ${currentBlockNumber}`
           );
         }
 
-        _(`Processing events from block ${fromBlock} to block ${toBlock}`);
+        if (printSyncInfo && typeof toBlock === "number") {
+          printSyncInfo = false;
+          log.info(
+            `🔄 Start sync with from block ${fromBlock} to ${toBlock}. Pending ${
+              toBlock - fromBlock
+            } blocks (~${Math.ceil((toBlock - fromBlock) / pageSize)} pages)`
+          );
+        }
+
+        log.debug(
+          `Processing events from block ${fromBlock} to block ${toBlock}`
+        );
 
         const events = await pollContractForEvents(fromBlock, toBlock, this);
 
-        _(`Found ${events.length} events`);
+        if (events.length > 0) {
+          log.debug(`Found ${events.length} events`);
+        }
 
         // process the events
         for (const event of events) {
@@ -127,7 +166,7 @@ export class ChainContext {
 
       // Replay only the blocks that had some events.
       for (const [blockNumber, events] of Object.entries(plan)) {
-        _(`[run_rebuild] Processing block ${blockNumber}`);
+        log.debug(`Processing block ${blockNumber}`);
         try {
           await processBlock(
             this,
@@ -140,12 +179,16 @@ export class ChainContext {
           // Set the last processed block to this iteration's block number
           this.registry.lastProcessedBlock = Number(blockNumber);
           await this.registry.write();
-        } catch {
-          console.error(
-            `[warmUp:chainId:${chainId}] Error processing block ${blockNumber}`
-          );
+
+          // Set the block height metric
+          blockWatcherBlockHeight
+            .labels(chainId.toString())
+            .set(Number(blockNumber));
+        } catch (err) {
+          log.error(`Error processing block ${blockNumber}`, err);
         }
-        _(`Block ${blockNumber} has been processed.`);
+
+        log.debug(`Block ${blockNumber} has been processed`);
       }
 
       // Set the last processed block to the current block number
@@ -169,8 +212,12 @@ export class ChainContext {
       }
     } while (!this.inSync);
 
-    _(oneShot ? "Chain watcher is in sync" : "Chain watcher is warmed up");
-    _(`Last processed block: ${this.registry.lastProcessedBlock}`);
+    log.info(
+      `💚 ${
+        oneShot ? "Chain watcher is in sync" : "Chain watcher is warmed up"
+      }`
+    );
+    log.debug(`Last processed block: ${this.registry.lastProcessedBlock}`);
 
     // If one-shot, return
     if (oneShot) {
@@ -188,19 +235,26 @@ export class ChainContext {
    */
   private async runBlockWatcher() {
     const { provider, registry, chainId } = this;
-    const _ = (s: string) =>
-      console.log(`[runBlockWatcher:chainId:${chainId}] ${s}`);
+    const log = getLogger(`chainContext:runBlockWatcher:${chainId}`);
     // Watch for new blocks
-    _("Subscribe to new blocks");
+    log.info("👀 Start block watcher");
     let lastBlockReceived = 0;
     let timeLastBlockProcessed = new Date().getTime();
     provider.on("block", async (blockNumber: number) => {
       try {
-        _(`New block ${blockNumber}`);
-        timeLastBlockProcessed = new Date().getTime();
+        log.debug(`New block ${blockNumber}`);
+        // Set the block time metric
+        const now = new Date().getTime();
+        const blockTime = now - timeLastBlockProcessed;
+        timeLastBlockProcessed = now;
+
+        // Set the block time metric
+        blockWatcherBlockTime.labels(chainId.toString()).set(blockTime);
+
         if (blockNumber <= lastBlockReceived) {
           // This may be a re-org, so process the block again
-          _(`Re-org detected, re-processing block ${blockNumber}`);
+          blockWatcherReorgCount.labels(chainId.toString()).inc();
+          log.info(`Re-org detected, re-processing block ${blockNumber}`);
         }
         lastBlockReceived = blockNumber;
 
@@ -212,15 +266,19 @@ export class ChainContext {
 
         try {
           await processBlock(this, Number(blockNumber), events);
+
+          // Block height metric
+          blockWatcherBlockHeight
+            .labels(chainId.toString())
+            .set(Number(blockNumber));
         } catch {
-          console.error(
-            `[runBlockWatcher:chainId:${chainId}] Error processing block ${blockNumber}`
-          );
+          log.error(`Error processing block ${blockNumber}`);
         }
-        _(`Block ${blockNumber} has been processed.`);
+
+        log.debug(`Block ${blockNumber} has been processed`);
       } catch (error) {
-        console.error(
-          `[runBlockWatcher:chainId:${chainId}] Error in pollContractForEvents for block ${blockNumber}`,
+        log.error(
+          `Error in pollContractForEvents for block ${blockNumber}`,
           error
         );
       }
@@ -232,14 +290,12 @@ export class ChainContext {
       await asyncSleep(WATCHDOG_FREQUENCY);
       const currentTime = new Date().getTime();
       const timeElapsed = currentTime - timeLastBlockProcessed;
-      // Todo: set this as trace to avoid spamming the logs
-      console.log(
-        `[runBlockWatcher:chainId:${chainId}] diff: ${timeElapsed}ms`
-      );
+
+      log.debug(`Time since last block processed: ${timeElapsed}ms`);
 
       // If we haven't received a block in 30 seconds, exit so that the process manager can restart us
       if (timeElapsed >= WATCHDOG_KILL_THRESHOLD) {
-        console.error(`[runBlockWatcher:chainId:${chainId}] Watchdog timeout`);
+        log.error(`Watchdog timeout`);
         await registry.storage.close();
         process.exit(1);
       }
@@ -262,7 +318,11 @@ async function processBlock(
   blockNumberOverride?: number,
   blockTimestampOverride?: number
 ) {
-  const { provider } = context;
+  const { provider, chainId } = context;
+  const timer = processBlockDuration
+    .labels(context.chainId.toString())
+    .startTimer();
+  const log = getLogger(`chainContext:processBlock:${chainId}:${blockNumber}`);
   const block = await provider.getBlock(blockNumber);
 
   // Transaction watcher for adding new contracts
@@ -271,29 +331,20 @@ async function processBlock(
     const receipt = await provider.getTransactionReceipt(event.transactionHash);
     if (receipt) {
       // run action
-      console.log(
-        `[processBlock] Run "addContract" action for TX ${event.transactionHash}`
-      );
+      log.debug(`Running "addContract" action for TX ${event.transactionHash}`);
       const result = await addContract(context, event)
         .then(() => true)
         .catch((e) => {
           hasErrors = true;
-          console.error(
-            `[run_local] Error running "addContract" action for TX:`,
-            e
-          );
+          log.error(`Error running "addContract" action for TX:`, e);
           return false;
         });
-      console.log(
-        `[run_local] Result of "addContract" action for TX ${
-          event.transactionHash
-        }: ${_formatResult(result)}`
-      );
+      log.info(`Result of "addContract": ${_formatResult(result)}`);
+      blockWatcherNumEventsProcessed.labels(chainId.toString()).inc();
     }
   }
 
   // run action
-  console.log(`[processBlock] checkForAndPlaceOrder for block ${blockNumber}`);
   const result = await checkForAndPlaceOrder(
     context,
     block,
@@ -303,17 +354,18 @@ async function processBlock(
     .then(() => true)
     .catch(() => {
       hasErrors = true;
-      console.log(`[run_local] Error running "checkForAndPlaceOrder" action`);
+      log.error(`Error running "checkForAndPlaceOrder" action`);
       return false;
     });
-  console.log(
-    `[run_local] Result of "checkForAndPlaceOrder" action for block ${blockNumber}: ${_formatResult(
+  log.debug(
+    `Result of "checkForAndPlaceOrder" action for block ${blockNumber}: ${_formatResult(
       result
     )}`
   );
 
+  timer();
   if (hasErrors) {
-    throw new Error("[run_local] Errors found in processing block");
+    throw new Error("Errors found in processing block");
   }
 }
 

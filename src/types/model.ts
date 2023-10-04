@@ -1,14 +1,11 @@
 import Slack = require("node-slack");
 
-import { Transaction as SentryTransaction } from "@sentry/node";
 import { BytesLike } from "ethers";
 
-import type {
-  ConditionalOrderCreatedEvent,
-  IConditionalOrder,
-} from "./generated/ComposableCoW";
-import { PollResult } from "@cowprotocol/cow-sdk";
+import type { ConditionalOrderCreatedEvent } from "./generated/ComposableCoW";
+import { ConditionalOrderParams, PollResult } from "@cowprotocol/cow-sdk";
 import { DBService } from "../utils";
+import { MetricsService } from "../utils/metrics";
 
 // Standardise the storage key
 const LAST_NOTIFIED_ERROR_STORAGE_KEY = "LAST_NOTIFIED_ERROR";
@@ -18,6 +15,8 @@ const CONDITIONAL_ORDER_REGISTRY_VERSION_KEY =
   "CONDITIONAL_ORDER_REGISTRY_VERSION";
 const CONDITIONAL_ORDER_REGISTRY_VERSION = 1;
 
+const { ownersPopulation } = MetricsService;
+
 export const getNetworkStorageKey = (key: string, network: string): string => {
   return `${key}_${network}`;
 };
@@ -26,7 +25,6 @@ export interface ExecutionContext {
   registry: Registry;
   notificationsEnabled: boolean;
   slack?: Slack;
-  sentryTransaction?: SentryTransaction;
   storage: DBService;
 }
 
@@ -61,7 +59,7 @@ export type ConditionalOrder = {
   /**
    * The parameters of the conditional order
    */
-  params: IConditionalOrder.ConditionalOrderParamsStruct; // TODO: We should not use the raw `ConditionalOrderParamsStruct` instead we should do some plain object `ConditionalOrderParams` with the handler,salt,staticInput as properties. See https://github.com/cowprotocol/tenderly-watch-tower/issues/18
+  params: ConditionalOrderParams;
 
   /**
    * The merkle proof if the conditional order is belonging to a merkle root
@@ -164,6 +162,7 @@ export class Registry {
       .catch(() => null);
 
     // Return registry (on its latest version)
+    ownersPopulation.labels(network).set(ownerOrders.size);
     return new Registry(
       ownerOrders,
       storage,

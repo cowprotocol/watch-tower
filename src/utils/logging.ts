@@ -1,98 +1,137 @@
-import winston = require("winston");
-import { Loggly } from "winston-loggly-bulk";
+import {
+  setLevel,
+  getLogger as getLoggerLogLevel,
+  LogLevelNames,
+  Logger,
+} from "loglevel";
+import rootLogger from "loglevel";
+import prefix from "loglevel-plugin-prefix";
+import chalk, { Chalk } from "chalk";
 
-let logger: undefined | any;
+const DEFAULT_LOG_LEVEL = "INFO";
+const LEVELS = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "SILENT"];
 
-export function initLogging(
-  logglyToken: string,
-  tags: string[],
-  logOnlyIfError = false
-) {
-  const newLogger = new Loggly({
-    token: logglyToken,
-    subdomain: "cowprotocol",
-    tags,
-    json: true,
-  });
-
-  if (logger !== undefined) {
-    // We had a previous logger, remove it and add the new one
-    winston.remove(logger);
-    winston.add(newLogger);
-    logger = newLogger;
-    return;
-  }
-
-  // We didn't have a previous logger, just add the new one
-  logger = newLogger;
-  winston.add(logger);
-
-  const consoleOriginal = {
-    log: console.log,
-    warn: console.warn,
-    error: console.error,
-    debug: console.debug,
-    info: console.info,
-  };
-
-  type LogLevel = "warn" | "info" | "error" | "debug";
-  const buffer: LogMessage[] = [];
-
-  const printAndClearBuffer = () => {
-    // Log all the buffered logs
-    buffer.forEach((log) => winston.log(log));
-
-    // Clear the buffer
-    buffer.length = 0;
-  };
-
-  const logWithLoggly =
-    (level: LogLevel) =>
-    (...data: any[]) => {
-      consoleOriginal[level](...data);
-
-      // Log into Loggly
-      const loggingMessage = getLoggingMessage(level, data);
-      if (!loggingMessage) {
-        return;
-      }
-
-      if (logOnlyIfError) {
-        // Log only if there's an error, otherwise buffer the log
-        if (level === "error") {
-          // Print all the buffered logs
-          printAndClearBuffer();
-
-          // Now log the current error
-          winston.log(loggingMessage);
-        } else {
-          // Save the log in the buffer (in case there's an error in the future)
-          buffer.push(loggingMessage);
-        }
-      } else {
-        // Log right away
-        winston.log(loggingMessage);
-      }
-    };
-
-  // Override the log function since some internal libraries might print something and breaks Tenderly
-
-  console.info = logWithLoggly("info");
-  console.warn = logWithLoggly("warn");
-  console.error = logWithLoggly("error");
-  console.debug = logWithLoggly("debug");
-  console.log = logWithLoggly("info");
+interface LogLevelOverride {
+  regex: RegExp;
+  level: LogLevelNames;
 }
 
-type LogMessage = { level: string; message: any; meta?: any };
+const COLORS: Record<string, Chalk> = {
+  TRACE: chalk.magenta,
+  DEBUG: chalk.cyan,
+  INFO: chalk.blue,
+  WARN: chalk.yellow,
+  ERROR: chalk.red,
+};
 
-function getLoggingMessage(level: string, data: any[]): LogMessage | undefined {
-  if (data.length > 1) {
-    const [message, ...meta] = data;
-    return { level, message, meta };
-  } else if (data.length === 1) {
-    return { level, message: data[0] };
+let logLevelOverrides: LogLevelOverride[] | undefined = undefined;
+
+export function initLogging({ logLevel }: { logLevel?: string }) {
+  if (logLevelOverrides) {
+    throw new Error("Logging already initialized");
   }
 
-  return undefined;
+  // Init Log level overrides
+  logLevelOverrides = setLogLevel(logLevel);
+
+  prefix.reg(rootLogger);
+  prefix.apply(rootLogger, {
+    timestampFormatter(date) {
+      return date.toISOString();
+    },
+    format(level, name, timestamp) {
+      return `${chalk.gray(timestamp)} ${COLORS[level.toUpperCase()](
+        level
+      )} ${chalk.green(`${name}:`)}`;
+    },
+  });
+}
+
+export function getLogger(loggerName: string): Logger {
+  if (!logLevelOverrides) {
+    throw new Error("Logging hasn't been initialized initialized");
+  }
+  const logger = getLoggerLogLevel(loggerName);
+
+  const logLevelOverride = logLevelOverrides.find((override) =>
+    override.regex.test(loggerName)
+  );
+
+  if (logLevelOverride) {
+    logger.setLevel(logLevelOverride.level);
+  }
+  return logger;
+}
+
+function setRootLogLevel(level: string) {
+  setLevel(getLogLevel(level));
+}
+
+function setLogLevel(logLevel = DEFAULT_LOG_LEVEL) {
+  let rootLogLevelDefined = false;
+
+  // Get the log level overrides
+  let logLevelOverrides: LogLevelOverride[];
+  if (logLevel) {
+    const loggerDefinitions = logLevel
+      .split(",")
+      .map((logger) => logger.trim());
+
+    logLevelOverrides = loggerDefinitions.reduce<LogLevelOverride[]>(
+      (acc, loggerDefinition) => {
+        if (!loggerDefinition.includes("=")) {
+          // If the loggerDefinition does not include a "=" character then it refers to the root logger
+          setRootLogLevel(loggerDefinition);
+          rootLogLevelDefined = true;
+          return acc;
+        }
+
+        // Split logger definition into parts (e.g. "my-module=DEBUG")
+        const loggerDef = loggerDefinition
+          .split("=")
+          .map((logger) => logger.trim());
+
+        if (loggerDef.length !== 2) {
+          throw new Error(
+            'Invalid logger definition. Please use "loggerModulePattern=LEVEL". Offending definition: ' +
+              loggerDefinition
+          );
+        }
+
+        try {
+          acc.push({
+            regex: new RegExp(loggerDef[0]),
+            level: getLogLevel(loggerDef[1]),
+          });
+          return acc;
+        } catch (e) {
+          throw new Error(
+            `Error parsing logger overrides: "${loggerDefinition}". ${
+              (e as any)?.message
+            }`
+          );
+        }
+      },
+      []
+    );
+  } else {
+    logLevelOverrides = [];
+  }
+
+  // If not specified, set the root log level to the default
+  if (!rootLogLevelDefined) {
+    setRootLogLevel(DEFAULT_LOG_LEVEL);
+  }
+
+  return logLevelOverrides;
+}
+
+function getLogLevel(level: string): LogLevelNames {
+  if (!LEVELS.includes(level)) {
+    throw new Error(
+      `Invalid log level: ${level}. Please use one of ${LEVELS.join(", ")}`
+    );
+  }
+
+  return level.toLowerCase() as LogLevelNames;
 }

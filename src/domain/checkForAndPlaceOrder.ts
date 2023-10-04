@@ -6,25 +6,15 @@ import {
 } from "@cowprotocol/contracts";
 
 import { ethers } from "ethers";
-import { BytesLike, Logger } from "ethers/lib/utils";
+import { BytesLike } from "ethers/lib/utils";
 
-import {
-  ComposableCoW,
-  ComposableCoW__factory,
-  Multicall3,
-  Multicall3__factory,
-  ConditionalOrder,
-  OrderStatus,
-} from "../types";
+import { ConditionalOrder, OrderStatus } from "../types";
 import {
   LowLevelError,
-  ORDER_NOT_VALID_SELECTOR,
-  PROOF_NOT_AUTHED_SELECTOR,
-  SINGLE_ORDER_NOT_AUTHED_SELECTOR,
   formatStatus,
-  handleExecutionError,
-  parseCustomError,
+  getLogger,
   pollConditionalOrder,
+  customErrorDecode,
 } from "../utils";
 import {
   OrderBookApi,
@@ -39,9 +29,18 @@ import {
   formatEpoch,
 } from "@cowprotocol/cow-sdk";
 import { ChainContext } from "./chainContext";
+import { MetricsService } from "../utils/metrics";
+
+const {
+  orderBookOrdersPlaced,
+  orderBookApiErrors,
+  pollingOnChainChecks,
+  pollingOnChainTimer,
+  pollingUnexpectedErrors,
+  pollingChecks,
+} = MetricsService;
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
-const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 const ApiErrors = OrderPostError.errorType;
 type NextBlockApiErrorsArray = Array<OrderPostError.errorType>;
@@ -74,25 +73,8 @@ export async function checkForAndPlaceOrder(
   blockNumberOverride?: number,
   blockTimestampOverride?: number
 ) {
-  return _checkForAndPlaceOrder(
-    context,
-    block,
-    blockNumberOverride,
-    blockTimestampOverride
-  ).catch(handleExecutionError);
-}
-
-/**
- * Asynchronous version of checkForAndPlaceOrder. It will process all the orders, and will throw an error at the end if there was at least one error
- */
-async function _checkForAndPlaceOrder(
-  context: ChainContext,
-  block: ethers.providers.Block,
-  blockNumberOverride?: number,
-  blockTimestampOverride?: number
-) {
-  const { chainId, registry, provider } = context;
-  const { ownerOrders } = registry;
+  const { chainId, registry } = context;
+  const { ownerOrders, numOrders } = registry;
 
   const blockNumber = blockNumberOverride || block.number;
   const blockTimestamp = blockTimestampOverride || block.timestamp;
@@ -101,20 +83,23 @@ async function _checkForAndPlaceOrder(
   let ownerCounter = 0;
   let orderCounter = 0;
 
-  console.log("[checkForAndPlaceOrder] Number of orders: ", registry.numOrders);
+  const logPrefix = `checkForAndPlaceOrder:${chainId}:${blockNumber}`;
+  const log = getLogger(logPrefix);
+  log.debug(`Total number of orders: ${numOrders}`);
 
   for (const [owner, conditionalOrders] of ownerOrders.entries()) {
     ownerCounter++;
+    const log = getLogger(`${logPrefix}:${ownerCounter}`);
     const ordersPendingDelete = [];
     // enumerate all the `ConditionalOrder`s for a given owner
-    console.log(
-      `[checkForAndPlaceOrder::${ownerCounter}@${blockNumber}] Process owner ${owner} (${conditionalOrders.size} orders)`,
-      registry.numOrders
+    log.debug(
+      `Process owner ${owner} (${conditionalOrders.size} orders): ${registry.numOrders}`
     );
     for (const conditionalOrder of conditionalOrders) {
       orderCounter++;
-      const orderRef = `${ownerCounter}.${orderCounter}@${blockNumber}`;
-      const logPrefix = `[checkForAndPlaceOrder::${orderRef}]`;
+      const ownerRef = `${ownerCounter}.${orderCounter}`;
+      const orderRef = `${chainId}:${ownerRef}@${blockNumber}`;
+      const log = getLogger(`${logPrefix}:${ownerRef}}`);
       const logOrderDetails = `Processing order from TX ${conditionalOrder.tx} with params:`;
 
       const { result: lastHint } = conditionalOrder.pollResult || {};
@@ -124,8 +109,8 @@ async function _checkForAndPlaceOrder(
         lastHint?.result === PollResultCode.TRY_AT_EPOCH &&
         blockTimestamp < lastHint.epoch
       ) {
-        console.log(
-          `${logPrefix} Skipping conditional. Reason: Not due yet (TRY_AT_EPOCH=${
+        log.debug(
+          `Skipping conditional. Reason: Not due yet (TRY_AT_EPOCH=${
             lastHint.epoch
           }, ${formatEpoch(lastHint.epoch)}). ${logOrderDetails}`,
           conditionalOrder.params
@@ -138,8 +123,8 @@ async function _checkForAndPlaceOrder(
         lastHint?.result === PollResultCode.TRY_ON_BLOCK &&
         blockNumber < lastHint.blockNumber
       ) {
-        console.log(
-          `${logPrefix} Skipping conditional. Reason: Not due yet (TRY_ON_BLOCK=${
+        log.debug(
+          `Skipping conditional. Reason: Not due yet (TRY_ON_BLOCK=${
             lastHint.blockNumber
           }, in ${
             lastHint.blockNumber - blockNumber
@@ -150,26 +135,18 @@ async function _checkForAndPlaceOrder(
       }
 
       // Proceed with the normal check
-      console.log(`${logPrefix} ${logOrderDetails}`, conditionalOrder.params);
-      const contract = ComposableCoW__factory.connect(
-        conditionalOrder.composableCow,
-        provider
-      );
-      const multicall = Multicall3__factory.connect(MULTICALL3, provider);
+      log.info(`${logOrderDetails}`, conditionalOrder.params);
 
       const pollResult = await _processConditionalOrder(
         owner,
-        chainId,
         conditionalOrder,
         blockTimestamp,
         blockNumber,
-        contract,
-        multicall,
         context,
         orderRef
       );
 
-      // Don't try again the same order, in case thats the poll result
+      // Don't try again the same order, in case that's the poll result
       if (pollResult.result === PollResultCode.DONT_TRY_AGAIN) {
         ordersPendingDelete.push(conditionalOrder);
       }
@@ -192,23 +169,13 @@ async function _checkForAndPlaceOrder(
         pollResult.result +
         (isError && pollResult.reason ? `. Reason: ${pollResult.reason}` : "");
 
-      const logLevel =
-        pollResult.result === PollResultCode.SUCCESS
-          ? "log"
-          : pollResult.result === PollResultCode.UNEXPECTED_ERROR
-          ? "error"
-          : "warn";
-
-      console[logLevel](
-        `${logPrefix} Check conditional order result: ${getEmojiByPollResult(
+      log[unexpectedError ? "error" : "info"](
+        `Check conditional order result: ${getEmojiByPollResult(
           pollResult?.result
         )} ${resultDescription}`
       );
       if (unexpectedError) {
-        console.error(
-          `${logPrefix} UNEXPECTED_ERROR Details:`,
-          pollResult.error
-        );
+        log.error(`UNEXPECTED_ERROR Details:`, pollResult.error);
       }
 
       hasErrors ||= unexpectedError;
@@ -217,11 +184,9 @@ async function _checkForAndPlaceOrder(
     // Delete orders we don't want to keep watching
     for (const conditionalOrder of ordersPendingDelete) {
       const deleted = conditionalOrders.delete(conditionalOrder);
-      const action = deleted ? "Deleted" : "Fail to delete";
-      console.log(
-        `[checkForAndPlaceOrder@${blockNumber}] ${action} conditional order with params:`,
-        conditionalOrder.params
-      );
+      const action = deleted ? "Stop Watching" : "Failed to stop watching";
+
+      log.debug(`${action} conditional order from TX ${conditionalOrder.tx}`);
     }
   }
 
@@ -237,43 +202,29 @@ async function _checkForAndPlaceOrder(
   // and we want to crash if there's an error
   await registry.write();
 
-  // console.log(
-  //   `[run_local] New CONDITIONAL_ORDER_REGISTRY value: `,
-  //   registry.stringifyOrders()
-  // );
-
-  console.log(
-    `[checkForAndPlaceOrder@${blockNumber}] Remaining orders: `,
-    registry.numOrders
+  log.debug(
+    `Total orders after processing all conditional orders: ${registry.numOrders}`
   );
 
   // Throw execution error if there was at least one error
   if (hasErrors) {
-    throw Error(
-      `[checkForAndPlaceOrder@${blockNumber}] At least one unexpected error processing conditional orders`
-    );
+    throw Error(`At least one unexpected error processing conditional orders`);
   }
 }
-
 async function _processConditionalOrder(
   owner: string,
-  chainId: SupportedChainId,
   conditionalOrder: ConditionalOrder,
   blockTimestamp: number,
   blockNumber: number,
-  contract: ComposableCoW,
-  multicall: Multicall3,
   context: ChainContext,
   orderRef: string
 ): Promise<PollResult> {
-  const { provider, orderBook, dryRun } = context;
+  const { provider, orderBook, dryRun, chainId } = context;
+  const log = getLogger(
+    `checkForAndPlaceOrder:_processConditionalOrder:${orderRef}`
+  );
   try {
-    // TODO: Fix model and delete the explicit cast: https://github.com/cowprotocol/tenderly-watch-tower/issues/18
-    const [handler, salt, staticInput] = conditionalOrder.params as any as [
-      string,
-      string,
-      string
-    ];
+    pollingChecks.labels(chainId.toString()).inc();
 
     const proof = conditionalOrder.proof
       ? conditionalOrder.proof.path.map((c) => c.toString())
@@ -291,14 +242,9 @@ async function _processConditionalOrder(
       },
       provider,
     };
-    const conditionalOrderParams = {
-      handler,
-      staticInput,
-      salt,
-    };
     let pollResult = await pollConditionalOrder(
       pollParams,
-      conditionalOrderParams,
+      conditionalOrder.params,
       orderRef
     );
 
@@ -306,16 +252,17 @@ async function _processConditionalOrder(
       // Unsupported Order Type (unknown handler)
       // For now, fallback to legacy behavior
       // TODO: Decide in the future what to do. Probably, move the error handling to the SDK and kill the poll Legacy
+      const timer = pollingOnChainTimer.labels(chainId.toString()).startTimer();
       pollResult = await _pollLegacy(
+        context,
         owner,
-        chainId,
         conditionalOrder,
-        contract,
-        multicall,
         proof,
         offchainInput,
         orderRef
       );
+      timer();
+      pollingOnChainChecks.labels(chainId.toString()).inc();
     }
 
     // Error polling
@@ -357,8 +304,8 @@ async function _processConditionalOrder(
       conditionalOrder.orders.set(orderUid, OrderStatus.SUBMITTED);
     } else {
       const orderStatus = conditionalOrder.orders.get(orderUid);
-      console.log(
-        `[processConditionalOrder::${orderRef}] OrderUid ${orderUid} status: ${
+      log.info(
+        `OrderUid ${orderUid} status: ${
           orderStatus ? formatStatus(orderStatus) : "Not found"
         }`
       );
@@ -371,6 +318,7 @@ async function _processConditionalOrder(
       signature,
     };
   } catch (e: any) {
+    pollingUnexpectedErrors.labels(chainId.toString()).inc();
     return {
       result: PollResultCode.UNEXPECTED_ERROR,
       error: e,
@@ -435,7 +383,8 @@ async function _placeOrder(params: {
 }): Promise<Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors> {
   const { orderUid, order, orderBook, orderRef, blockTimestamp, dryRun } =
     params;
-  const logPrefix = `[placeOrder::${orderRef}]`;
+  const log = getLogger(`checkForAndPlaceOrder:_placeOrder:${orderRef}`);
+  const { chainId } = orderBook.context;
   try {
     const postOrder: OrderCreation = {
       ...order,
@@ -446,13 +395,12 @@ async function _placeOrder(params: {
     };
 
     // If the operation is a dry run, don't post to the API
-    console.log(
-      `${logPrefix} Post order ${orderUid} to OrderBook on chain ${orderBook.context.chainId}`
-    );
-    console.log(`${logPrefix} Order`, postOrder);
+    log.info(`Post order ${orderUid} to OrderBook on chain ${chainId}`);
+    log.debug(`Order`, postOrder);
     if (!dryRun) {
       const orderUid = await orderBook.sendOrder(postOrder);
-      console.log(`${logPrefix} API response`, { orderUid });
+      orderBookOrdersPlaced.labels(chainId.toString()).inc();
+      log.info(`API response`, { orderUid });
     }
   } catch (error: any) {
     let reasonError = "Error placing order in API";
@@ -464,17 +412,20 @@ async function _placeOrder(params: {
         status,
         body,
         error,
+        chainId,
         blockTimestamp
       );
       const isSuccess = handleErrorResult.result === PollResultCode.SUCCESS;
 
       // The request was made and the server responded with a status code
       // that falls out of the range of 2xx
-      const log = console[isSuccess ? "warn" : "error"];
-      log(`${logPrefix} Error placing order in API. Result: ${status}`, body);
+      log[isSuccess ? "warn" : "error"](
+        `Error placing order in API. Result: ${status}`,
+        body
+      );
 
       if (isSuccess) {
-        log(`${orderRef} All good! continuing with warnings...`);
+        log.debug(`All good! continuing with warnings...`);
         return { result: PollResultCode.SUCCESS };
       } else {
         return handleErrorResult;
@@ -505,9 +456,13 @@ function _handleOrderBookError(
   status: any,
   body: any,
   error: any,
+  chainId: SupportedChainId,
   blockTimestamp: number
 ): Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors {
   const apiError = body?.errorType as OrderPostError.errorType;
+  orderBookApiErrors
+    .labels(chainId.toString(), status.toString(), apiError)
+    .inc();
   if (status === 400) {
     // The order is in the OrderBook, all good :)
     if (apiError === ApiErrors.DUPLICATE_ORDER) {
@@ -548,27 +503,22 @@ function _handleOrderBookError(
 }
 
 async function _pollLegacy(
+  context: ChainContext,
   owner: string,
-  chainId: SupportedChainId,
   conditionalOrder: ConditionalOrder,
-  contract: ComposableCoW,
-  multicall: Multicall3,
   proof: string[],
   offchainInput: string,
   orderRef: string
 ): Promise<PollResult> {
+  const { chainId, contract, multicall } = context;
   // as we going to use multicall, with `aggregate3Value`, there is no need to do any simulation as the
   // calls are guaranteed to pass, and will return the results, or the reversion within the ABI-encoded data.
   // By not using `populateTransaction`, we avoid an `eth_estimateGas` RPC call.
-  const logPrefix = `[pollLegacy::${orderRef}]`;
+  const log = getLogger(`checkForAndPlaceOrder:_pollLegacy:${orderRef}`);
   const to = contract.address;
   const data = contract.interface.encodeFunctionData(
     "getTradeableOrderWithSignature",
     [owner, conditionalOrder.params, offchainInput, proof]
-  );
-
-  console.log(
-    `${logPrefix} Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${to}&rawFunctionInput=${data}`
   );
 
   try {
@@ -583,7 +533,8 @@ async function _pollLegacy(
 
     const [{ success, returnData }] = lowLevelCall;
 
-    // If the call failed, we throw an error and wrap the returnData as it is done by erigon / geth 🦦
+    // If the call failed, there may be a custom error to provide hints. We wrap the error in a LowLevelError
+    // so that it can be handled in the catch.
     if (!success) {
       throw new LowLevelError("low-level call failed", returnData);
     }
@@ -599,83 +550,133 @@ async function _pollLegacy(
       signature,
     };
   } catch (error: any) {
-    // Print and handle the error
-    // We need to decide if the error is final or not (if a re-attempt might help). If it doesn't, we delete the order
-    return _handleGetTradableOrderCall(error, owner, orderRef);
+    log.error(
+      `Error on CALL to getTradeableOrderWithSignature. Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${to}&rawFunctionInput=${data}`
+    );
+
+    // An error of some type occurred. It may or may not be a hint. We pass it to the handler to decide.
+    return _handleGetTradableOrderWithSignatureCall(error, owner, orderRef);
   }
 }
 
-function _handleGetTradableOrderCall(
+function _handleGetTradableOrderWithSignatureCall(
   error: any,
   owner: string,
   orderRef: string
 ): PollResultErrors {
-  let logPrefix = `[pollLegacy::${orderRef}]`;
-  if (error.code === Logger.errors.CALL_EXCEPTION) {
-    logPrefix += "Call Exception:";
+  const logPrefix = `checkForAndPlaceOrder:_handleGetTradableOrderCall:${orderRef}`;
+  const log = getLogger(logPrefix);
 
-    // Support raw errors (nethermind issue), and parameterised errors (ethers issue)
-    const { errorNameOrSelector } = parseCustomError(error);
-    switch (errorNameOrSelector) {
-      case "OrderNotValid":
-      case ORDER_NOT_VALID_SELECTOR:
-        // The conditional order has not expired, or been cancelled, but the order is not valid
-        // For example, with TWAPs, this may be after `span` seconds have passed in the epoch.
-
-        // As the `OrderNotValid` is parameterized, we expect `message` to have the reason
-        // TODO: Make use of `message` returned by parseCustomError ?
-
-        return {
-          result: PollResultCode.TRY_NEXT_BLOCK,
-          reason: "OrderNotValid",
-        };
-      case "SingleOrderNotAuthed":
-      case SINGLE_ORDER_NOT_AUTHED_SELECTOR:
-        // If there's no authorization we delete the order
-        // - One reason could be, because the user CANCELLED the order
-        // - for now it doesn't support more advanced cases where the order is auth during a pre-interaction
-
-        console.info(
-          `${logPrefix}: Single order on safe ${owner} not authed. Deleting order...`
-        );
-        return {
-          result: PollResultCode.DONT_TRY_AGAIN,
-          reason:
-            "SingleOrderNotAuthed: The owner has not authorized the order",
-        };
-      case "ProofNotAuthed":
-      case PROOF_NOT_AUTHED_SELECTOR:
-        // If there's no authorization we delete the order
-        // - One reason could be, because the user CANCELLED the order
-        // - for now it doesn't support more advanced cases where the order is auth during a pre-interaction
-
-        console.info(
-          `${logPrefix}: Proof on safe ${owner} not authed. Deleting order...`
-        );
-        return {
-          result: PollResultCode.DONT_TRY_AGAIN,
-          reason: "ProofNotAuthed: The owner has not authorized the order",
-        };
-      default:
-        // If there's no authorization we delete the order
-        // - One reason could be, because the user CANCELLED the order
-        // - for now it doesn't support more advanced cases where the order is auth during a pre-interaction
-        const errorName = error.errorName ? ` (${error.errorName})` : "";
-        console.error(`${logPrefix} for unexpected reasons${errorName}`, error);
-        // If we don't know the reason, is better to not delete the order
-        return {
-          result: PollResultCode.TRY_NEXT_BLOCK,
-          reason: "UnexpectedErrorName: CALL error is unknown" + errorName,
-        };
+  // If the error is a LowLevelError, we extract the selector, and any parameters.
+  if (error instanceof LowLevelError) {
+    try {
+      // The below will throw if:
+      // - the error is not a custom error (ie. the selector is not in the map)
+      // - the error is a custom error, but the parameters are not as expected
+      const { selector, message, blockNumberOrEpoch } = customErrorDecode(
+        error.data
+      );
+      switch (selector) {
+        case "SINGLE_ORDER_NOT_AUTHED":
+        case "PROOF_NOT_AUTHED":
+          // If there's no authorization we delete the order
+          // - One reason could be, because the user CANCELLED the order
+          // - for now it doesn't support more advanced cases where the order is auth during a pre-interaction
+          log.info(
+            `${selector}: Order on safe ${owner} not authed. Deleting order...`
+          );
+          return {
+            result: PollResultCode.DONT_TRY_AGAIN,
+            reason: `${selector}: The owner has not authorized the order`,
+          };
+        case "INTERFACE_NOT_SUPPORTED":
+          log.info(
+            `${selector}: Order on safe ${owner} attempted to use a handler that is not supported. Deleting order...`
+          );
+          return {
+            result: PollResultCode.DONT_TRY_AGAIN,
+            reason: `${selector}: The handler is not supported`,
+          };
+        case "INVALID_FALLBACK_HANDLER":
+          log.info(
+            `${selector}: Order for safe ${owner} where the Safe does not have ExtensibleFallbackHandler set. Deleting order...`
+          );
+          return {
+            result: PollResultCode.DONT_TRY_AGAIN,
+            reason: `${selector}: The safe does not have ExtensibleFallbackHandler set`,
+          };
+        case "SWAP_GUARD_RESTRICTED":
+          log.info(
+            `${selector}: Order for safe ${owner} where the Safe has swap guard enabled. Deleting order...`
+          );
+          return {
+            result: PollResultCode.DONT_TRY_AGAIN,
+            reason: `${selector}: The safe has swap guard enabled`,
+          };
+        // TODO: Add metrics to track this
+        case "ORDER_NOT_VALID":
+        case "POLL_TRY_NEXT_BLOCK":
+          // OrderNotValid: With the revised custom errors, `OrderNotValid` is generally returned when elements
+          // of the data struct are invalid. For example, if the `sellAmount` is zero, or the `validTo` is in
+          // the past.
+          // PollTryNextBlock: The conditional order has signalled that it should be polled again on the next block.
+          log.info(
+            `${selector}: Order on safe ${owner} not valid/signalled to try next block.`
+          );
+          return {
+            result: PollResultCode.TRY_NEXT_BLOCK,
+            reason: `${selector}: ${message}`,
+          };
+        case "POLL_TRY_AT_BLOCK":
+          // The conditional order has signalled that it should be polled again on a specific block.
+          if (!blockNumberOrEpoch) {
+            throw new Error(
+              `Expected blockNumberOrEpoch to be defined for ${selector}`
+            );
+          }
+          return {
+            result: PollResultCode.TRY_ON_BLOCK,
+            blockNumber: blockNumberOrEpoch,
+            reason: `PollTryAtBlock: ${message}`,
+          };
+        case "POLL_TRY_AT_EPOCH":
+          // The conditional order has signalled that it should be polled again on a specific epoch.
+          if (!blockNumberOrEpoch) {
+            throw new Error(
+              `Expected blockNumberOrEpoch to be defined for ${selector}`
+            );
+          }
+          return {
+            result: PollResultCode.TRY_AT_EPOCH,
+            epoch: blockNumberOrEpoch,
+            reason: `PollTryAtEpoch: ${message}`,
+          };
+        case "POLL_NEVER":
+          // The conditional order has signalled that it should never be polled again.
+          return {
+            result: PollResultCode.DONT_TRY_AGAIN,
+            reason: `PollNever: ${message}`,
+          };
+      }
+    } catch (err: any) {
+      log.error(`${logPrefix} Unexpected error`, err);
+      return {
+        result: PollResultCode.UNEXPECTED_ERROR,
+        reason:
+          "UnexpectedErrorName: Unexpected error" +
+          (err.message ? `: ${err.message}` : ""),
+        error: err,
+      };
     }
   }
 
-  console.error(`${logPrefix} Unexpected error`, error);
+  log.error(`${logPrefix} ethers/call Unexpected error`, error);
   // If we don't know the reason, is better to not delete the order
+  // TODO: Add metrics to track this
   return {
     result: PollResultCode.TRY_NEXT_BLOCK,
     reason:
-      "UnexpectedErrorName: Unspected error" +
+      "UnexpectedErrorName: Unexpected error" +
       (error.message ? `: ${error.message}` : ""),
   };
 }

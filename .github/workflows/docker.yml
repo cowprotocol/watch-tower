@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
     tags: [v*]
+  pull_request:
+    types: [opened, synchronize]
 
 jobs:
   docker:
@@ -33,3 +35,11 @@ jobs:
           push: true
           tags: ${{ steps.image_meta.outputs.tags }}
           labels: ${{ steps.image_meta.outputs.labels }}
+
+      - uses: cowprotocol/autodeploy-action@v1
+        if: ${{ github.ref == 'refs/heads/main' }}
+        with:
+          images: ghcr.io/cowprotocol/watch-tower:main
+          tag: ${{ secrets.AUTODEPLOY_TAG }}
+          url: ${{ secrets.AUTODEPLOY_URL }}
+          token: ${{ secrets.AUTODEPLOY_TOKEN }}

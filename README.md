@@ -69,3 +69,68 @@ yarn
 #   - As a result, new Composable Cow orders will be discovered and posted to the OrderBook API
 yarn ts-node ./src/index.ts run --rpc <rpc-url> --deployment-block <deployment-block> --page-size 0
 ```
+
+## Logging
+
+To control logging level, you can set the `LOG_LEVEL` environment variable with one of the following values: `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `SILENT`:
+
+```ini
+LOG_LEVEL=WARN
+```
+
+Additionally, you can enable module specific logging by specifying the log level for the module name:
+
+```ini
+# Enable logging for an specific module (chainContext in this case)
+LOG_LEVEL=chainContext=INFO
+
+# Of-course, you can provide the root log level, and the override at the same time
+#   - All loggers will have WARN level
+#   - Except the "chainContext" which will have INFO level
+LOG_LEVEL=WARN,chainContext=INFO
+```
+
+You can specify more than one overrides
+
+```ini
+LOG_LEVEL=chainContext=INFO,_placeOrder=TRACE
+```
+
+The module definition is actually a regex pattern, so you can make more complex definitions:
+
+```ini
+# Match a logger using a pattern
+#  Matches: chainContext:processBlock:100:30212964
+#  Matches: chainContext:processBlock:1:30212964
+#  Matches: chainContext:processBlock:5:30212964
+LOG_LEVEL=chainContext:processBlock:(\d{1,3}):(\d*)$=DEBUG
+
+# Another example
+#  Matches: chainContext:processBlock:100:30212964
+#  Matches: chainContext:processBlock:1:30212964
+#  But not: chainContext:processBlock:5:30212964
+LOG_LEVEL=chainContext:processBlock:(100|1):(\d*)$=DEBUG
+```
+
+Combine all of the above to control the log level of any modules:
+
+```ini
+ LOG_LEVEL="WARN,commands=DEBUG,^checkForAndPlaceOrder=WARN,^chainContext=INFO,_checkForAndPlaceOrder:1:=INFO" yarn ts-node ./src/index.ts
+```
+
+## API Server
+
+The run command will expose by default a server on port `8080`.
+
+The server exposes automatically:
+
+- An API, with:
+  - About info: [http://localhost:8080/api/about](http://localhost:8080/api/about)
+  - Dump Database: `http://localhost:8080/api/dump/:chainId` e.g. [http://localhost:8080/api/dump/1](http://localhost:8080/api/dump/1)
+- Prometheus Metrics: [http://localhost:8080/metrics](http://localhost:8080/metrics)
+
+You can prevent the server from starting by setting the `--enable-api` flag for the `run` command.
+
+Additionally, you can change the port by setting the flag `--api-port <apiPort>`
+
+The `/api/about` endpoint, exposes the information in the package.json. This can be helpful to identify the version of the watch tower. Additionally, for environments using docker, the environment variable `DOCKER_IMAGE_TAG` can be used to specify the Docker image tag used.

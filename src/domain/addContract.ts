@@ -1,3 +1,5 @@
+import { toConditionalOrderParams, getLogger } from "../utils";
+import { MetricsService } from "../utils/metrics";
 import { BytesLike, ethers } from "ethers";
 
 import {
@@ -14,6 +16,15 @@ import {
 
 import { isComposableCowCompatible, handleExecutionError } from "../utils";
 import { ChainContext } from "./chainContext";
+import { ConditionalOrderParams } from "@cowprotocol/cow-sdk";
+
+const {
+  newOwnerCount,
+  addNewOwnerErrorCount,
+  addContractSingleOrderCount,
+  addContractMerkleRootSetCount,
+  ownersPopulation,
+} = MetricsService;
 
 /**
  * Listens to these events on the `ComposableCoW` contract:
@@ -23,16 +34,17 @@ import { ChainContext } from "./chainContext";
  * @param event transaction event
  */
 export async function addContract(
-  chainWatcher: ChainContext,
+  context: ChainContext,
   event: ConditionalOrderCreatedEvent
 ) {
-  return _addContract(chainWatcher, event).catch(handleExecutionError);
+  return _addContract(context, event).catch(handleExecutionError);
 }
 
 async function _addContract(
   context: ChainContext,
   event: ConditionalOrderCreatedEvent
 ) {
+  const log = getLogger("addContract");
   const composableCow = ComposableCoW__factory.createInterface();
   const { provider, registry } = context;
   const { transactionHash: tx, blockNumber } = event;
@@ -53,28 +65,30 @@ async function _addContract(
     registry
   );
   if (added) {
+    newOwnerCount.labels(context.chainId.toString()).inc();
     numContractsAdded++;
   } else {
-    console.error(
-      `[addContract] Failed to register Smart Order from tx ${tx} on block ${blockNumber}. Error: ${error}`
+    log.error(
+      `Failed to register Smart Order from tx ${tx} on block ${blockNumber}. Error: ${error}`
     );
+    addNewOwnerErrorCount
+      .labels(context.chainId.toString(), "_addContract")
+      .inc();
   }
   hasErrors ||= error;
 
-  console.log(`[addContract] Added ${numContractsAdded} contracts`);
-
   if (numContractsAdded > 0) {
-    console.log(`[addContract] Added ${numContractsAdded} contracts`);
+    log.debug(`Added ${numContractsAdded} contracts`);
 
     // Write the registry to disk. Don't catch errors, let them bubble up
     await registry.write();
 
     // Throw execution error if there was at least one error
     if (hasErrors) {
-      throw Error(
-        "[addContract] Error adding conditional order. Event: " + event
-      );
+      throw Error("Error adding conditional order. Event: " + event);
     }
+  } else {
+    log.info(`No contracts added for tx ${tx} on block ${blockNumber}`);
   }
 }
 
@@ -83,6 +97,7 @@ export async function _registerNewOrder(
   composableCow: ComposableCoWInterface,
   registry: Registry
 ): Promise<{ error: boolean; added: boolean }> {
+  const log = getLogger("addContract:_registerNewOrder");
   const { transactionHash: tx } = event;
   let added = false;
   try {
@@ -90,25 +105,33 @@ export async function _registerNewOrder(
     if (
       event.topics[0] === composableCow.getEventTopic("ConditionalOrderCreated")
     ) {
-      const log = event as ConditionalOrderCreatedEvent;
+      const eventLog = event as ConditionalOrderCreatedEvent;
       // Decode the log
       const [owner, params] = composableCow.decodeEventLog(
         "ConditionalOrderCreated",
-        log.data,
-        log.topics
+        eventLog.data,
+        eventLog.topics
       ) as [string, IConditionalOrder.ConditionalOrderParamsStruct];
 
       // Attempt to add the conditional order to the registry
-      add(log.transactionHash, owner, params, null, log.address, registry);
+      add(
+        eventLog.transactionHash,
+        owner,
+        toConditionalOrderParams(params),
+        null,
+        eventLog.address,
+        registry
+      );
       added = true;
+      addContractSingleOrderCount.labels(registry.network).inc();
     } else if (
       event.topics[0] == composableCow.getEventTopic("MerkleRootSet")
     ) {
-      const log = event as MerkleRootSetEvent;
+      const eventLog = event as MerkleRootSetEvent;
       const [owner, root, proof] = composableCow.decodeEventLog(
         "MerkleRootSet",
-        log.data,
-        log.topics
+        eventLog.data,
+        eventLog.topics
       ) as [string, BytesLike, ComposableCoW.ProofStruct];
 
       // First need to flush the owner's conditional orders that do not have the merkle root set
@@ -135,19 +158,20 @@ export async function _registerNewOrder(
           add(
             event.transactionHash,
             owner,
-            decodedOrder[1],
+            toConditionalOrderParams(decodedOrder[1]),
             { merkleRoot: root, path: decodedOrder[0] },
-            log.address,
+            eventLog.address,
             registry
           );
           added = true;
+          addContractMerkleRootSetCount.labels(registry.network).inc();
         }
       }
     }
-  } catch (error) {
-    console.error(
-      `[addContract] Error handling ConditionalOrderCreated/MerkleRootSet event for tx: ${tx}` +
-        error
+  } catch (err) {
+    log.error(
+      `Error handling ConditionalOrderCreated/MerkleRootSet event for tx: ${tx}` +
+        err
     );
     return { error: true, added };
   }
@@ -167,16 +191,17 @@ export async function _registerNewOrder(
 export function add(
   tx: string,
   owner: Owner,
-  params: IConditionalOrder.ConditionalOrderParamsStruct,
+  params: ConditionalOrderParams,
   proof: Proof | null,
   composableCow: string,
   registry: Registry
 ) {
+  const log = getLogger("addContract:add");
   const { handler, salt, staticInput } = params;
   if (registry.ownerOrders.has(owner)) {
     const conditionalOrders = registry.ownerOrders.get(owner);
-    console.log(
-      `[register:add] Adding conditional order to already existing owner contract ${owner}`,
+    log.info(
+      `Adding conditional order to already existing owner contract ${owner}`,
       { tx, handler, salt, staticInput }
     );
     let exists = false;
@@ -193,21 +218,24 @@ export function add(
     if (!exists) {
       conditionalOrders?.add({
         tx,
-        params,
+        params: { handler, salt, staticInput },
         proof,
         orders: new Map(),
         composableCow,
       });
     }
   } else {
-    console.log(
-      `[register:add] Adding conditional order to new owner contract ${owner}:`,
-      { tx, handler, salt, staticInput }
-    );
+    log.info(`Adding conditional order to new owner contract ${owner}:`, {
+      tx,
+      handler,
+      salt,
+      staticInput,
+    });
     registry.ownerOrders.set(
       owner,
       new Set([{ tx, params, proof, orders: new Map(), composableCow }])
     );
+    ownersPopulation.labels(registry.network).inc();
   }
 }
 
