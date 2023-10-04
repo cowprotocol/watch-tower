@@ -8,6 +8,7 @@ import rootLogger from "loglevel";
 import prefix from "loglevel-plugin-prefix";
 import chalk, { Chalk } from "chalk";
 
+const DEFAULT_LOG_LEVEL = "INFO";
 const LEVELS = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "SILENT"];
 
 interface LogLevelOverride {
@@ -15,13 +16,7 @@ interface LogLevelOverride {
   level: LogLevelNames;
 }
 
-// Set the default log level
-setRootLogLevel(process.env.LOG_LEVEL || "WARN");
-
-// Init Log level overrides
-const logLevelOverrides = initLogLevelOverrides();
-
-const colors: Record<string, Chalk> = {
+const COLORS: Record<string, Chalk> = {
   TRACE: chalk.magenta,
   DEBUG: chalk.cyan,
   INFO: chalk.blue,
@@ -29,19 +24,33 @@ const colors: Record<string, Chalk> = {
   ERROR: chalk.red,
 };
 
-prefix.reg(rootLogger);
-prefix.apply(rootLogger, {
-  timestampFormatter(date) {
-    return date.toISOString();
-  },
-  format(level, name, timestamp) {
-    return `${chalk.gray(timestamp)} ${colors[level.toUpperCase()](
-      level
-    )} ${chalk.green(`${name}:`)}`;
-  },
-});
+let logLevelOverrides: LogLevelOverride[] | undefined = undefined;
+
+export function initLogging({ logLevel }: { logLevel?: string }) {
+  if (logLevelOverrides) {
+    throw new Error("Logging already initialized");
+  }
+
+  // Init Log level overrides
+  logLevelOverrides = setLogLevel(logLevel);
+
+  prefix.reg(rootLogger);
+  prefix.apply(rootLogger, {
+    timestampFormatter(date) {
+      return date.toISOString();
+    },
+    format(level, name, timestamp) {
+      return `${chalk.gray(timestamp)} ${COLORS[level.toUpperCase()](
+        level
+      )} ${chalk.green(`${name}:`)}`;
+    },
+  });
+}
 
 export function getLogger(loggerName: string): Logger {
+  if (!logLevelOverrides) {
+    throw new Error("Logging hasn't been initialized initialized");
+  }
   const logger = getLoggerLogLevel(loggerName);
 
   const logLevelOverride = logLevelOverrides.find((override) =>
@@ -54,43 +63,66 @@ export function getLogger(loggerName: string): Logger {
   return logger;
 }
 
-export function setRootLogLevel(level: string) {
+function setRootLogLevel(level: string) {
   setLevel(getLogLevel(level));
 }
 
-function initLogLevelOverrides(): LogLevelOverride[] {
-  if (!process.env.DEBUG) {
-    return [];
-  }
+function setLogLevel(logLevel = DEFAULT_LOG_LEVEL) {
+  const rootLogLevelDefined = false;
 
-  const loggerDefinitions = process.env.DEBUG.split(",").map((logger) =>
-    logger.trim()
-  );
-  return loggerDefinitions.map((loggerDefinition) => {
-    const loggerDef = loggerDefinition
-      .split("=")
+  // Get the log level overrides
+  let logLevelOverrides: LogLevelOverride[];
+  if (logLevel) {
+    const loggerDefinitions = logLevel
+      .split(",")
       .map((logger) => logger.trim());
 
-    if (loggerDef.length !== 2) {
-      throw new Error(
-        'Invalid logger definition. Please use "loggerModulePattern=LEVEL". Offending definition: ' +
-          loggerDefinition
-      );
-    }
+    logLevelOverrides = loggerDefinitions.reduce<LogLevelOverride[]>(
+      (acc, loggerDefinition) => {
+        if (!loggerDefinition.includes("=")) {
+          // If the loggerDefinition does not include a "=" character then it refers to the root logger
+          setRootLogLevel(loggerDefinition);
+          return acc;
+        }
 
-    try {
-      return {
-        regex: new RegExp(loggerDef[0]),
-        level: getLogLevel(loggerDef[1]),
-      };
-    } catch (e) {
-      throw new Error(
-        `Error parsing logger overrides: "${loggerDefinition}". ${
-          (e as any)?.message
-        }`
-      );
-    }
-  });
+        // Split logger definition into parts (e.g. "my-module=DEBUG")
+        const loggerDef = loggerDefinition
+          .split("=")
+          .map((logger) => logger.trim());
+
+        if (loggerDef.length !== 2) {
+          throw new Error(
+            'Invalid logger definition. Please use "loggerModulePattern=LEVEL". Offending definition: ' +
+              loggerDefinition
+          );
+        }
+
+        try {
+          acc.push({
+            regex: new RegExp(loggerDef[0]),
+            level: getLogLevel(loggerDef[1]),
+          });
+          return acc;
+        } catch (e) {
+          throw new Error(
+            `Error parsing logger overrides: "${loggerDefinition}". ${
+              (e as any)?.message
+            }`
+          );
+        }
+      },
+      []
+    );
+  } else {
+    logLevelOverrides = [];
+  }
+
+  // If not specified, set the root log level to the default
+  if (!rootLogLevelDefined) {
+    setRootLogLevel(DEFAULT_LOG_LEVEL);
+  }
+
+  return logLevelOverrides;
 }
 
 function getLogLevel(level: string): LogLevelNames {
