@@ -12,11 +12,21 @@ import { addContract } from "./addContract";
 import { checkForAndPlaceOrder } from "./checkForAndPlaceOrder";
 import { ethers } from "ethers";
 import { composableCowContract, DBService, getLogger } from "../utils";
+import { MetricsService } from "../utils/metrics";
 
 const WATCHDOG_FREQUENCY = 5 * 1000; // 5 seconds
 const WATCHDOG_KILL_THRESHOLD = 30 * 1000; // 30 seconds
 
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
+
+// Metrics
+const {
+  blockWatcherBlockHeight,
+  blockWatcherReorgCount,
+  blockWatcherBlockTime,
+  blockWatcherNumEventsProcessed,
+  processBlockDuration,
+} = MetricsService;
 
 /**
  * The chain context handles watching a single chain for new conditional orders
@@ -91,6 +101,11 @@ export class ChainContext {
     const { lastProcessedBlock } = this.registry;
     const { pageSize } = this;
 
+    // Set the block height metric
+    blockWatcherBlockHeight
+      .labels(chainId.toString())
+      .set(lastProcessedBlock ?? 0);
+
     // Start watching from (not including) the last processed block (if any)
     let fromBlock = lastProcessedBlock
       ? lastProcessedBlock + 1
@@ -151,7 +166,7 @@ export class ChainContext {
 
       // Replay only the blocks that had some events.
       for (const [blockNumber, events] of Object.entries(plan)) {
-        log.debug(`[run_rebuild] Processing block ${blockNumber}`);
+        log.debug(`Processing block ${blockNumber}`);
         try {
           await processBlock(
             this,
@@ -164,6 +179,11 @@ export class ChainContext {
           // Set the last processed block to this iteration's block number
           this.registry.lastProcessedBlock = Number(blockNumber);
           await this.registry.write();
+
+          // Set the block height metric
+          blockWatcherBlockHeight
+            .labels(chainId.toString())
+            .set(Number(blockNumber));
         } catch (err) {
           log.error(`Error processing block ${blockNumber}`, err);
         }
@@ -223,9 +243,17 @@ export class ChainContext {
     provider.on("block", async (blockNumber: number) => {
       try {
         log.debug(`New block ${blockNumber}`);
-        timeLastBlockProcessed = new Date().getTime();
+        // Set the block time metric
+        const now = new Date().getTime();
+        const blockTime = now - timeLastBlockProcessed;
+        timeLastBlockProcessed = now;
+
+        // Set the block time metric
+        blockWatcherBlockTime.labels(chainId.toString()).set(blockTime);
+
         if (blockNumber <= lastBlockReceived) {
           // This may be a re-org, so process the block again
+          blockWatcherReorgCount.labels(chainId.toString()).inc();
           log.info(`Re-org detected, re-processing block ${blockNumber}`);
         }
         lastBlockReceived = blockNumber;
@@ -238,6 +266,11 @@ export class ChainContext {
 
         try {
           await processBlock(this, Number(blockNumber), events);
+
+          // Block height metric
+          blockWatcherBlockHeight
+            .labels(chainId.toString())
+            .set(Number(blockNumber));
         } catch {
           log.error(`Error processing block ${blockNumber}`);
         }
@@ -286,6 +319,9 @@ async function processBlock(
   blockTimestampOverride?: number
 ) {
   const { provider, chainId } = context;
+  const timer = processBlockDuration
+    .labels(context.chainId.toString())
+    .startTimer();
   const log = getLogger(`chainContext:processBlock:${chainId}:${blockNumber}`);
   const block = await provider.getBlock(blockNumber);
 
@@ -304,6 +340,7 @@ async function processBlock(
           return false;
         });
       log.info(`Result of "addContract": ${_formatResult(result)}`);
+      blockWatcherNumEventsProcessed.labels(chainId.toString()).inc();
     }
   }
 
@@ -326,6 +363,7 @@ async function processBlock(
     )}`
   );
 
+  timer();
   if (hasErrors) {
     throw new Error("Errors found in processing block");
   }

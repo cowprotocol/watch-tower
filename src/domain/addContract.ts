@@ -1,4 +1,5 @@
 import { toConditionalOrderParams, getLogger } from "../utils";
+import { MetricsService } from "../utils/metrics";
 import { BytesLike, ethers } from "ethers";
 
 import {
@@ -17,6 +18,14 @@ import { isComposableCowCompatible, handleExecutionError } from "../utils";
 import { ChainContext } from "./chainContext";
 import { ConditionalOrderParams } from "@cowprotocol/cow-sdk";
 
+const {
+  newOwnerCount,
+  addNewOwnerErrorCount,
+  addContractSingleOrderCount,
+  addContractMerkleRootSetCount,
+  ownersPopulation,
+} = MetricsService;
+
 /**
  * Listens to these events on the `ComposableCoW` contract:
  * - `ConditionalOrderCreated`
@@ -25,10 +34,10 @@ import { ConditionalOrderParams } from "@cowprotocol/cow-sdk";
  * @param event transaction event
  */
 export async function addContract(
-  chainWatcher: ChainContext,
+  context: ChainContext,
   event: ConditionalOrderCreatedEvent
 ) {
-  return _addContract(chainWatcher, event).catch(handleExecutionError);
+  return _addContract(context, event).catch(handleExecutionError);
 }
 
 async function _addContract(
@@ -56,11 +65,15 @@ async function _addContract(
     registry
   );
   if (added) {
+    newOwnerCount.labels(context.chainId.toString()).inc();
     numContractsAdded++;
   } else {
     log.error(
       `Failed to register Smart Order from tx ${tx} on block ${blockNumber}. Error: ${error}`
     );
+    addNewOwnerErrorCount
+      .labels(context.chainId.toString(), "_addContract")
+      .inc();
   }
   hasErrors ||= error;
 
@@ -110,6 +123,7 @@ export async function _registerNewOrder(
         registry
       );
       added = true;
+      addContractSingleOrderCount.labels(registry.network).inc();
     } else if (
       event.topics[0] == composableCow.getEventTopic("MerkleRootSet")
     ) {
@@ -150,6 +164,7 @@ export async function _registerNewOrder(
             registry
           );
           added = true;
+          addContractMerkleRootSetCount.labels(registry.network).inc();
         }
       }
     }
@@ -220,6 +235,7 @@ export function add(
       owner,
       new Set([{ tx, params, proof, orders: new Map(), composableCow }])
     );
+    ownersPopulation.labels(registry.network).inc();
   }
 }
 

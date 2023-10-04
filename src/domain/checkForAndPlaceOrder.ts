@@ -29,6 +29,16 @@ import {
   formatEpoch,
 } from "@cowprotocol/cow-sdk";
 import { ChainContext } from "./chainContext";
+import { MetricsService } from "../utils/metrics";
+
+const {
+  orderBookOrdersPlaced,
+  orderBookApiErrors,
+  pollingOnChainChecks,
+  pollingOnChainTimer,
+  pollingUnexpectedErrors,
+  pollingChecks,
+} = MetricsService;
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
 
@@ -214,6 +224,8 @@ async function _processConditionalOrder(
     `checkForAndPlaceOrder:_processConditionalOrder:${orderRef}`
   );
   try {
+    pollingChecks.labels(chainId.toString()).inc();
+
     const proof = conditionalOrder.proof
       ? conditionalOrder.proof.path.map((c) => c.toString())
       : [];
@@ -240,6 +252,7 @@ async function _processConditionalOrder(
       // Unsupported Order Type (unknown handler)
       // For now, fallback to legacy behavior
       // TODO: Decide in the future what to do. Probably, move the error handling to the SDK and kill the poll Legacy
+      const timer = pollingOnChainTimer.labels(chainId.toString()).startTimer();
       pollResult = await _pollLegacy(
         context,
         owner,
@@ -248,6 +261,8 @@ async function _processConditionalOrder(
         offchainInput,
         orderRef
       );
+      timer();
+      pollingOnChainChecks.labels(chainId.toString()).inc();
     }
 
     // Error polling
@@ -303,6 +318,7 @@ async function _processConditionalOrder(
       signature,
     };
   } catch (e: any) {
+    pollingUnexpectedErrors.labels(chainId.toString()).inc();
     return {
       result: PollResultCode.UNEXPECTED_ERROR,
       error: e,
@@ -368,6 +384,7 @@ async function _placeOrder(params: {
   const { orderUid, order, orderBook, orderRef, blockTimestamp, dryRun } =
     params;
   const log = getLogger(`checkForAndPlaceOrder:_placeOrder:${orderRef}`);
+  const { chainId } = orderBook.context;
   try {
     const postOrder: OrderCreation = {
       ...order,
@@ -378,12 +395,11 @@ async function _placeOrder(params: {
     };
 
     // If the operation is a dry run, don't post to the API
-    log.info(
-      `Post order ${orderUid} to OrderBook on chain ${orderBook.context.chainId}`
-    );
+    log.info(`Post order ${orderUid} to OrderBook on chain ${chainId}`);
     log.debug(`Order`, postOrder);
     if (!dryRun) {
       const orderUid = await orderBook.sendOrder(postOrder);
+      orderBookOrdersPlaced.labels(chainId.toString()).inc();
       log.info(`API response`, { orderUid });
     }
   } catch (error: any) {
@@ -396,6 +412,7 @@ async function _placeOrder(params: {
         status,
         body,
         error,
+        chainId,
         blockTimestamp
       );
       const isSuccess = handleErrorResult.result === PollResultCode.SUCCESS;
@@ -439,9 +456,13 @@ function _handleOrderBookError(
   status: any,
   body: any,
   error: any,
+  chainId: SupportedChainId,
   blockTimestamp: number
 ): Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors {
   const apiError = body?.errorType as OrderPostError.errorType;
+  orderBookApiErrors
+    .labels(chainId.toString(), status.toString(), apiError)
+    .inc();
   if (status === 400) {
     // The order is in the OrderBook, all good :)
     if (apiError === ApiErrors.DUPLICATE_ORDER) {

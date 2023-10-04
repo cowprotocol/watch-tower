@@ -17,6 +17,8 @@ export interface RunOptions extends WatchtowerOptions {
   silent: boolean;
   slackWebhook?: string;
   oneShot: boolean;
+  enableApi: boolean;
+  apiPort: number;
 }
 
 export type SingularRunOptions = Omit<RunOptions, "rpc" | "deploymentBlock"> & {
