@@ -19,6 +19,7 @@ export interface RunOptions extends WatchtowerOptions {
   oneShot: boolean;
   disableApi: boolean;
   apiPort: number;
+  watchdogTimeout: number;
 }
 
 export type SingularRunOptions = Omit<RunOptions, "rpc" | "deploymentBlock"> & {

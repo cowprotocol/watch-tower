@@ -9,7 +9,14 @@ import { ApiService } from "../utils/api";
  */
 export async function run(options: RunOptions) {
   const log = getLogger("commands:run");
-  const { rpc, deploymentBlock, oneShot, disableApi, apiPort } = options;
+  const {
+    rpc,
+    deploymentBlock,
+    oneShot,
+    disableApi,
+    apiPort,
+    watchdogTimeout,
+  } = options;
 
   // Start the API server if it's not disabled
   if (!disableApi) {
@@ -45,7 +52,7 @@ export async function run(options: RunOptions) {
 
     // Run the block watcher after warm up for each chain
     const runPromises = chainContexts.map(async (context) => {
-      return context.warmUp(oneShot);
+      return context.warmUp(watchdogTimeout, oneShot);
     });
 
     // Run all the chain contexts

@@ -15,7 +15,6 @@ import { composableCowContract, DBService, getLogger } from "../utils";
 import { MetricsService } from "../utils/metrics";
 
 const WATCHDOG_FREQUENCY = 5 * 1000; // 5 seconds
-const WATCHDOG_KILL_THRESHOLD = 30 * 1000; // 30 seconds
 
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
@@ -92,10 +91,11 @@ export class ChainContext {
   /**
    * Warm up the chain watcher by fetching the latest block number and
    * checking if the chain is in sync.
+   * @param watchdogTimeout the timeout for the watchdog
    * @param oneShot if true, only warm up the chain watcher and return
    * @returns the run promises for what needs to be watched
    */
-  public async warmUp(oneShot?: boolean) {
+  public async warmUp(watchdogTimeout: number, oneShot?: boolean) {
     const { provider, chainId } = this;
     const log = getLogger(`chainContext:warmUp:${chainId}`);
     const { lastProcessedBlock } = this.registry;
@@ -225,7 +225,7 @@ export class ChainContext {
     }
 
     // Otherwise, run the block watcher
-    return await this.runBlockWatcher();
+    return await this.runBlockWatcher(watchdogTimeout);
   }
 
   /**
@@ -233,11 +233,11 @@ export class ChainContext {
    * 1. Check if there are any `ConditionalOrderCreated` events, and index these.
    * 2. Check if any orders want to create discrete orders.
    */
-  private async runBlockWatcher() {
+  private async runBlockWatcher(watchdogTimeout: number) {
     const { provider, registry, chainId } = this;
     const log = getLogger(`chainContext:runBlockWatcher:${chainId}`);
     // Watch for new blocks
-    log.info("👀 Start block watcher");
+    log.info(`👀 Start block watcher with ${watchdogTimeout}s timeout`);
     let lastBlockReceived = 0;
     let timeLastBlockProcessed = new Date().getTime();
     provider.on("block", async (blockNumber: number) => {
@@ -294,8 +294,10 @@ export class ChainContext {
       log.debug(`Time since last block processed: ${timeElapsed}ms`);
 
       // If we haven't received a block in 30 seconds, exit so that the process manager can restart us
-      if (timeElapsed >= WATCHDOG_KILL_THRESHOLD) {
-        log.error(`Watchdog timeout`);
+      if (timeElapsed >= watchdogTimeout * 1000) {
+        log.error(
+          `Watchdog timeout (RPC failed, or chain is stuck / not issuing blocks)`
+        );
         await registry.storage.close();
         process.exit(1);
       }
