@@ -17,7 +17,7 @@ export interface RunOptions extends WatchtowerOptions {
   silent: boolean;
   slackWebhook?: string;
   oneShot: boolean;
-  enableApi: boolean;
+  disableApi: boolean;
   apiPort: number;
 }
 

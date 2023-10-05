@@ -13,8 +13,10 @@ export class ApiService {
   protected app: Express;
   protected server: Server | null = null;
 
-  constructor(port: number) {
-    this.port = port;
+  private static _instance: ApiService | undefined;
+
+  protected constructor(port?: number) {
+    this.port = port || 8080;
     this.app = express();
     this.bootstrap();
   }
@@ -37,8 +39,11 @@ export class ApiService {
     });
   }
 
-  get getApp(): Express {
-    return this.app;
+  public static getInstance(port?: number): ApiService {
+    if (!ApiService._instance) {
+      ApiService._instance = new ApiService(port);
+    }
+    return ApiService._instance;
   }
 
   async start(): Promise<Server> {
@@ -50,7 +55,7 @@ export class ApiService {
         }
         this.server = this.app.listen(this.port, () => {
           log.info(
-            `Starting Rest API server on port ${this.port}. See http://localhost:8080/api/about`
+            `Rest API server is running on port ${this.port}. See http://localhost:${this.port}/api/version`
           );
         });
 
@@ -96,7 +101,7 @@ const dumpRoute = (router: Router) => {
 };
 
 const aboutRoute = (router: Router) => {
-  router.get("/about", async (req: Request, res: Response) => {
+  router.get("/version", async (req: Request, res: Response) => {
     res.setHeader("Content-Type", "application/json");
     res.send({
       version,
