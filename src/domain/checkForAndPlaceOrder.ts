@@ -510,11 +510,10 @@ async function _pollLegacy(
   offchainInput: string,
   orderRef: string
 ): Promise<PollResult> {
-  const { chainId, contract, multicall } = context;
+  const { contract, multicall } = context;
   // as we going to use multicall, with `aggregate3Value`, there is no need to do any simulation as the
   // calls are guaranteed to pass, and will return the results, or the reversion within the ABI-encoded data.
   // By not using `populateTransaction`, we avoid an `eth_estimateGas` RPC call.
-  const log = getLogger(`checkForAndPlaceOrder:_pollLegacy:${orderRef}`);
   const to = contract.address;
   const data = contract.interface.encodeFunctionData(
     "getTradeableOrderWithSignature",
@@ -550,22 +549,29 @@ async function _pollLegacy(
       signature,
     };
   } catch (error: any) {
-    log.error(
-      `Error on CALL to getTradeableOrderWithSignature. Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${to}&rawFunctionInput=${data}`
-    );
-
     // An error of some type occurred. It may or may not be a hint. We pass it to the handler to decide.
-    return _handleGetTradableOrderWithSignatureCall(error, owner, orderRef);
+    return _handleGetTradableOrderWithSignatureCall(
+      error,
+      owner,
+      orderRef,
+      context,
+      to,
+      data
+    );
   }
 }
 
 function _handleGetTradableOrderWithSignatureCall(
   error: any,
   owner: string,
-  orderRef: string
+  orderRef: string,
+  context: ChainContext,
+  to: string,
+  data: string
 ): PollResultErrors {
   const logPrefix = `checkForAndPlaceOrder:_handleGetTradableOrderCall:${orderRef}`;
   const log = getLogger(logPrefix);
+  const { chainId } = context;
 
   // If the error is a LowLevelError, we extract the selector, and any parameters.
   if (error instanceof LowLevelError) {
@@ -659,19 +665,24 @@ function _handleGetTradableOrderWithSignatureCall(
           };
       }
     } catch (err: any) {
-      log.error(`${logPrefix} Unexpected error`, err);
+      // Any errors thrown here can _ONLY_ come from non-compliant interfaces (ie. bad revert ABI encoding).
+      // We log the error, and return a DONT_TRY_AGAIN result.
+      // TODO: Add metrics to track this
+      log.error(
+        `Contract returned non-interface compliant revert via getTradeableOrderWithSignature. Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${to}&rawFunctionInput=${data}`
+      );
       return {
-        result: PollResultCode.UNEXPECTED_ERROR,
+        result: PollResultCode.DONT_TRY_AGAIN,
         reason:
-          "UnexpectedErrorName: Unexpected error" +
+          "Non-compliant interface error" +
           (err.message ? `: ${err.message}` : ""),
-        error: err,
       };
     }
   }
 
   log.error(`${logPrefix} ethers/call Unexpected error`, error);
-  // If we don't know the reason, is better to not delete the order
+  // We can only get here from some provider / ethers failure. As the contract hasn't had it's say
+  // we will defer to try again.
   // TODO: Add metrics to track this
   return {
     result: PollResultCode.TRY_NEXT_BLOCK,
