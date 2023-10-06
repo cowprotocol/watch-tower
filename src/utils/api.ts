@@ -6,6 +6,7 @@ import { getLogger } from "./logging";
 import { DBService } from "./db";
 import { Registry } from "../types";
 import { version, name, description } from "../../package.json";
+import { ChainContext, ChainHealth } from "../domain";
 
 export class ApiService {
   protected port: number;
@@ -32,6 +33,22 @@ export class ApiService {
     this.app.use(express.urlencoded({ extended: true }));
     this.app.get("/", (_req: Request, res: Response) => {
       res.send("🐮 Moooo!");
+    });
+    this.app.get("/health", async (_req: Request, res: Response) => {
+      // Using an iterator, process all the chain contexts, storing the health
+      // in a map, and if any of the contexts are unhealthy, return false
+      const contexts = Object.values(ChainContext.chains) as ChainContext[];
+      const healths = contexts.map((context) => context.health);
+      const healthStatusDict = healths.reduce((acc, health) => {
+        acc[health.chainId] = health;
+        return acc;
+      }, {} as { [chainId: string]: ChainHealth });
+
+      const overallHealth = healths.every((health) => health.isHealthy);
+
+      res
+        .status(overallHealth ? 200 : 500)
+        .send({ overallHealth, ...healthStatusDict });
     });
     this.app.use("/api", router);
   }
