@@ -1,4 +1,5 @@
 import { DatabaseOptions, Level } from "level";
+import { getLogger } from "./logging";
 
 const DEFAULT_DB_LOCATION = "./database";
 
@@ -34,6 +35,8 @@ export class DBService {
   }
 
   public async close() {
+    const log = getLogger("dbService:close");
+    log.info("Closing database...");
     await this.db.close();
   }
 

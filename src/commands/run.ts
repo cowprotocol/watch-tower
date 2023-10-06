@@ -9,25 +9,23 @@ import { ApiService } from "../utils/api";
  */
 export async function run(options: RunOptions) {
   const log = getLogger("commands:run");
-  const { rpc, deploymentBlock, oneShot, enableApi, apiPort } = options;
+  const { rpc, deploymentBlock, oneShot, disableApi, apiPort } = options;
 
-  const api = new ApiService(apiPort);
-  if (enableApi) {
+  // Start the API server if it's not disabled
+  if (!disableApi) {
+    log.info("Starting Rest API server...");
+    const api = ApiService.getInstance(apiPort);
     await api.start();
   }
 
   process.on("unhandledRejection", async (error) => {
     log.error("Unhandled promise rejection", error);
-    await api.stop();
-    await DBService.getInstance().close();
-    process.exit(1);
+    await stop(1);
   });
 
   process.on("SIGINT", async function () {
-    log.info("Caught interrupt signal. Closing DB connection.");
-    await api.stop();
-    await DBService.getInstance().close();
-    process.exit(0);
+    log.info("Caught interrupt signal.");
+    await stop();
   });
 
   let exitCode = 0;
@@ -56,8 +54,27 @@ export async function run(options: RunOptions) {
     log.error("Unexpected error thrown when running watchtower", error);
     exitCode = 1;
   } finally {
-    await api.stop();
-    await DBService.getInstance().close();
-    process.exit(exitCode);
+    await stop(exitCode);
   }
+}
+
+/**
+ * Run actions required when stopping the watch-tower from run mode
+ * @param exitCode Exit code to return to the shell
+ */
+async function stop(exitCode?: number) {
+  const log = getLogger("commands:stop");
+  const stopServices = [
+    ApiService.getInstance().stop(),
+    DBService.getInstance().close(),
+  ];
+  await Promise.allSettled(stopServices).then((results) => {
+    results.forEach((result) => {
+      if (result.status === "rejected") {
+        log.error("Error stopping service", result.reason);
+      }
+    });
+  });
+  log.info("Exiting watchtower...");
+  process.exit(exitCode || 0);
 }

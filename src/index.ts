@@ -4,16 +4,14 @@ import { program, Option } from "@commander-js/extra-typings";
 import { ReplayTxOptions } from "./types";
 import { dumpDb, replayBlock, replayTx, run } from "./commands";
 import { initLogging } from "./utils";
+import { version, description } from "../package.json";
 
 const logLevelOption = new Option("--log-level <logLevel>", "Log level")
   .default("INFO")
   .env("LOG_LEVEL");
 
 async function main() {
-  program
-    .name("watchtower")
-    .description("Monitoring Composable CoW smart orders on the blockchain 🐮")
-    .version("0.2.0");
+  program.name("watchtower").description(description).version(version);
 
   program
     .command("run")
@@ -38,7 +36,7 @@ async function main() {
         .conflicts(["slackWebhook"])
         .default(false)
     )
-    .option("--enable-api", "Enable the REST API", true)
+    .option("--disable-api", "Disable the REST API", false)
     .option("--api-port <apiPort>", "Port for the REST API", "8080")
     .option("--slack-webhook <slackWebhook>", "Slack webhook URL")
     .option("--one-shot", "Run the watchtower once and exit", false)

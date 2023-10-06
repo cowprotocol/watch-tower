@@ -125,12 +125,12 @@ The run command will expose by default a server on port `8080`.
 The server exposes automatically:
 
 - An API, with:
-  - About info: [http://localhost:8080/api/about](http://localhost:8080/api/about)
+  - Version info: [http://localhost:8080/api/version](http://localhost:8080/api/version)
   - Dump Database: `http://localhost:8080/api/dump/:chainId` e.g. [http://localhost:8080/api/dump/1](http://localhost:8080/api/dump/1)
 - Prometheus Metrics: [http://localhost:8080/metrics](http://localhost:8080/metrics)
 
-You can prevent the server from starting by setting the `--enable-api` flag for the `run` command.
+You can prevent the server from starting by setting the `--disable-api` flag for the `run` command.
 
-Additionally, you can change the port by setting the flag `--api-port <apiPort>`
+Additionally, you can change the default port using the `--api-port <apiPort>` CLI option.
 
-The `/api/about` endpoint, exposes the information in the package.json. This can be helpful to identify the version of the watch tower. Additionally, for environments using docker, the environment variable `DOCKER_IMAGE_TAG` can be used to specify the Docker image tag used.
+The `/api/version` endpoint, exposes the information in the package.json. This can be helpful to identify the version of the watch tower. Additionally, for environments using docker, the environment variable `DOCKER_IMAGE_TAG` can be used to specify the Docker image tag used.

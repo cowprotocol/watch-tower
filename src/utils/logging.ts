@@ -49,7 +49,7 @@ export function initLogging({ logLevel }: { logLevel?: string }) {
 
 export function getLogger(loggerName: string): Logger {
   if (!logLevelOverrides) {
-    throw new Error("Logging hasn't been initialized initialized");
+    throw new Error("Logging hasn't been initialized");
   }
   const logger = getLoggerLogLevel(loggerName);
 
