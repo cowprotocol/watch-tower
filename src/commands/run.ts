@@ -20,12 +20,12 @@ export async function run(options: RunOptions) {
 
   process.on("unhandledRejection", async (error) => {
     log.error("Unhandled promise rejection", error);
-    stop(1);
+    await stop(1);
   });
 
   process.on("SIGINT", async function () {
     log.info("Caught interrupt signal.");
-    stop();
+    await stop();
   });
 
   let exitCode = 0;
@@ -54,7 +54,7 @@ export async function run(options: RunOptions) {
     log.error("Unexpected error thrown when running watchtower", error);
     exitCode = 1;
   } finally {
-    stop(exitCode);
+    await stop(exitCode);
   }
 }
 
@@ -62,12 +62,19 @@ export async function run(options: RunOptions) {
  * Run actions required when stopping the watch-tower from run mode
  * @param exitCode Exit code to return to the shell
  */
-function stop(exitCode?: number) {
+async function stop(exitCode?: number) {
   const log = getLogger("commands:stop");
-  log.info("Stopping Rest API server...");
-  ApiService.getInstance().stop();
-  log.info("Closing database...");
-  DBService.getInstance().close();
+  const stopServices = [
+    ApiService.getInstance().stop(),
+    DBService.getInstance().close(),
+  ];
+  await Promise.allSettled(stopServices).then((results) => {
+    results.forEach((result) => {
+      if (result.status === "rejected") {
+        log.error("Error stopping service", result.reason);
+      }
+    });
+  });
   log.info("Exiting watchtower...");
   process.exit(exitCode || 0);
 }

@@ -73,8 +73,8 @@ export class ApiService {
           throw new Error("Server is not running");
         }
 
-        const log = getLogger("api");
-        log.info("Stopping Rest API server");
+        const log = getLogger("api:stop");
+        log.info("Stopping Rest API server...");
 
         this.server.once("close", resolve);
         this.server.close();
