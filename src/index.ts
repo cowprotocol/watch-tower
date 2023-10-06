@@ -1,6 +1,10 @@
 import "dotenv/config";
 
-import { program, Option } from "@commander-js/extra-typings";
+import {
+  program,
+  Option,
+  InvalidArgumentError,
+} from "@commander-js/extra-typings";
 import { ReplayTxOptions } from "./types";
 import { dumpDb, replayBlock, replayTx, run } from "./commands";
 import { initLogging } from "./utils";
@@ -25,10 +29,10 @@ async function main() {
       "--deployment-block <deploymentBlock...>",
       "Block number at which the contracts were deployed"
     )
-    .option(
-      "--page-size <pageSize>",
-      "Number of blocks to fetch per page",
-      "5000"
+    .addOption(
+      new Option("--page-size <pageSize>", "Number of blocks to fetch per page")
+        .default("5000")
+        .argParser(parseIntOption)
     )
     .option("--dry-run", "Do not publish orders to the OrderBook API", false)
     .addOption(
@@ -37,36 +41,37 @@ async function main() {
         .default(false)
     )
     .option("--disable-api", "Disable the REST API", false)
-    .option("--api-port <apiPort>", "Port for the REST API", "8080")
+    .addOption(
+      new Option("--api-port <apiPort>", "Port for the REST API")
+        .default("8080")
+        .argParser(parseIntOption)
+    )
     .option("--slack-webhook <slackWebhook>", "Slack webhook URL")
     .option("--one-shot", "Run the watchtower once and exit", false)
+    .addOption(
+      new Option(
+        "--watchdog-timeout <watchdogTimeout>",
+        "Watchdog timeout (in seconds)"
+      )
+        .default("30")
+        .argParser(parseIntOption)
+    )
     .addOption(logLevelOption)
     .action((options) => {
       const { logLevel } = options;
+      const [pageSize, apiPort, watchdogTimeout] = [
+        options.pageSize,
+        options.apiPort,
+        options.watchdogTimeout,
+      ].map((value) => Number(value));
 
       initLogging({ logLevel });
-      const {
-        rpc,
-        deploymentBlock: deploymentBlockEnv,
-        pageSize: pageSizeEnv,
-      } = options;
+      const { rpc, deploymentBlock: deploymentBlockEnv } = options;
 
       // Ensure that the deployment blocks are all numbers
       const deploymentBlock = deploymentBlockEnv.map((block) => Number(block));
       if (deploymentBlock.some((block) => isNaN(block))) {
         throw new Error("Deployment blocks must be numbers");
-      }
-
-      // Ensure that pageSize is a number
-      const pageSize = Number(pageSizeEnv);
-      if (isNaN(pageSize)) {
-        throw new Error("Page size must be a number");
-      }
-
-      // Ensure that the port is a number
-      const apiPort = Number(options.apiPort);
-      if (isNaN(apiPort)) {
-        throw new Error("API port must be a number");
       }
 
       // Ensure that the RPCs and deployment blocks are the same length
@@ -75,7 +80,7 @@ async function main() {
       }
 
       // Run the watchtower
-      run({ ...options, deploymentBlock, pageSize, apiPort });
+      run({ ...options, deploymentBlock, pageSize, apiPort, watchdogTimeout });
     });
 
   program
@@ -132,6 +137,14 @@ async function main() {
     });
 
   await program.parseAsync();
+}
+
+function parseIntOption(option: string) {
+  const parsed = Number(option);
+  if (isNaN(parsed)) {
+    throw new InvalidArgumentError(`${option} must be a number`);
+  }
+  return parsed.toString();
 }
 
 main().catch((error) => {
