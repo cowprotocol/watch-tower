@@ -1,11 +1,10 @@
 import { Server } from "http";
 import express, { Request, Response, Router } from "express";
-import client from "prom-client";
 import { Express } from "express-serve-static-core";
+import promMiddleware from "express-prometheus-middleware";
 import { getLogger } from "./logging";
 import { DBService } from "./db";
 import { Registry } from "../types";
-import { MetricsService } from "./metrics";
 import { version, name, description } from "../../package.json";
 
 export class ApiService {
@@ -22,21 +21,19 @@ export class ApiService {
   }
 
   private bootstrap() {
-    const collectDefaultMetrics = client.collectDefaultMetrics;
-    collectDefaultMetrics();
-
     this.app.use(express.json());
+    this.app.use(
+      promMiddleware({
+        metricsPath: "/metrics",
+        metricsApp: this.app,
+        collectDefaultMetrics: true,
+      })
+    );
     this.app.use(express.urlencoded({ extended: true }));
     this.app.get("/", (_req: Request, res: Response) => {
       res.send("🐮 Moooo!");
-      MetricsService.apiRequestCounter.labels("GET", "/", "200").inc();
     });
     this.app.use("/api", router);
-    this.app.get("/metrics", async (_req, res) => {
-      res.set("Content-Type", client.register.contentType);
-      const response = await client.register.metrics();
-      res.send(response);
-    });
   }
 
   public static getInstance(port?: number): ApiService {
