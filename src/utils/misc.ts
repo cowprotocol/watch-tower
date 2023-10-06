@@ -11,15 +11,6 @@ export function formatStatus(status: OrderStatus) {
   }
 }
 
-export class LowLevelError extends Error {
-  data: string;
-  constructor(msg: string, data: string) {
-    super(msg);
-    this.data = data;
-    Object.setPrototypeOf(this, LowLevelError.prototype);
-  }
-}
-
 /**
  * Converts the typechain conditional order params to the sdk conditional order params (simpler version of the same thing)
  *
