@@ -16,6 +16,7 @@ import {
   handleOnChainCustomError,
 } from "../utils";
 import {
+  ConditionalOrder as ConditionalOrderSDK,
   OrderBookApi,
   OrderCreation,
   OrderPostError,
@@ -28,16 +29,16 @@ import {
   formatEpoch,
 } from "@cowprotocol/cow-sdk";
 import { ChainContext } from "./chainContext";
-import { MetricsService } from "../utils/metrics";
-
-const {
-  orderBookOrdersPlaced,
-  orderBookApiErrors,
-  pollingOnChainChecks,
-  pollingOnChainTimer,
-  pollingUnexpectedErrors,
-  pollingChecks,
-} = MetricsService;
+import {
+  pollingOnChainDurationSeconds,
+  totalActiveOrders,
+  totalActiveOwners,
+  totalOrderBookDiscreteOrders,
+  totalOrderBookErrors,
+  totalPollingOnChainChecks,
+  totalPollingRuns,
+  totalPollingUnexpectedErrors,
+} from "../utils/metrics";
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
 
@@ -186,6 +187,7 @@ export async function checkForAndPlaceOrder(
       const action = deleted ? "Stop Watching" : "Failed to stop watching";
 
       log.debug(`${action} conditional order from TX ${conditionalOrder.tx}`);
+      totalActiveOrders.labels(chainId.toString()).dec();
     }
   }
 
@@ -194,6 +196,7 @@ export async function checkForAndPlaceOrder(
   for (const [owner, conditionalOrders] of Array.from(ownerOrders.entries())) {
     if (conditionalOrders.size === 0) {
       ownerOrders.delete(owner);
+      totalActiveOwners.labels(chainId.toString()).dec();
     }
   }
 
@@ -219,11 +222,14 @@ async function _processConditionalOrder(
   orderRef: string
 ): Promise<PollResult> {
   const { provider, orderBook, dryRun, chainId } = context;
+  const { handler } = conditionalOrder.params;
   const log = getLogger(
     `checkForAndPlaceOrder:_processConditionalOrder:${orderRef}`
   );
+  const id = ConditionalOrderSDK.leafToId(conditionalOrder.params);
+  const metricLabels = [chainId.toString(), handler, owner, id];
   try {
-    pollingChecks.labels(chainId.toString()).inc();
+    totalPollingRuns.labels(...metricLabels).inc();
 
     const proof = conditionalOrder.proof
       ? conditionalOrder.proof.path.map((c) => c.toString())
@@ -251,7 +257,9 @@ async function _processConditionalOrder(
       // Unsupported Order Type (unknown handler)
       // For now, fallback to legacy behavior
       // TODO: Decide in the future what to do. Probably, move the error handling to the SDK and kill the poll Legacy
-      const timer = pollingOnChainTimer.labels(chainId.toString()).startTimer();
+      const timer = pollingOnChainDurationSeconds
+        .labels(...metricLabels)
+        .startTimer();
       pollResult = await _pollLegacy(
         context,
         owner,
@@ -261,7 +269,7 @@ async function _processConditionalOrder(
         orderRef
       );
       timer();
-      pollingOnChainChecks.labels(chainId.toString()).inc();
+      totalPollingOnChainChecks.labels(...metricLabels).inc();
     }
 
     // Error polling
@@ -292,6 +300,7 @@ async function _processConditionalOrder(
         blockTimestamp,
         orderRef,
         dryRun,
+        metricLabels,
       });
 
       // In case of error, return early
@@ -317,7 +326,7 @@ async function _processConditionalOrder(
       signature,
     };
   } catch (e: any) {
-    pollingUnexpectedErrors.labels(chainId.toString()).inc();
+    totalPollingUnexpectedErrors.labels(...metricLabels).inc();
     return {
       result: PollResultCode.UNEXPECTED_ERROR,
       error: e,
@@ -379,9 +388,17 @@ async function _placeOrder(params: {
   orderRef: string;
   blockTimestamp: number;
   dryRun: boolean;
+  metricLabels: string[];
 }): Promise<Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors> {
-  const { orderUid, order, orderBook, orderRef, blockTimestamp, dryRun } =
-    params;
+  const {
+    orderUid,
+    order,
+    orderBook,
+    orderRef,
+    blockTimestamp,
+    dryRun,
+    metricLabels,
+  } = params;
   const log = getLogger(`checkForAndPlaceOrder:_placeOrder:${orderRef}`);
   const { chainId } = orderBook.context;
   try {
@@ -398,7 +415,7 @@ async function _placeOrder(params: {
     log.debug(`Order`, postOrder);
     if (!dryRun) {
       const orderUid = await orderBook.sendOrder(postOrder);
-      orderBookOrdersPlaced.labels(chainId.toString()).inc();
+      totalOrderBookDiscreteOrders.labels(...metricLabels).inc();
       log.info(`API response`, { orderUid });
     }
   } catch (error: any) {
@@ -411,8 +428,8 @@ async function _placeOrder(params: {
         status,
         body,
         error,
-        chainId,
-        blockTimestamp
+        blockTimestamp,
+        metricLabels
       );
       const isSuccess = handleErrorResult.result === PollResultCode.SUCCESS;
 
@@ -455,12 +472,12 @@ function _handleOrderBookError(
   status: any,
   body: any,
   error: any,
-  chainId: SupportedChainId,
-  blockTimestamp: number
+  blockTimestamp: number,
+  metricLabels: string[]
 ): Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors {
   const apiError = body?.errorType as OrderPostError.errorType;
-  orderBookApiErrors
-    .labels(chainId.toString(), status.toString(), apiError)
+  totalOrderBookErrors
+    .labels(...metricLabels, status.toString(), apiError)
     .inc();
   if (status === 400) {
     // The order is in the OrderBook, all good :)
