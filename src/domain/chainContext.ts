@@ -25,6 +25,30 @@ const WATCHDOG_FREQUENCY = 5 * 1000; // 5 seconds
 
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
+enum ChainSync {
+  SYNCED = "SYNCED",
+  SYNCING = "SYNCING",
+}
+
+type Chains = { [chainId: number]: ChainContext };
+
+export interface ChainStatus {
+  sync: ChainSync;
+  chainId: SupportedChainId;
+  lastProcessedBlock: number;
+}
+
+export interface ChainHealth extends ChainStatus {
+  isHealthy: boolean;
+}
+
+export interface ChainWatcherHealth {
+  overallHealth: boolean;
+  chains: {
+    [chainId: number]: ChainHealth;
+  };
+}
+
 /**
  * The chain context handles watching a single chain for new conditional orders
  * and executing them.
@@ -33,7 +57,8 @@ export class ChainContext {
   readonly deploymentBlock: number;
   readonly pageSize: number;
   readonly dryRun: boolean;
-  private inSync = false;
+  private sync: ChainSync = ChainSync.SYNCING;
+  static chains: Chains = {};
 
   provider: ethers.providers.Provider;
   chainId: SupportedChainId;
@@ -83,7 +108,11 @@ export class ChainContext {
       deploymentBlock
     );
 
-    return new ChainContext(options, provider, chainId, registry);
+    // Save the context to the static map to be used by the API
+    const context = new ChainContext(options, provider, chainId, registry);
+    ChainContext.chains[chainId] = context;
+
+    return context;
   }
 
   /**
@@ -197,14 +226,13 @@ export class ChainContext {
 
       // If we are in sync, let it be known
       if (currentBlockNumber === this.registry.lastProcessedBlock) {
-        this.inSync = true;
+        this.sync = ChainSync.SYNCED;
       } else {
         // Otherwise, we need to keep processing blocks
-        this.inSync = false;
         fromBlock = this.registry.lastProcessedBlock + 1;
         plan = {};
       }
-    } while (!this.inSync);
+    } while (this.sync === ChainSync.SYNCING);
 
     log.info(
       `💚 ${
@@ -267,6 +295,7 @@ export class ChainContext {
 
           // Block height metric
           blockHeight.labels(chainId.toString()).set(Number(blockNumber));
+          this.registry.lastProcessedBlock = Number(blockNumber);
         } catch {
           log.error(`Error processing block ${blockNumber}`);
         }
@@ -298,6 +327,26 @@ export class ChainContext {
         process.exit(1);
       }
     }
+  }
+
+  get status(): ChainStatus {
+    const { sync, chainId } = this;
+    return {
+      sync,
+      chainId,
+      lastProcessedBlock: this.registry.lastProcessedBlock ?? 0,
+    };
+  }
+
+  get health(): ChainHealth {
+    return {
+      ...this.status,
+      isHealthy: this.isHealthy(),
+    };
+  }
+
+  private isHealthy(): boolean {
+    return this.sync === ChainSync.SYNCED;
   }
 }
 
