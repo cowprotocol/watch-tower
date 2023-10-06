@@ -139,7 +139,7 @@ async function main() {
   await program.parseAsync();
 }
 
-function parseIntOption(option: string, _value: string) {
+function parseIntOption(option: string) {
   const parsed = Number(option);
   if (isNaN(parsed)) {
     throw new InvalidArgumentError(`${option} must be a number`);

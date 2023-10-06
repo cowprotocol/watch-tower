@@ -237,7 +237,8 @@ export class ChainContext {
     const { provider, registry, chainId } = this;
     const log = getLogger(`chainContext:runBlockWatcher:${chainId}`);
     // Watch for new blocks
-    log.info(`👀 Start block watcher with ${watchdogTimeout}s timeout`);
+    log.info(`👀 Start block watcher`);
+    log.debug(`Watchdog timeout: ${watchdogTimeout} seconds`);
     let lastBlockReceived = 0;
     let timeLastBlockProcessed = new Date().getTime();
     provider.on("block", async (blockNumber: number) => {
