@@ -531,13 +531,13 @@ async function _pollLegacy(
       },
     ]);
 
-    const [{ success, returnData: revertData }] = lowLevelCall;
+    const [{ success, returnData }] = lowLevelCall;
 
     if (success) {
-      // Decode the result to get the order and signature
+      // Decode the returnData to get the order and signature tuple
       const { order, signature } = contract.interface.decodeFunctionResult(
         "getTradeableOrderWithSignature",
-        revertData
+        returnData
       );
       return {
         result: PollResultCode.SUCCESS,
@@ -546,20 +546,22 @@ async function _pollLegacy(
       };
     }
 
-    // If the call failed, there may be a custom error to provide hints. Let's try.
+    // If the low-level call failed, per the `ComposableCoW` interface, the contract is attempting to
+    // provide hints to the watch-tower. But, we can't trust all the data returned as there may be
+    // order types created that are _not_ adhering to the interface (and are therefore invalid).
     return handleOnChainCustomError({
       owner,
       orderRef,
       chainId,
       target,
       callData,
-      revertData,
+      revertData: returnData,
     });
   } catch (error: any) {
-    log.error(`${logPrefix} ethers/call Unexpected error`, error);
     // We can only get here from some provider / ethers failure. As the contract hasn't had it's say
     // we will defer to try again.
     // TODO: Add metrics to track this
+    log.error(`${logPrefix} ethers/call Unexpected error`, error);
     return {
       result: PollResultCode.TRY_NEXT_BLOCK,
       reason:

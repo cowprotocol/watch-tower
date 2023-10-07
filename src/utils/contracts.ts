@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import { BigNumber, ethers } from "ethers";
 import { ComposableCoW, ComposableCoW__factory } from "../types";
 import {
   COMPOSABLE_COW_CONTRACT_ADDRESS,
@@ -15,7 +15,7 @@ const REQUIRED_SELECTORS = [
   "getTradeableOrderWithSignature(address,(address,bytes32,bytes),bytes,bytes32[])",
 ];
 
-// Define an enum for the custom errors that can be returned by the ComposableCoW contract
+// Define an enum for the custom error revert hints that can be returned by the ComposableCoW's interfaces.
 export enum CustomErrorSelectors {
   PROOF_NOT_AUTHED = "PROOF_NOT_AUTHED",
   SINGLE_ORDER_NOT_AUTHED = "SINGLE_ORDER_NOT_AUTHED",
@@ -29,6 +29,27 @@ export enum CustomErrorSelectors {
   POLL_TRY_AT_BLOCK = "POLL_TRY_AT_BLOCK",
   POLL_TRY_AT_EPOCH = "POLL_TRY_AT_EPOCH",
 }
+
+type ParsedCustomError = {
+  [K in CustomErrorSelectors]: K extends
+    | CustomErrorSelectors.PROOF_NOT_AUTHED
+    | CustomErrorSelectors.SINGLE_ORDER_NOT_AUTHED
+    | CustomErrorSelectors.INTERFACE_NOT_SUPPORTED
+    | CustomErrorSelectors.INVALID_FALLBACK_HANDLER
+    | CustomErrorSelectors.INVALID_HANDLER
+    | CustomErrorSelectors.SWAP_GUARD_RESTRICTED
+    ? { selector: K }
+    : K extends
+        | CustomErrorSelectors.ORDER_NOT_VALID
+        | CustomErrorSelectors.POLL_TRY_NEXT_BLOCK
+        | CustomErrorSelectors.POLL_NEVER
+    ? { selector: K; message: string }
+    : K extends
+        | CustomErrorSelectors.POLL_TRY_AT_BLOCK
+        | CustomErrorSelectors.POLL_TRY_AT_EPOCH
+    ? { selector: K; message: string; blockNumberOrEpoch: number }
+    : never;
+}[CustomErrorSelectors];
 
 export const CUSTOM_ERROR_ABI_MAP: Record<CustomErrorSelectors, string> = {
   [CustomErrorSelectors.PROOF_NOT_AUTHED]: "ProofNotAuthed()",
@@ -91,16 +112,14 @@ export function composableCowContract(
   );
 }
 
-type ParsedCustomError = {
-  selector: CustomErrorSelectors;
-  message?: string;
-  blockNumberOrEpoch?: number;
-};
-
 /**
- * Given a raw ABI-encoded custom error returned from a revert, extract the selector and optionally a message.
+ * Given a raw ABI-encoded custom error returned from a revert, extract the selector and any parameters.
  * @param revertData ABI-encoded custom error, which may or may not be parameterized.
- * @returns an empty parsed error if assumptions don't hold, otherwise the selector and message if applicable.
+ * @returns {ParsedCustomError} an object containing the selector and any parameters.
+ * @throws if the revert data is not at least 4 bytes long (8 hex characters, 0x prefixed), or if the
+ * revert data contains a selector that is not in the CUSTOM_ERROR_SELECTOR_MAP, or if the revert data
+ * contains a selector that is in the CUSTOM_ERROR_SELECTOR_MAP, but the it's parameters are not ABI-encoded
+ * correctly.
  */
 export function parseCustomError(revertData: string): ParsedCustomError {
   try {
@@ -118,6 +137,9 @@ export function parseCustomError(revertData: string): ParsedCustomError {
         "On-chain hint / custom error not compliant with ComposableCoW interface"
       );
     }
+
+    // Below here, the only throw that can happen is if the revert data contains a selector that is in the
+    // CUSTOM_ERROR_SELECTOR_MAP, but the it's parameters are not ABI-encoded correctly.
 
     const selector = CUSTOM_ERROR_SELECTOR_MAP[rawSelector];
     const fragment = ethers.utils.Fragment.fromString(
@@ -154,20 +176,19 @@ export function parseCustomError(revertData: string): ParsedCustomError {
 
         return {
           selector,
-          message: msg,
-          blockNumberOrEpoch: blockNumberOrEpoch.toNumber(),
+          message: msg as string,
+          blockNumberOrEpoch: (blockNumberOrEpoch as BigNumber).toNumber(),
         };
     }
   } catch (err) {
-    // This can only throw under the following conditions:
-    // - The revert data is too short to contain a selector
-    // - The revert data contains a selector that is not in the CUSTOM_ERROR_SELECTOR_MAP
-    // - The revert data contains a selector that is in the CUSTOM_ERROR_SELECTOR_MAP, but the
-    //   it's parameters are not ABI-encoded correctly (decode throws)
     throw err;
   }
 }
 
+/**
+ * Given a raw ABI-encoded custom error returned from a revert, determine subsequent polling actions.
+ * This function will swallow any errors thrown by `parseCustomError` and return a DONT_TRY_AGAIN result.
+ */
 export function handleOnChainCustomError(params: {
   owner: string;
   orderRef: string;
@@ -178,59 +199,52 @@ export function handleOnChainCustomError(params: {
 }): PollResultErrors {
   const { owner, orderRef, chainId, target, callData, revertData } = params;
   const logPrefix = `contracts:handleOnChainCustomError:${orderRef}`;
-  const log = getLogger(logPrefix);
 
   try {
     // The below will throw if:
     // - the error is not a custom error (ie. the selector is not in the map)
     // - the error is a custom error, but the parameters are not as expected
-    const { selector, message, blockNumberOrEpoch } =
-      parseCustomError(revertData);
-    switch (selector) {
+    const parsedCustomError = parseCustomError(revertData);
+    const { selector } = parsedCustomError;
+    const log = getLogger(`${logPrefix}:${selector}`);
+    const msgWithSelector = (message: string): string =>
+      `${selector}: ${message}`;
+    const dropOrder = (reason: string): PollResultErrors => {
+      return {
+        result: PollResultCode.DONT_TRY_AGAIN,
+        reason: msgWithSelector(reason),
+      };
+    };
+    switch (parsedCustomError.selector) {
       case CustomErrorSelectors.SINGLE_ORDER_NOT_AUTHED:
       case CustomErrorSelectors.PROOF_NOT_AUTHED:
         // If there's no authorization we delete the order
         // - One reason could be, because the user CANCELLED the order
-        // - for now it doesn't support more advanced cases where the order is auth during a pre-interaction
-        log.info(
-          `${selector}: Order on safe ${owner} not authed. Deleting order...`
-        );
-        return {
-          result: PollResultCode.DONT_TRY_AGAIN,
-          reason: `${selector}: The owner has not authorized the order`,
-        };
+        // - for now it doesn't support more advanced cases where the order is authed during a pre-interaction
+        log.info(`Order on safe ${owner} not authed. Deleting order...`);
+        return dropOrder("The owner has not authorized the order");
       case CustomErrorSelectors.INTERFACE_NOT_SUPPORTED:
         log.info(
-          `${selector}: Order on safe ${owner} attempted to use a handler that is not supported. Deleting order...`
+          `Order type for safe ${owner}, failed IERC165 introspection check. Deleting order...`
         );
-        return {
-          result: PollResultCode.DONT_TRY_AGAIN,
-          reason: `${selector}: The handler is not supported`,
-        };
+        return dropOrder("The order type failed IERC165 introspection check");
       case CustomErrorSelectors.INVALID_FALLBACK_HANDLER:
         log.info(
-          `${selector}: Order for safe ${owner} where the Safe does not have ExtensibleFallbackHandler set. Deleting order...`
+          `Order for safe ${owner} where the Safe does not have ExtensibleFallbackHandler set. Deleting order...`
         );
-        return {
-          result: PollResultCode.DONT_TRY_AGAIN,
-          reason: `${selector}: The safe does not have ExtensibleFallbackHandler set`,
-        };
+        return dropOrder(
+          "The safe does not have ExtensibleFallbackHandler set"
+        );
       case CustomErrorSelectors.INVALID_HANDLER:
         log.info(
-          `${selector}: Order type for safe ${owner}, failed IERC165 introspection check. Deleting order...`
+          `Order on safe ${owner} attempted to use a handler that is not supported. Deleting order...`
         );
-        return {
-          result: PollResultCode.DONT_TRY_AGAIN,
-          reason: `${selector}: The safe does not have the handler set`,
-        };
+        return dropOrder("The handler is not supported");
       case CustomErrorSelectors.SWAP_GUARD_RESTRICTED:
         log.info(
-          `${selector}: Order for safe ${owner} where the Safe has swap guard enabled. Deleting order...`
+          `Order for safe ${owner} where the Safe has swap guard enabled. Deleting order...`
         );
-        return {
-          result: PollResultCode.DONT_TRY_AGAIN,
-          reason: `${selector}: The safe has swap guard enabled`,
-        };
+        return dropOrder("The conditional order didn't pass the swap guard");
       // TODO: Add metrics to track this
       case CustomErrorSelectors.ORDER_NOT_VALID:
       case CustomErrorSelectors.POLL_TRY_NEXT_BLOCK:
@@ -239,49 +253,39 @@ export function handleOnChainCustomError(params: {
         // the past.
         // PollTryNextBlock: The conditional order has signalled that it should be polled again on the next block.
         log.info(
-          `${selector}: Order on safe ${owner} not valid/signalled to try next block.`
+          `Order on safe ${owner} not valid/signalled to try next block.`
         );
         return {
           result: PollResultCode.TRY_NEXT_BLOCK,
-          reason: `${selector}: ${message}`,
+          reason: msgWithSelector(parsedCustomError.message),
         };
       case CustomErrorSelectors.POLL_TRY_AT_BLOCK:
-        // The conditional order has signalled that it should be polled again on a specific block.
-        if (!blockNumberOrEpoch) {
-          throw new Error(
-            `Expected blockNumberOrEpoch to be defined for ${selector}`
-          );
-        }
         return {
           result: PollResultCode.TRY_ON_BLOCK,
-          blockNumber: blockNumberOrEpoch,
-          reason: `PollTryAtBlock: ${message}`,
+          blockNumber: parsedCustomError.blockNumberOrEpoch,
+          reason: msgWithSelector(parsedCustomError.message),
         };
       case CustomErrorSelectors.POLL_TRY_AT_EPOCH:
-        // The conditional order has signalled that it should be polled again on a specific epoch.
-        if (!blockNumberOrEpoch) {
-          throw new Error(
-            `Expected blockNumberOrEpoch to be defined for ${selector}`
-          );
-        }
         return {
           result: PollResultCode.TRY_AT_EPOCH,
-          epoch: blockNumberOrEpoch,
-          reason: `PollTryAtEpoch: ${message}`,
+          epoch: parsedCustomError.blockNumberOrEpoch,
+          reason: msgWithSelector(parsedCustomError.message),
         };
       case CustomErrorSelectors.POLL_NEVER:
-        // The conditional order has signalled that it should never be polled again.
-        return {
-          result: PollResultCode.DONT_TRY_AGAIN,
-          reason: `PollNever: ${message}`,
-        };
+        return dropOrder(parsedCustomError.message);
     }
-  } catch (err) {
+  } catch (err: any) {
     // Any errors thrown here can _ONLY_ come from non-compliant interfaces (ie. bad revert ABI encoding).
     // We log the error, and return a DONT_TRY_AGAIN result.
     // TODO: Add metrics to track this
+    const log = getLogger(logPrefix);
     log.debug(
-      `Contract returned a non-interface compliant revert via getTradeableOrderWithSignature. Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${target}&rawFunctionInput=${callData}`
+      `Non-compliant interface error thrown${
+        err.message ? `: ${err.message}` : ""
+      }`
+    );
+    log.debug(
+      `Contract returned a non-compliant interface revert via getTradeableOrderWithSignature. Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${target}&rawFunctionInput=${callData}`
     );
     return {
       result: PollResultCode.DONT_TRY_AGAIN,
