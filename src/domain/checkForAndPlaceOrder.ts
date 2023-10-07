@@ -39,6 +39,7 @@ import {
   totalPollingRuns,
   totalPollingUnexpectedErrors,
   totalPollingOnChainEthersErrors,
+  measureTime,
 } from "../utils/metrics";
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
@@ -258,6 +259,20 @@ async function _processConditionalOrder(
       // Unsupported Order Type (unknown handler)
       // For now, fallback to legacy behavior
       // TODO: Decide in the future what to do. Probably, move the error handling to the SDK and kill the poll Legacy
+      pollResult = await measureTime(
+        () =>
+          _pollLegacy(
+            context,
+            owner,
+            conditionalOrder,
+            proof,
+            offchainInput,
+            orderRef
+          ),
+        metricLabels,
+        pollingOnChainDurationSeconds,
+        totalPollingOnChainChecks
+      );
       const timer = pollingOnChainDurationSeconds
         .labels(...metricLabels)
         .startTimer();

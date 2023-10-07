@@ -21,8 +21,10 @@ import {
 import { ChainContext } from "./chainContext";
 import { ConditionalOrderParams } from "@cowprotocol/cow-sdk";
 import {
+  addContractRunsTotal,
   addContractsErrorsTotal,
   addContractsRunDurationSeconds,
+  measureTime,
   merkleRootTotal,
   newContractsTotal,
   singleOrdersTotal,
@@ -42,19 +44,14 @@ export async function addContract(
   event: ConditionalOrderCreatedEvent
 ) {
   const { chainId } = context;
-  const timer = addContractsRunDurationSeconds
-    .labels(chainId.toString())
-    .startTimer();
-  try {
-    await _addContract(context, event);
-  } catch (err) {
+  await measureTime(
+    () => _addContract(context, event),
+    [chainId.toString()],
+    addContractsRunDurationSeconds,
+    addContractRunsTotal,
+    handleExecutionError,
     addContractsErrorsTotal
-      .labels(context.chainId.toString(), "addContract")
-      .inc();
-    handleExecutionError(err);
-  } finally {
-    timer();
-  }
+  );
 }
 
 async function _addContract(

@@ -1,5 +1,35 @@
 import client from "prom-client";
 
+export function measureTime<T>(
+  action: () => T,
+  labels: string[],
+  durationMetric: client.Histogram,
+  totalRunsMetric: client.Counter,
+  errorHandler?: (err: any) => T,
+  errorMetric?: client.Counter
+): T {
+  const timer = durationMetric.labels(...labels).startTimer();
+  let result: T;
+  try {
+    result = action();
+  } catch (err) {
+    if (errorHandler === undefined) {
+      throw err;
+    }
+
+    if (errorMetric === undefined) {
+      throw new Error("errorMetric must be defined if errorHandler is defined");
+    }
+
+    errorMetric.labels(...labels).inc();
+    result = errorHandler(err);
+  } finally {
+    timer();
+  }
+  totalRunsMetric.labels(...labels).inc();
+  return result;
+}
+
 export const blockHeight = new client.Gauge({
   name: "watch_tower_block_height",
   help: "Block height of the block watcher",
@@ -45,6 +75,12 @@ export const singleOrdersTotal = new client.Counter({
 export const merkleRootTotal = new client.Counter({
   name: "watch_tower_merkle_roots_total",
   help: "Total number of merkle roots processed",
+  labelNames: ["chain_id"],
+});
+
+export const addContractRunsTotal = new client.Counter({
+  name: "watch_tower_add_contract_runs_total",
+  help: "Total number of add contract runs",
   labelNames: ["chain_id"],
 });
 
