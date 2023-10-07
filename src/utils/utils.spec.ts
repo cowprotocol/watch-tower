@@ -1,6 +1,15 @@
 import * as composableCow from "../../abi/ComposableCoW.json";
 import * as extensibleFallbackHandler from "../../abi/ExtensibleFallbackHandler.json";
-import { isComposableCowCompatible, customErrorDecode } from ".";
+import {
+  CUSTOM_ERROR_ABI_MAP,
+  CustomErrorSelectors,
+  abiToSelector,
+  handleOnChainCustomError,
+  initLogging,
+  isComposableCowCompatible,
+  parseCustomError,
+} from ".";
+import { COMPOSABLE_COW_CONTRACT_ADDRESS } from "@cowprotocol/cow-sdk";
 
 // consts for readability
 const composableCowBytecode = composableCow.deployedBytecode.object;
@@ -35,29 +44,29 @@ describe("test against concrete examples", () => {
   });
 });
 
-describe("custom errors (reversions)", () => {
+describe("parse custom errors (reversions)", () => {
   it("should pass the SingleOrderNotAuthed selector correctly", () => {
-    expect(customErrorDecode(SINGLE_ORDER_NOT_AUTHED_ERROR)).toMatchObject({
+    expect(parseCustomError(SINGLE_ORDER_NOT_AUTHED_ERROR)).toMatchObject({
       selector: "SINGLE_ORDER_NOT_AUTHED",
     });
   });
 
   it("should pass the OrderNotValid selector correctly", () => {
-    expect(customErrorDecode(ORDER_NOT_VALID)).toMatchObject({
+    expect(parseCustomError(ORDER_NOT_VALID)).toMatchObject({
       selector: "ORDER_NOT_VALID",
       message: "after twap finish",
     });
   });
 
   it("should pass the PollTryNextBlock selector correctly", () => {
-    expect(customErrorDecode(POLL_TRY_NEXT_BLOCK)).toMatchObject({
+    expect(parseCustomError(POLL_TRY_NEXT_BLOCK)).toMatchObject({
       selector: "POLL_TRY_NEXT_BLOCK",
       message: "try me again",
     });
   });
 
   it("should pass the PollTryAtBlock selector correctly", () => {
-    expect(customErrorDecode(POLL_TRY_AT_BLOCK)).toMatchObject({
+    expect(parseCustomError(POLL_TRY_AT_BLOCK)).toMatchObject({
       selector: "POLL_TRY_AT_BLOCK",
       message: "red pill",
       blockNumberOrEpoch: 303,
@@ -65,7 +74,7 @@ describe("custom errors (reversions)", () => {
   });
 
   it("should pass the PollTryAtEpoch selector correctly", () => {
-    expect(customErrorDecode(POLL_TRY_AT_EPOCH)).toMatchObject({
+    expect(parseCustomError(POLL_TRY_AT_EPOCH)).toMatchObject({
       selector: "POLL_TRY_AT_EPOCH",
       message: "here's looking at you",
       blockNumberOrEpoch: 1694340000,
@@ -73,9 +82,71 @@ describe("custom errors (reversions)", () => {
   });
 
   it("should pass the PollNever selector correctly", () => {
-    expect(customErrorDecode(POLL_NEVER)).toMatchObject({
+    expect(parseCustomError(POLL_NEVER)).toMatchObject({
       selector: "POLL_NEVER",
       message: "after twap finish",
+    });
+  });
+});
+
+describe("handle on-chain custom errors", () => {
+  initLogging({});
+  const happyPath = {
+    owner: "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    target: COMPOSABLE_COW_CONTRACT_ADDRESS[1],
+    callData: "0xca1fca1fca1fca1f",
+    orderRef: "orderRefForLogging",
+    chainId: 1,
+    revertData: abiToSelector(
+      CUSTOM_ERROR_ABI_MAP[CustomErrorSelectors.SINGLE_ORDER_NOT_AUTHED]
+    ),
+  };
+
+  it("should pass a known selector correctly", () => {
+    expect(handleOnChainCustomError(happyPath)).toMatchObject({
+      reason: "SINGLE_ORDER_NOT_AUTHED: The owner has not authorized the order",
+      result: "DONT_TRY_AGAIN",
+    });
+  });
+
+  it("should drop if the revert selector does not exist in the map", () => {
+    const unknownSelector = "0xdeadbeef";
+    expect(
+      handleOnChainCustomError({
+        ...happyPath,
+        revertData: unknownSelector,
+      })
+    ).toMatchObject({
+      reason: "Order returned a non-compliant (invalid/erroneous) revert hint",
+      result: "DONT_TRY_AGAIN",
+    });
+  });
+
+  it("should drop if the revert data is too short even to be a selector", () => {
+    const shortReverts = ["0x", "0xca1f"];
+    shortReverts.forEach((shortRevert) =>
+      expect(
+        handleOnChainCustomError({
+          ...happyPath,
+          revertData: shortRevert,
+        })
+      ).toMatchObject({
+        reason:
+          "Order returned a non-compliant (invalid/erroneous) revert hint",
+        result: "DONT_TRY_AGAIN",
+      })
+    );
+  });
+
+  it("should drop if the revert data has not been encoded correctly", () => {
+    expect(
+      handleOnChainCustomError({
+        ...happyPath,
+        revertData: POLL_TRY_AT_EPOCH_INVALID,
+      })
+    ).toMatchObject({
+      reason: "Order returned a non-compliant (invalid/erroneous) revert hint",
+      result: "DONT_TRY_AGAIN",
     });
   });
 });
@@ -95,6 +166,9 @@ const POLL_TRY_AT_BLOCK =
 
 const POLL_TRY_AT_EPOCH =
   "0x7e3346370000000000000000000000000000000000000000000000000000000064fd93a000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000015686572652773206c6f6f6b696e6720617420796f750000000000000000000000";
+
+const POLL_TRY_AT_EPOCH_INVALID =
+  "0x7e33463700000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000064fd93a00000000000000000000000000000000000000000000000000000000000000015686572652773206c6f6f6b696e6720617420796f750000000000000000000000";
 
 const POLL_NEVER =
   "0x981b64cd00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000011616674657220747761702066696e697368000000000000000000000000000000";
