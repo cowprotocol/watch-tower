@@ -108,6 +108,18 @@ const pollingOnChainDurationSeconds = new client.Histogram({
   labelNames: ["chain_id", "handler", "owner", "id"],
 });
 
+const totalPollingOnChainInvalidInterfaces = new client.Counter({
+  name: "watch_tower_polling_onchain_invalid_interface_total",
+  help: "Total number of invalid on-chain hint interface",
+  labelNames: ["chain_id", "handler", "owner", "id"],
+});
+
+const totalPollingOnChainEthersErrors = new client.Counter({
+  name: "watch_tower_polling_onchain_ethers_errors_total",
+  help: "Total number of ethers on-chain hint errors",
+  labelNames: ["chain_id", "handler", "owner", "id"],
+});
+
 const totalPollingUnexpectedErrors = new client.Counter({
   name: "watch_tower_polling_unexpected_errors_total",
   help: "Total number of unexpected polling errors",
@@ -132,6 +144,8 @@ export {
   totalOrderBookErrors,
   totalPollingRuns,
   totalPollingOnChainChecks,
+  totalPollingOnChainInvalidInterfaces,
+  totalPollingOnChainEthersErrors,
   pollingOnChainDurationSeconds,
   totalPollingUnexpectedErrors,
 };

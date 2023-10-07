@@ -8,6 +8,7 @@ import {
   SupportedChainId,
 } from "@cowprotocol/cow-sdk";
 import { getLogger } from "./logging";
+import { totalPollingOnChainInvalidInterfaces } from "./metrics";
 
 // Selectors that are required to be part of the contract's bytecode in order to be considered compatible
 const REQUIRED_SELECTORS = [
@@ -188,8 +189,17 @@ export function handleOnChainCustomError(params: {
   target: string;
   callData: string;
   revertData: string;
+  metricLabels: string[];
 }): PollResultErrors {
-  const { owner, orderRef, chainId, target, callData, revertData } = params;
+  const {
+    owner,
+    orderRef,
+    chainId,
+    target,
+    callData,
+    revertData,
+    metricLabels,
+  } = params;
   const logPrefix = `contracts:handleOnChainCustomError:${orderRef}`;
 
   try {
@@ -279,6 +289,7 @@ export function handleOnChainCustomError(params: {
     log.debug(
       `Contract returned a non-compliant interface revert via getTradeableOrderWithSignature. Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${target}&rawFunctionInput=${callData}`
     );
+    totalPollingOnChainInvalidInterfaces.labels(...metricLabels).inc();
     return {
       result: PollResultCode.DONT_TRY_AGAIN,
       reason: "Order returned a non-compliant (invalid/erroneous) revert hint",

@@ -38,6 +38,7 @@ import {
   totalPollingOnChainChecks,
   totalPollingRuns,
   totalPollingUnexpectedErrors,
+  totalPollingOnChainEthersErrors,
 } from "../utils/metrics";
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
@@ -529,6 +530,7 @@ async function _pollLegacy(
   const { contract, multicall, chainId } = context;
   const logPrefix = `checkForAndPlaceOrder:_pollLegacy:${orderRef}`;
   const log = getLogger(logPrefix);
+  const { handler } = conditionalOrder.params;
   // as we going to use multicall, with `aggregate3Value`, there is no need to do any simulation as the
   // calls are guaranteed to pass, and will return the results, or the reversion within the ABI-encoded data.
   // By not using `populateTransaction`, we avoid an `eth_estimateGas` RPC call.
@@ -537,6 +539,8 @@ async function _pollLegacy(
     "getTradeableOrderWithSignature",
     [owner, conditionalOrder.params, offchainInput, proof]
   );
+  const id = ConditionalOrderSDK.leafToId(conditionalOrder.params);
+  const metricLabels = [chainId.toString(), owner, handler, id];
 
   try {
     const lowLevelCall = await multicall.callStatic.aggregate3Value([
@@ -573,12 +577,13 @@ async function _pollLegacy(
       target,
       callData,
       revertData: returnData,
+      metricLabels,
     });
   } catch (error: any) {
     // We can only get here from some provider / ethers failure. As the contract hasn't had it's say
     // we will defer to try again.
-    // TODO: Add metrics to track this
     log.error(`${logPrefix} ethers/call Unexpected error`, error);
+    totalPollingOnChainEthersErrors.labels(...metricLabels).inc();
     return {
       result: PollResultCode.TRY_NEXT_BLOCK,
       reason:
