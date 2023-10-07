@@ -13,7 +13,7 @@ import {
   formatStatus,
   getLogger,
   pollConditionalOrder,
-  customErrorDecode,
+  handleOnChainCustomError,
 } from "../utils";
 import {
   OrderBookApi,
@@ -509,14 +509,14 @@ async function _pollLegacy(
   offchainInput: string,
   orderRef: string
 ): Promise<PollResult> {
-  const { contract, multicall } = context;
+  const { contract, multicall, chainId } = context;
   const logPrefix = `checkForAndPlaceOrder:_pollLegacy:${orderRef}`;
   const log = getLogger(logPrefix);
   // as we going to use multicall, with `aggregate3Value`, there is no need to do any simulation as the
   // calls are guaranteed to pass, and will return the results, or the reversion within the ABI-encoded data.
   // By not using `populateTransaction`, we avoid an `eth_estimateGas` RPC call.
-  const to = contract.address;
-  const data = contract.interface.encodeFunctionData(
+  const target = contract.address;
+  const callData = contract.interface.encodeFunctionData(
     "getTradeableOrderWithSignature",
     [owner, conditionalOrder.params, offchainInput, proof]
   );
@@ -524,20 +524,20 @@ async function _pollLegacy(
   try {
     const lowLevelCall = await multicall.callStatic.aggregate3Value([
       {
-        target: to,
+        target,
         allowFailure: true,
         value: 0,
-        callData: data,
+        callData,
       },
     ]);
 
-    const [{ success, returnData }] = lowLevelCall;
+    const [{ success, returnData: revertData }] = lowLevelCall;
 
     if (success) {
       // Decode the result to get the order and signature
       const { order, signature } = contract.interface.decodeFunctionResult(
         "getTradeableOrderWithSignature",
-        returnData
+        revertData
       );
       return {
         result: PollResultCode.SUCCESS,
@@ -547,14 +547,14 @@ async function _pollLegacy(
     }
 
     // If the call failed, there may be a custom error to provide hints. Let's try.
-    return _handleOnChainCustomError(
+    return handleOnChainCustomError({
       owner,
       orderRef,
-      context,
-      to,
-      data,
-      returnData
-    );
+      chainId,
+      target,
+      callData,
+      revertData,
+    });
   } catch (error: any) {
     log.error(`${logPrefix} ethers/call Unexpected error`, error);
     // We can only get here from some provider / ethers failure. As the contract hasn't had it's say
@@ -565,121 +565,6 @@ async function _pollLegacy(
       reason:
         "UnexpectedErrorName: Unexpected error" +
         (error.message ? `: ${error.message}` : ""),
-    };
-  }
-}
-
-function _handleOnChainCustomError(
-  owner: string,
-  orderRef: string,
-  context: ChainContext,
-  to: string,
-  data: string,
-  returnData: string
-): PollResultErrors {
-  const logPrefix = `checkForAndPlaceOrder:_handleOnChainCustomError:${orderRef}`;
-  const log = getLogger(logPrefix);
-  const { chainId } = context;
-
-  try {
-    // The below will throw if:
-    // - the error is not a custom error (ie. the selector is not in the map)
-    // - the error is a custom error, but the parameters are not as expected
-    const { selector, message, blockNumberOrEpoch } =
-      customErrorDecode(returnData);
-    switch (selector) {
-      case "SINGLE_ORDER_NOT_AUTHED":
-      case "PROOF_NOT_AUTHED":
-        // If there's no authorization we delete the order
-        // - One reason could be, because the user CANCELLED the order
-        // - for now it doesn't support more advanced cases where the order is auth during a pre-interaction
-        log.info(
-          `${selector}: Order on safe ${owner} not authed. Deleting order...`
-        );
-        return {
-          result: PollResultCode.DONT_TRY_AGAIN,
-          reason: `${selector}: The owner has not authorized the order`,
-        };
-      case "INTERFACE_NOT_SUPPORTED":
-        log.info(
-          `${selector}: Order on safe ${owner} attempted to use a handler that is not supported. Deleting order...`
-        );
-        return {
-          result: PollResultCode.DONT_TRY_AGAIN,
-          reason: `${selector}: The handler is not supported`,
-        };
-      case "INVALID_FALLBACK_HANDLER":
-        log.info(
-          `${selector}: Order for safe ${owner} where the Safe does not have ExtensibleFallbackHandler set. Deleting order...`
-        );
-        return {
-          result: PollResultCode.DONT_TRY_AGAIN,
-          reason: `${selector}: The safe does not have ExtensibleFallbackHandler set`,
-        };
-      case "SWAP_GUARD_RESTRICTED":
-        log.info(
-          `${selector}: Order for safe ${owner} where the Safe has swap guard enabled. Deleting order...`
-        );
-        return {
-          result: PollResultCode.DONT_TRY_AGAIN,
-          reason: `${selector}: The safe has swap guard enabled`,
-        };
-      // TODO: Add metrics to track this
-      case "ORDER_NOT_VALID":
-      case "POLL_TRY_NEXT_BLOCK":
-        // OrderNotValid: With the revised custom errors, `OrderNotValid` is generally returned when elements
-        // of the data struct are invalid. For example, if the `sellAmount` is zero, or the `validTo` is in
-        // the past.
-        // PollTryNextBlock: The conditional order has signalled that it should be polled again on the next block.
-        log.info(
-          `${selector}: Order on safe ${owner} not valid/signalled to try next block.`
-        );
-        return {
-          result: PollResultCode.TRY_NEXT_BLOCK,
-          reason: `${selector}: ${message}`,
-        };
-      case "POLL_TRY_AT_BLOCK":
-        // The conditional order has signalled that it should be polled again on a specific block.
-        if (!blockNumberOrEpoch) {
-          throw new Error(
-            `Expected blockNumberOrEpoch to be defined for ${selector}`
-          );
-        }
-        return {
-          result: PollResultCode.TRY_ON_BLOCK,
-          blockNumber: blockNumberOrEpoch,
-          reason: `PollTryAtBlock: ${message}`,
-        };
-      case "POLL_TRY_AT_EPOCH":
-        // The conditional order has signalled that it should be polled again on a specific epoch.
-        if (!blockNumberOrEpoch) {
-          throw new Error(
-            `Expected blockNumberOrEpoch to be defined for ${selector}`
-          );
-        }
-        return {
-          result: PollResultCode.TRY_AT_EPOCH,
-          epoch: blockNumberOrEpoch,
-          reason: `PollTryAtEpoch: ${message}`,
-        };
-      case "POLL_NEVER":
-        // The conditional order has signalled that it should never be polled again.
-        return {
-          result: PollResultCode.DONT_TRY_AGAIN,
-          reason: `PollNever: ${message}`,
-        };
-    }
-  } finally {
-    // We use finally here to ensure that we always log the error, even if we hit an unexpected error
-    // Any errors thrown here can _ONLY_ come from non-compliant interfaces (ie. bad revert ABI encoding).
-    // We log the error, and return a DONT_TRY_AGAIN result.
-    // TODO: Add metrics to track this
-    log.debug(
-      `Contract returned non-interface compliant revert via getTradeableOrderWithSignature. Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${to}&rawFunctionInput=${data}`
-    );
-    return {
-      result: PollResultCode.DONT_TRY_AGAIN,
-      reason: "Non-compliant interface",
     };
   }
 }
