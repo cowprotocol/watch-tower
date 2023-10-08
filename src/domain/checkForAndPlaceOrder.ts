@@ -273,19 +273,6 @@ async function _processConditionalOrder(
         pollingOnChainDurationSeconds,
         pollingOnChainChecksTotal
       );
-      const timer = pollingOnChainDurationSeconds
-        .labels(...metricLabels)
-        .startTimer();
-      pollResult = await _pollLegacy(
-        context,
-        owner,
-        conditionalOrder,
-        proof,
-        offchainInput,
-        orderRef
-      );
-      timer();
-      totalPollingOnChainChecks.labels(...metricLabels).inc();
     }
 
     // Error polling
