@@ -405,7 +405,7 @@ async function processBlock(
   events: ConditionalOrderCreatedEvent[],
   blockNumberOverride?: number,
   blockTimestampOverride?: number
-): Promise<ethers.providers.Block> {
+) {
   const { provider, chainId } = context;
   const timer = processBlockDurationSeconds
     .labels(context.chainId.toString())
@@ -454,8 +454,6 @@ async function processBlock(
   if (hasErrors) {
     throw new Error("Errors found in processing block");
   }
-
-  return block;
 }
 
 function pollContractForEvents(
