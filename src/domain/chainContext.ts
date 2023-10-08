@@ -331,7 +331,7 @@ export class ChainContext {
       // sleep for 5 seconds
       await asyncSleep(WATCHDOG_FREQUENCY);
       const now = Math.floor(new Date().getTime() / 1000);
-      const timeElapsed = now - (lastBlockReceived?.timestamp ?? 0);
+      const timeElapsed = now - lastBlockReceived.timestamp;
 
       log.debug(`Time since last block processed: ${timeElapsed}ms`);
 
