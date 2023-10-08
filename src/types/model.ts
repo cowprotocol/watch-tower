@@ -5,7 +5,7 @@ import { BytesLike } from "ethers";
 import type { ConditionalOrderCreatedEvent } from "./generated/ComposableCoW";
 import { ConditionalOrderParams, PollResult } from "@cowprotocol/cow-sdk";
 import { DBService } from "../utils";
-import { totalActiveOrders, totalActiveOwners } from "../utils/metrics";
+import { activeOrdersTotal, activeOwnersTotal } from "../utils/metrics";
 
 // Standardise the storage key
 const LAST_NOTIFIED_ERROR_STORAGE_KEY = "LAST_NOTIFIED_ERROR";
@@ -160,12 +160,12 @@ export class Registry {
       .catch(() => null);
 
     // Return registry (on its latest version)
-    totalActiveOwners.labels(network).set(ownerOrders.size);
+    activeOwnersTotal.labels(network).set(ownerOrders.size);
     const numOrders = Array.from(ownerOrders.values()).reduce(
       (acc, o) => acc + o.size,
       0
     );
-    totalActiveOrders.labels(network).set(numOrders);
+    activeOrdersTotal.labels(network).set(numOrders);
 
     return new Registry(
       ownerOrders,

@@ -102,37 +102,37 @@ export const processBlockDurationSeconds = new client.Histogram({
   labelNames: ["chain_id"],
 });
 
-export const totalActiveOwners = new client.Gauge({
+export const activeOwnersTotal = new client.Gauge({
   name: "watch_tower_active_owners_total",
   help: "Total number of owners with active orders",
   labelNames: ["chain_id"],
 });
 
-export const totalActiveOrders = new client.Gauge({
+export const activeOrdersTotal = new client.Gauge({
   name: "watch_tower_active_orders_total",
   help: "Total number of active orders",
   labelNames: ["chain_id"],
 });
 
-export const totalOrderBookDiscreteOrders = new client.Counter({
+export const orderBookDiscreteOrdersTotal = new client.Counter({
   name: "watch_tower_orderbook_discrete_orders_total",
   help: "Total number of discrete orders posted to the orderbook",
   labelNames: ["chain_id", "handler", "owner", "id"],
 });
 
-export const totalOrderBookErrors = new client.Counter({
+export const orderBookErrorsTotal = new client.Counter({
   name: "watch_tower_orderbook_errors_total",
   help: "Total number of errors when interacting with the orderbook",
   labelNames: ["chain_id", "handler", "owner", "id", "status", "error"],
 });
 
-export const totalPollingRuns = new client.Counter({
+export const pollingRunsTotal = new client.Counter({
   name: "watch_tower_polling_runs_total",
   help: "Total number of polling runs",
   labelNames: ["chain_id", "handler", "owner", "id"],
 });
 
-export const totalPollingOnChainChecks = new client.Counter({
+export const pollingOnChainChecksTotal = new client.Counter({
   name: "watch_tower_polling_onchain_checks_total",
   help: "Total number of on-chain hint checks",
   labelNames: ["chain_id", "handler", "owner", "id"],
@@ -144,19 +144,19 @@ export const pollingOnChainDurationSeconds = new client.Histogram({
   labelNames: ["chain_id", "handler", "owner", "id"],
 });
 
-export const totalPollingOnChainInvalidInterfaces = new client.Counter({
+export const pollingOnChainInvalidInterfacesTotal = new client.Counter({
   name: "watch_tower_polling_onchain_invalid_interface_total",
   help: "Total number of invalid on-chain hint interface",
   labelNames: ["chain_id", "handler", "owner", "id"],
 });
 
-export const totalPollingOnChainEthersErrors = new client.Counter({
+export const pollingOnChainEthersErrorsTotal = new client.Counter({
   name: "watch_tower_polling_onchain_ethers_errors_total",
   help: "Total number of ethers on-chain hint errors",
   labelNames: ["chain_id", "handler", "owner", "id"],
 });
 
-export const totalPollingUnexpectedErrors = new client.Counter({
+export const pollingUnexpectedErrorsTotal = new client.Counter({
   name: "watch_tower_polling_unexpected_errors_total",
   help: "Total number of unexpected polling errors",
   labelNames: ["chain_id", "handler", "owner", "id"],

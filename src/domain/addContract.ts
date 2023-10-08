@@ -28,8 +28,8 @@ import {
   merkleRootTotal,
   newContractsTotal,
   singleOrdersTotal,
-  totalActiveOrders,
-  totalActiveOwners,
+  activeOrdersTotal,
+  activeOwnersTotal,
 } from "../utils/metrics";
 
 /**
@@ -234,7 +234,7 @@ export function add(
         orders: new Map(),
         composableCow,
       });
-      totalActiveOrders.labels(registry.network).inc();
+      activeOrdersTotal.labels(registry.network).inc();
     }
   } else {
     log.info(`Adding conditional order to new owner contract ${owner}:`, {
@@ -247,8 +247,8 @@ export function add(
       owner,
       new Set([{ tx, params, proof, orders: new Map(), composableCow }])
     );
-    totalActiveOwners.labels(registry.network).inc();
-    totalActiveOrders.labels(registry.network).inc();
+    activeOwnersTotal.labels(registry.network).inc();
+    activeOrdersTotal.labels(registry.network).inc();
   }
 }
 

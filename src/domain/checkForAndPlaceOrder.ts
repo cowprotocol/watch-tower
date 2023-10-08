@@ -31,14 +31,14 @@ import {
 import { ChainContext } from "./chainContext";
 import {
   pollingOnChainDurationSeconds,
-  totalActiveOrders,
-  totalActiveOwners,
-  totalOrderBookDiscreteOrders,
-  totalOrderBookErrors,
-  totalPollingOnChainChecks,
-  totalPollingRuns,
-  totalPollingUnexpectedErrors,
-  totalPollingOnChainEthersErrors,
+  activeOrdersTotal,
+  activeOwnersTotal,
+  orderBookDiscreteOrdersTotal,
+  orderBookErrorsTotal,
+  pollingOnChainChecksTotal,
+  pollingRunsTotal,
+  pollingUnexpectedErrorsTotal,
+  pollingOnChainEthersErrorsTotal,
   measureTime,
 } from "../utils/metrics";
 
@@ -189,7 +189,7 @@ export async function checkForAndPlaceOrder(
       const action = deleted ? "Stop Watching" : "Failed to stop watching";
 
       log.debug(`${action} conditional order from TX ${conditionalOrder.tx}`);
-      totalActiveOrders.labels(chainId.toString()).dec();
+      activeOrdersTotal.labels(chainId.toString()).dec();
     }
   }
 
@@ -198,7 +198,7 @@ export async function checkForAndPlaceOrder(
   for (const [owner, conditionalOrders] of Array.from(ownerOrders.entries())) {
     if (conditionalOrders.size === 0) {
       ownerOrders.delete(owner);
-      totalActiveOwners.labels(chainId.toString()).dec();
+      activeOwnersTotal.labels(chainId.toString()).dec();
     }
   }
 
@@ -231,7 +231,7 @@ async function _processConditionalOrder(
   const id = ConditionalOrderSDK.leafToId(conditionalOrder.params);
   const metricLabels = [chainId.toString(), handler, owner, id];
   try {
-    totalPollingRuns.labels(...metricLabels).inc();
+    pollingRunsTotal.labels(...metricLabels).inc();
 
     const proof = conditionalOrder.proof
       ? conditionalOrder.proof.path.map((c) => c.toString())
@@ -271,7 +271,7 @@ async function _processConditionalOrder(
           ),
         metricLabels,
         pollingOnChainDurationSeconds,
-        totalPollingOnChainChecks
+        pollingOnChainChecksTotal
       );
       const timer = pollingOnChainDurationSeconds
         .labels(...metricLabels)
@@ -342,7 +342,7 @@ async function _processConditionalOrder(
       signature,
     };
   } catch (e: any) {
-    totalPollingUnexpectedErrors.labels(...metricLabels).inc();
+    pollingUnexpectedErrorsTotal.labels(...metricLabels).inc();
     return {
       result: PollResultCode.UNEXPECTED_ERROR,
       error: e,
@@ -431,7 +431,7 @@ async function _placeOrder(params: {
     log.debug(`Order`, postOrder);
     if (!dryRun) {
       const orderUid = await orderBook.sendOrder(postOrder);
-      totalOrderBookDiscreteOrders.labels(...metricLabels).inc();
+      orderBookDiscreteOrdersTotal.labels(...metricLabels).inc();
       log.info(`API response`, { orderUid });
     }
   } catch (error: any) {
@@ -492,7 +492,7 @@ function _handleOrderBookError(
   metricLabels: string[]
 ): Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors {
   const apiError = body?.errorType as OrderPostError.errorType;
-  totalOrderBookErrors
+  orderBookErrorsTotal
     .labels(...metricLabels, status.toString(), apiError)
     .inc();
   if (status === 400) {
@@ -598,7 +598,7 @@ async function _pollLegacy(
     // We can only get here from some provider / ethers failure. As the contract hasn't had it's say
     // we will defer to try again.
     log.error(`${logPrefix} ethers/call Unexpected error`, error);
-    totalPollingOnChainEthersErrors.labels(...metricLabels).inc();
+    pollingOnChainEthersErrorsTotal.labels(...metricLabels).inc();
     return {
       result: PollResultCode.TRY_NEXT_BLOCK,
       reason:
