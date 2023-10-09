@@ -116,66 +116,64 @@ export function composableCowContract(
  * correctly.
  */
 export function parseCustomError(revertData: string): ParsedCustomError {
-  try {
-    // If the revert data is not at least 4 bytes long (8 hex characters, 0x prefixed), it cannot contain a selector
-    if (revertData.length < 10) {
-      throw new Error("Revert data too short to contain a selector");
-    }
+  // If the revert data is not at least 4 bytes long (8 hex characters, 0x prefixed), it cannot contain a selector
+  if (revertData.length < 10) {
+    throw new Error("Revert data too short to contain a selector");
+  }
 
-    const rawSelector = revertData.slice(0, 10);
+  const rawSelector = revertData.slice(0, 10);
 
-    // If the revert data does not contain a selector from the CUSTOM_ERROR_SELECTOR_MAP, it is a non-compliant
-    // interface and we should signal to drop it.
-    if (!(revertData.slice(0, 10) in CUSTOM_ERROR_SELECTOR_MAP)) {
-      throw new Error(
-        "On-chain hint / custom error not compliant with ComposableCoW interface"
-      );
-    }
-
-    // Below here, the only throw that can happen is if the revert data contains a selector that is in the
-    // CUSTOM_ERROR_SELECTOR_MAP, but the it's parameters are not ABI-encoded correctly.
-
-    const selector = CUSTOM_ERROR_SELECTOR_MAP[rawSelector];
-    const fragment = ethers.utils.Fragment.fromString(
-      "error " + CUSTOM_ERROR_ABI_MAP[selector]
+  // If the revert data does not contain a selector from the CUSTOM_ERROR_SELECTOR_MAP, it is a non-compliant
+  // interface and we should signal to drop it.
+  if (!(revertData.slice(0, 10) in CUSTOM_ERROR_SELECTOR_MAP)) {
+    throw new Error(
+      "On-chain hint / custom error not compliant with ComposableCoW interface"
     );
-    const iface = new ethers.utils.Interface([fragment]);
+  }
 
-    switch (selector) {
-      case CustomErrorSelectors.PROOF_NOT_AUTHED:
-      case CustomErrorSelectors.SINGLE_ORDER_NOT_AUTHED:
-      case CustomErrorSelectors.INTERFACE_NOT_SUPPORTED:
-      case CustomErrorSelectors.INVALID_FALLBACK_HANDLER:
-      case CustomErrorSelectors.INVALID_HANDLER:
-      case CustomErrorSelectors.SWAP_GUARD_RESTRICTED:
-        return { selector };
-      case CustomErrorSelectors.ORDER_NOT_VALID:
-      case CustomErrorSelectors.POLL_TRY_NEXT_BLOCK:
-      case CustomErrorSelectors.POLL_NEVER:
-        const [message] = iface.decodeErrorResult(fragment, revertData);
-        return { selector, message };
-      case CustomErrorSelectors.POLL_TRY_AT_BLOCK:
-      case CustomErrorSelectors.POLL_TRY_AT_EPOCH:
-        const [blockNumberOrEpoch, msg] = iface.decodeErrorResult(
-          fragment,
-          revertData
-        );
+  // Below here, the only throw that can happen is if the revert data contains a selector that is in the
+  // CUSTOM_ERROR_SELECTOR_MAP, but the it's parameters are not ABI-encoded correctly.
 
-        // It is reasonable to expect that the block number or epoch is bound by
-        // uint32. It is therefore safe to throw if the value is outside of that
-        // for javascript's number type.
-        if (blockNumberOrEpoch.gt(MAX_UINT32)) {
-          throw new Error("Block number or epoch out of bounds");
-        }
+  const selector = CUSTOM_ERROR_SELECTOR_MAP[rawSelector];
+  const fragment = ethers.utils.Fragment.fromString(
+    "error " + CUSTOM_ERROR_ABI_MAP[selector]
+  );
+  const iface = new ethers.utils.Interface([fragment]);
 
-        return {
-          selector,
-          message: msg as string,
-          blockNumberOrEpoch: (blockNumberOrEpoch as BigNumber).toNumber(),
-        };
-    }
-  } catch (err) {
-    throw err;
+  switch (selector) {
+    case CustomErrorSelectors.PROOF_NOT_AUTHED:
+    case CustomErrorSelectors.SINGLE_ORDER_NOT_AUTHED:
+    case CustomErrorSelectors.INTERFACE_NOT_SUPPORTED:
+    case CustomErrorSelectors.INVALID_FALLBACK_HANDLER:
+    case CustomErrorSelectors.INVALID_HANDLER:
+    case CustomErrorSelectors.SWAP_GUARD_RESTRICTED:
+      return { selector };
+    case CustomErrorSelectors.ORDER_NOT_VALID:
+    case CustomErrorSelectors.POLL_TRY_NEXT_BLOCK:
+    case CustomErrorSelectors.POLL_NEVER:
+      const [message] = iface.decodeErrorResult(fragment, revertData) as [
+        string
+      ];
+      return { selector, message };
+    case CustomErrorSelectors.POLL_TRY_AT_BLOCK:
+    case CustomErrorSelectors.POLL_TRY_AT_EPOCH:
+      const [blockNumberOrEpoch, msg] = iface.decodeErrorResult(
+        fragment,
+        revertData
+      ) as [BigNumber, string];
+
+      // It is reasonable to expect that the block number or epoch is bound by
+      // uint32. It is therefore safe to throw if the value is outside of that
+      // for javascript's number type.
+      if (blockNumberOrEpoch.gt(MAX_UINT32)) {
+        throw new Error("Block number or epoch out of bounds");
+      }
+
+      return {
+        selector,
+        message: msg,
+        blockNumberOrEpoch: blockNumberOrEpoch.toNumber(),
+      };
   }
 }
 
