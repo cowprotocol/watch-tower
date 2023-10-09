@@ -66,16 +66,10 @@ export const CUSTOM_ERROR_ABI_MAP: Record<CustomErrorSelectors, string> = {
 };
 
 // Process the CUSTOM_ERROR_ABI_MAP to change the values to the ABI-encoded selectors
-const CUSTOM_ERROR_SELECTOR_MAP: Record<string, CustomErrorSelectors> = {};
+const CUSTOM_ERROR_SELECTOR_MAP = generateCustomErrorSelectorMap();
 
-export const abiToSelector = (abi: string): string =>
-  ethers.utils.id(abi).slice(0, 10);
-
-for (const errorType of Object.keys(
-  CUSTOM_ERROR_ABI_MAP
-) as CustomErrorSelectors[]) {
-  const selector = abiToSelector(CUSTOM_ERROR_ABI_MAP[errorType]);
-  CUSTOM_ERROR_SELECTOR_MAP[selector] = errorType;
+export function abiToSelector(abi: string) {
+  return ethers.utils.id(abi).slice(0, 10);
 }
 
 /**
@@ -292,4 +286,20 @@ export function handleOnChainCustomError(params: {
       reason: "Order returned a non-compliant (invalid/erroneous) revert hint",
     };
   }
+}
+
+function generateCustomErrorSelectorMap(): Record<
+  string,
+  CustomErrorSelectors
+> {
+  const CUSTOM_ERROR_SELECTOR_MAP: Record<string, CustomErrorSelectors> = {};
+
+  for (const errorType of Object.keys(
+    CUSTOM_ERROR_ABI_MAP
+  ) as CustomErrorSelectors[]) {
+    const selector = abiToSelector(CUSTOM_ERROR_ABI_MAP[errorType]);
+    CUSTOM_ERROR_SELECTOR_MAP[selector] = errorType;
+  }
+
+  return CUSTOM_ERROR_SELECTOR_MAP;
 }
