@@ -6,6 +6,7 @@ import { getLogger } from "./logging";
 import { DBService } from "./db";
 import { Registry } from "../types";
 import { version, name, description } from "../../package.json";
+import { ChainContext } from "../domain";
 
 export class ApiService {
   protected port: number;
@@ -32,6 +33,10 @@ export class ApiService {
     this.app.use(express.urlencoded({ extended: true }));
     this.app.get("/", (_req: Request, res: Response) => {
       res.send("🐮 Moooo!");
+    });
+    this.app.get("/health", async (_req: Request, res: Response) => {
+      const health = ChainContext.health;
+      res.status(health.overallHealth ? 200 : 503).send(health);
     });
     this.app.use("/api", router);
   }

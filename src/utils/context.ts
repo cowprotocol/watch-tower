@@ -113,3 +113,11 @@ export function sendSlack(message: string): boolean {
   });
   return true;
 }
+
+export function isRunningInKubernetesPod(): boolean {
+  // Check if the standard Kubernetes environment variables are set
+  return (
+    process.env.KUBERNETES_SERVICE_HOST !== undefined &&
+    process.env.KUBERNETES_SERVICE_PORT !== undefined
+  );
+}

@@ -1,6 +1,6 @@
 import Slack = require("node-slack");
 
-import { BytesLike } from "ethers";
+import { BytesLike, ethers } from "ethers";
 
 import type { ConditionalOrderCreatedEvent } from "./generated/ComposableCoW";
 import { ConditionalOrderParams, PollResult } from "@cowprotocol/cow-sdk";
@@ -84,6 +84,12 @@ export type ConditionalOrder = {
   };
 };
 
+export interface RegistryBlock {
+  number: number;
+  timestamp: number;
+  hash: string;
+}
+
 /**
  * Models the state between executions.
  * Contains a map of owners to conditional orders and the last time we sent an error.
@@ -94,7 +100,7 @@ export class Registry {
   storage: DBService;
   network: string;
   lastNotifiedError: Date | null;
-  lastProcessedBlock: number | null;
+  lastProcessedBlock: RegistryBlock | null;
 
   /**
    * Instantiates a registry.
@@ -107,7 +113,7 @@ export class Registry {
     storage: DBService,
     network: string,
     lastNotifiedError: Date | null,
-    lastProcessedBlock: number | null
+    lastProcessedBlock: RegistryBlock | null
   ) {
     this.ownerOrders = ownerOrders;
     this.storage = storage;
@@ -154,8 +160,9 @@ export class Registry {
 
     const lastProcessedBlock = await db
       .get(getNetworkStorageKey(LAST_PROCESSED_BLOCK_STORAGE_KEY, network))
-      .then((blockNumber: string | number) =>
-        blockNumber ? Number(blockNumber) : genesisBlockNumber
+      .then(
+        (block: string): RegistryBlock =>
+          block ? JSON.parse(block) : { number: genesisBlockNumber - 1 }
       )
       .catch(() => null);
 
@@ -218,7 +225,7 @@ export class Registry {
     if (this.lastProcessedBlock !== null) {
       batch.put(
         getNetworkStorageKey(LAST_PROCESSED_BLOCK_STORAGE_KEY, this.network),
-        this.lastProcessedBlock.toString()
+        JSON.stringify(this.lastProcessedBlock)
       );
     } else {
       batch.del(
@@ -297,4 +304,14 @@ function parseConditionalOrders(
 
 function createNewOrderMap(): Map<Owner, Set<ConditionalOrder>> {
   return new Map<Owner, Set<ConditionalOrder>>();
+}
+
+export function blockToRegistryBlock(
+  block: ethers.providers.Block
+): RegistryBlock {
+  return {
+    number: block.number,
+    timestamp: block.timestamp,
+    hash: block.hash,
+  };
 }
