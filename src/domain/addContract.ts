@@ -44,14 +44,14 @@ export async function addContract(
   event: ConditionalOrderCreatedEvent
 ) {
   const { chainId } = context;
-  await measureTime(
-    () => _addContract(context, event),
-    [chainId.toString()],
-    addContractsRunDurationSeconds,
-    addContractRunsTotal,
-    handleExecutionError,
-    addContractsErrorsTotal
-  );
+  await measureTime({
+    action: () => _addContract(context, event),
+    labelValues: [chainId.toString()],
+    durationMetric: addContractsRunDurationSeconds,
+    totalRunsMetric: addContractRunsTotal,
+    errorHandler: handleExecutionError,
+    errorMetric: addContractsErrorsTotal,
+  });
 }
 
 async function _addContract(

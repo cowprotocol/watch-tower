@@ -259,8 +259,8 @@ async function _processConditionalOrder(
       // Unsupported Order Type (unknown handler)
       // For now, fallback to legacy behavior
       // TODO: Decide in the future what to do. Probably, move the error handling to the SDK and kill the poll Legacy
-      pollResult = await measureTime(
-        () =>
+      pollResult = await measureTime({
+        action: () =>
           _pollLegacy(
             context,
             owner,
@@ -269,10 +269,15 @@ async function _processConditionalOrder(
             offchainInput,
             orderRef
           ),
-        metricLabels,
-        pollingOnChainDurationSeconds,
-        pollingOnChainChecksTotal
-      );
+        labelValues: metricLabels,
+        durationMetric: pollingOnChainDurationSeconds,
+        totalRunsMetric: pollingOnChainChecksTotal,
+      });
+    }
+
+    // This should be impossible to reach, but satisfies the compiler
+    if (pollResult === undefined) {
+      throw new Error("Unexpected error: pollResult is undefined");
     }
 
     // Error polling
