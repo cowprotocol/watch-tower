@@ -2,7 +2,6 @@ import {
   setLevel,
   getLogger as getLoggerLogLevel,
   LogLevelNames,
-  Logger,
 } from "loglevel";
 import rootLogger from "loglevel";
 import prefix from "loglevel-plugin-prefix";
@@ -47,7 +46,18 @@ export function initLogging({ logLevel }: { logLevel?: string }) {
   });
 }
 
-export function getLogger(loggerName: string): Logger {
+export interface LoggerWithMethods {
+  trace: (...msg: any[]) => void;
+  debug: (...msg: any[]) => void;
+  info: (...msg: any[]) => void;
+  warn: (...msg: any[]) => void;
+  error: (...msg: any[]) => void;
+}
+
+export function getLogger(
+  loggerName: string,
+  ...args: string[]
+): LoggerWithMethods {
   if (!logLevelOverrides) {
     throw new Error("Logging hasn't been initialized");
   }
@@ -60,7 +70,21 @@ export function getLogger(loggerName: string): Logger {
   if (logLevelOverride) {
     logger.setLevel(logLevelOverride.level);
   }
-  return logger;
+
+  const fmtLogMessage = (args: string[], ...msg: any[]) => {
+    if (args.length) {
+      return [`${args.join(":")}: `, ...msg];
+    }
+    return msg;
+  };
+  const customLogger: LoggerWithMethods = {
+    trace: (...msg: any[]) => logger.trace(...fmtLogMessage(args, ...msg)),
+    debug: (...msg: any[]) => logger.debug(...fmtLogMessage(args, ...msg)),
+    info: (...msg: any[]) => logger.info(...fmtLogMessage(args, ...msg)),
+    warn: (...msg: any[]) => logger.warn(...fmtLogMessage(args, ...msg)),
+    error: (...msg: any[]) => logger.error(...fmtLogMessage(args, ...msg)),
+  };
+  return customLogger;
 }
 
 function setRootLogLevel(level: string) {

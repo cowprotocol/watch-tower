@@ -19,7 +19,7 @@ export async function pollConditionalOrder(
   conditionalOrderParams: ConditionalOrderParams,
   orderRef: string
 ): Promise<PollResult | undefined> {
-  const log = getLogger(`pollConditionalOrder:${orderRef}`);
+  const log = getLogger("pollConditionalOrder:pollConditionalOrder", orderRef);
   const order = ordersFactory.fromParams(conditionalOrderParams);
 
   if (!order) {
