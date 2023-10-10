@@ -310,6 +310,7 @@ export class ChainContext {
 
           // Block height metric
           this.registry.lastProcessedBlock = blockToRegistryBlock(block);
+          this.registry.write();
           blockHeight.labels(chainId.toString()).set(Number(blockNumber));
         } catch {
           log.error(`Error processing block ${blockNumber}`);
