@@ -489,7 +489,7 @@ function _handleOrderBookError(
     .inc();
   if (status === 400) {
     // The order is in the OrderBook, all good :)
-    if (apiError === ApiErrors.DUPLICATE_ORDER) {
+    if (apiError === ApiErrors.DUPLICATED_ORDER) {
       return {
         result: PollResultCode.SUCCESS,
       };
