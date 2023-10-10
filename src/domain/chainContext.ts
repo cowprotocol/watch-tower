@@ -14,7 +14,7 @@ import { ethers } from "ethers";
 import { composableCowContract, DBService, getLogger } from "../utils";
 import {
   blockHeight,
-  blockTime,
+  blockProducingRate,
   eventsProcessedTotal,
   processBlockDurationSeconds,
   reorgDepth,
@@ -244,7 +244,7 @@ export class ChainContext {
         timeLastBlockProcessed = now;
 
         // Set the block time metric
-        blockTime.labels(chainId.toString()).set(_blockTime);
+        blockProducingRate.labels(chainId.toString()).set(_blockTime);
 
         if (blockNumber <= lastBlockReceived) {
           // This may be a re-org, so process the block again

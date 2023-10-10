@@ -46,20 +46,20 @@ export const blockHeight = new client.Gauge({
 });
 
 export const reorgDepth = new client.Gauge({
-  name: "watch_tower_reorg_depth",
-  help: "Depth of the current reorg",
+  name: "watch_tower_latest_reorg_depth",
+  help: "Depth of the last reorg",
   labelNames: ["chain_id"],
 });
 
-export const blockTime = new client.Gauge({
-  name: "watch_tower_block_time_seconds",
+export const blockProducingRate = new client.Gauge({
+  name: "watch_tower_block_producing_rate_seconds",
   help: "Time since last block",
   labelNames: ["chain_id"],
 });
 
 export const eventsProcessedTotal = new client.Counter({
-  name: "watch_tower_events_processed_total",
-  help: "Total number of events processed",
+  name: "watch_tower_order_creation_events_total",
+  help: "Total number of conditional order creation events processed",
   labelNames: ["chain_id"],
 });
 
@@ -69,9 +69,9 @@ export const reorgsTotal = new client.Counter({
   labelNames: ["chain_id"],
 });
 
-export const newContractsTotal = new client.Counter({
-  name: "watch_tower_new_contracts_total",
-  help: "Total number of new contracts",
+export const ownersTotal = new client.Counter({
+  name: "conditional_order_owners_total",
+  help: "Total number of owner contracts",
   labelNames: ["chain_id"],
 });
 
