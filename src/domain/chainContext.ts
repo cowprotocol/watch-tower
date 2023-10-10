@@ -17,6 +17,7 @@ import {
   blockTime,
   eventsProcessedTotal,
   processBlockDurationSeconds,
+  reorgDepth,
   reorgsTotal,
 } from "../utils/metrics";
 
@@ -249,6 +250,9 @@ export class ChainContext {
           // This may be a re-org, so process the block again
           reorgsTotal.labels(chainId.toString()).inc();
           log.info(`Re-org detected, re-processing block ${blockNumber}`);
+          reorgDepth
+            .labels(chainId.toString())
+            .set(lastBlockReceived - blockNumber + 1);
         }
         lastBlockReceived = blockNumber;
 
