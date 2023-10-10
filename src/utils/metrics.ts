@@ -69,8 +69,8 @@ export const reorgsTotal = new client.Counter({
   labelNames: ["chain_id"],
 });
 
-export const contractsTotal = new client.Counter({
-  name: "watch_tower_contracts_total",
+export const ownersTotal = new client.Counter({
+  name: "conditional_order_owners_total",
   help: "Total number of owner contracts",
   labelNames: ["chain_id"],
 });

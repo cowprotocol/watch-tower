@@ -26,7 +26,7 @@ import {
   addContractsRunDurationSeconds,
   measureTime,
   merkleRootTotal,
-  contractsTotal,
+  ownersTotal,
   singleOrdersTotal,
   activeOrdersTotal,
   activeOwnersTotal,
@@ -79,7 +79,7 @@ async function _addContract(
     registry
   );
   if (added) {
-    contractsTotal.labels(context.chainId.toString()).inc();
+    ownersTotal.labels(context.chainId.toString()).inc();
     numContractsAdded++;
   } else {
     log.error(
