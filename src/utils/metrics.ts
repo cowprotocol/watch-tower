@@ -1,15 +1,24 @@
 import client from "prom-client";
 
-export function measureTime<T>(
-  action: () => T,
-  labels: string[],
-  durationMetric: client.Histogram,
-  totalRunsMetric: client.Counter,
-  errorHandler?: (err: any) => T,
-  errorMetric?: client.Counter
-): T {
-  const timer = durationMetric.labels(...labels).startTimer();
-  let result: T;
+export interface MeasureTimeParams<T, U> {
+  action: () => T;
+  labelValues: string[];
+  durationMetric: client.Histogram;
+  totalRunsMetric: client.Counter;
+  errorHandler?: (err: any) => U;
+  errorMetric?: client.Counter;
+}
+
+export function measureTime<T, U>({
+  action,
+  labelValues,
+  durationMetric,
+  totalRunsMetric,
+  errorHandler,
+  errorMetric,
+}: MeasureTimeParams<T, U>): T | U {
+  const timer = durationMetric.labels(...labelValues).startTimer();
+  let result: T | U;
   try {
     result = action();
   } catch (err) {
@@ -21,12 +30,12 @@ export function measureTime<T>(
       throw new Error("errorMetric must be defined if errorHandler is defined");
     }
 
-    errorMetric.labels(...labels).inc();
+    errorMetric.labels(...labelValues).inc();
     result = errorHandler(err);
   } finally {
     timer();
   }
-  totalRunsMetric.labels(...labels).inc();
+  totalRunsMetric.labels(...labelValues).inc();
   return result;
 }
 
