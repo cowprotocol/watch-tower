@@ -295,7 +295,7 @@ export class ChainContext {
           log.info(`Re-org detected, re-processing block ${blockNumber}`);
           reorgDepth
             .labels(chainId.toString())
-            .set(lastBlockReceived - blockNumber + 1);
+            .set(lastBlockReceived.number - blockNumber + 1);
         }
         lastBlockReceived = block;
 
