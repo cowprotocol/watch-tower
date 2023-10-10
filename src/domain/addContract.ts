@@ -58,7 +58,7 @@ async function _addContract(
   context: ChainContext,
   event: ConditionalOrderCreatedEvent
 ) {
-  const log = getLogger("addContract");
+  const log = getLogger("addContract:_addContract");
   const composableCow = ComposableCoW__factory.createInterface();
   const { provider, registry } = context;
   const { transactionHash: tx, blockNumber } = event;
