@@ -100,6 +100,7 @@ describe("handle on-chain custom errors", () => {
     revertData: abiToSelector(
       CUSTOM_ERROR_ABI_MAP[CustomErrorSelectors.SINGLE_ORDER_NOT_AUTHED]
     ),
+    metricLabels: ["chain_id", "handler", "owner", "id"],
   };
 
   it("should pass a known selector correctly", () => {

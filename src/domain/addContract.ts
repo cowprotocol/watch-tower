@@ -1,5 +1,9 @@
-import { toConditionalOrderParams, getLogger } from "../utils";
-import { MetricsService } from "../utils/metrics";
+import {
+  toConditionalOrderParams,
+  getLogger,
+  handleExecutionError,
+  isComposableCowCompatible,
+} from "../utils";
 import { BytesLike, ethers } from "ethers";
 
 import {
@@ -14,17 +18,19 @@ import {
   Registry,
 } from "../types";
 
-import { isComposableCowCompatible, handleExecutionError } from "../utils";
 import { ChainContext } from "./chainContext";
 import { ConditionalOrderParams } from "@cowprotocol/cow-sdk";
-
-const {
-  newOwnerCount,
-  addNewOwnerErrorCount,
-  addContractSingleOrderCount,
-  addContractMerkleRootSetCount,
-  ownersPopulation,
-} = MetricsService;
+import {
+  addContractRunsTotal,
+  addContractsErrorsTotal,
+  addContractsRunDurationSeconds,
+  measureTime,
+  merkleRootTotal,
+  newContractsTotal,
+  singleOrdersTotal,
+  activeOrdersTotal,
+  activeOwnersTotal,
+} from "../utils/metrics";
 
 /**
  * Listens to these events on the `ComposableCoW` contract:
@@ -37,7 +43,15 @@ export async function addContract(
   context: ChainContext,
   event: ConditionalOrderCreatedEvent
 ) {
-  return _addContract(context, event).catch(handleExecutionError);
+  const { chainId } = context;
+  await measureTime({
+    action: () => _addContract(context, event),
+    labelValues: [chainId.toString()],
+    durationMetric: addContractsRunDurationSeconds,
+    totalRunsMetric: addContractRunsTotal,
+    errorHandler: handleExecutionError,
+    errorMetric: addContractsErrorsTotal,
+  });
 }
 
 async function _addContract(
@@ -65,15 +79,12 @@ async function _addContract(
     registry
   );
   if (added) {
-    newOwnerCount.labels(context.chainId.toString()).inc();
+    newContractsTotal.labels(context.chainId.toString()).inc();
     numContractsAdded++;
   } else {
     log.error(
       `Failed to register Smart Order from tx ${tx} on block ${blockNumber}. Error: ${error}`
     );
-    addNewOwnerErrorCount
-      .labels(context.chainId.toString(), "_addContract")
-      .inc();
   }
   hasErrors ||= error;
 
@@ -123,7 +134,7 @@ export async function _registerNewOrder(
         registry
       );
       added = true;
-      addContractSingleOrderCount.labels(registry.network).inc();
+      singleOrdersTotal.labels(registry.network).inc();
     } else if (
       event.topics[0] == composableCow.getEventTopic("MerkleRootSet")
     ) {
@@ -164,7 +175,7 @@ export async function _registerNewOrder(
             registry
           );
           added = true;
-          addContractMerkleRootSetCount.labels(registry.network).inc();
+          merkleRootTotal.labels(registry.network).inc();
         }
       }
     }
@@ -223,6 +234,7 @@ export function add(
         orders: new Map(),
         composableCow,
       });
+      activeOrdersTotal.labels(registry.network).inc();
     }
   } else {
     log.info(`Adding conditional order to new owner contract ${owner}:`, {
@@ -235,7 +247,8 @@ export function add(
       owner,
       new Set([{ tx, params, proof, orders: new Map(), composableCow }])
     );
-    ownersPopulation.labels(registry.network).inc();
+    activeOwnersTotal.labels(registry.network).inc();
+    activeOrdersTotal.labels(registry.network).inc();
   }
 }
 

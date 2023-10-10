@@ -16,6 +16,7 @@ import {
   handleOnChainCustomError,
 } from "../utils";
 import {
+  ConditionalOrder as ConditionalOrderSDK,
   OrderBookApi,
   OrderCreation,
   OrderPostError,
@@ -28,16 +29,18 @@ import {
   formatEpoch,
 } from "@cowprotocol/cow-sdk";
 import { ChainContext } from "./chainContext";
-import { MetricsService } from "../utils/metrics";
-
-const {
-  orderBookOrdersPlaced,
-  orderBookApiErrors,
-  pollingOnChainChecks,
-  pollingOnChainTimer,
-  pollingUnexpectedErrors,
-  pollingChecks,
-} = MetricsService;
+import {
+  pollingOnChainDurationSeconds,
+  activeOrdersTotal,
+  activeOwnersTotal,
+  orderBookDiscreteOrdersTotal,
+  orderBookErrorsTotal,
+  pollingOnChainChecksTotal,
+  pollingRunsTotal,
+  pollingUnexpectedErrorsTotal,
+  pollingOnChainEthersErrorsTotal,
+  measureTime,
+} from "../utils/metrics";
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
 
@@ -186,6 +189,7 @@ export async function checkForAndPlaceOrder(
       const action = deleted ? "Stop Watching" : "Failed to stop watching";
 
       log.debug(`${action} conditional order from TX ${conditionalOrder.tx}`);
+      activeOrdersTotal.labels(chainId.toString()).dec();
     }
   }
 
@@ -194,6 +198,7 @@ export async function checkForAndPlaceOrder(
   for (const [owner, conditionalOrders] of Array.from(ownerOrders.entries())) {
     if (conditionalOrders.size === 0) {
       ownerOrders.delete(owner);
+      activeOwnersTotal.labels(chainId.toString()).dec();
     }
   }
 
@@ -219,11 +224,14 @@ async function _processConditionalOrder(
   orderRef: string
 ): Promise<PollResult> {
   const { provider, orderBook, dryRun, chainId } = context;
+  const { handler } = conditionalOrder.params;
   const log = getLogger(
     `checkForAndPlaceOrder:_processConditionalOrder:${orderRef}`
   );
+  const id = ConditionalOrderSDK.leafToId(conditionalOrder.params);
+  const metricLabels = [chainId.toString(), handler, owner, id];
   try {
-    pollingChecks.labels(chainId.toString()).inc();
+    pollingRunsTotal.labels(...metricLabels).inc();
 
     const proof = conditionalOrder.proof
       ? conditionalOrder.proof.path.map((c) => c.toString())
@@ -251,17 +259,25 @@ async function _processConditionalOrder(
       // Unsupported Order Type (unknown handler)
       // For now, fallback to legacy behavior
       // TODO: Decide in the future what to do. Probably, move the error handling to the SDK and kill the poll Legacy
-      const timer = pollingOnChainTimer.labels(chainId.toString()).startTimer();
-      pollResult = await _pollLegacy(
-        context,
-        owner,
-        conditionalOrder,
-        proof,
-        offchainInput,
-        orderRef
-      );
-      timer();
-      pollingOnChainChecks.labels(chainId.toString()).inc();
+      pollResult = await measureTime({
+        action: () =>
+          _pollLegacy(
+            context,
+            owner,
+            conditionalOrder,
+            proof,
+            offchainInput,
+            orderRef
+          ),
+        labelValues: metricLabels,
+        durationMetric: pollingOnChainDurationSeconds,
+        totalRunsMetric: pollingOnChainChecksTotal,
+      });
+    }
+
+    // This should be impossible to reach, but satisfies the compiler
+    if (pollResult === undefined) {
+      throw new Error("Unexpected error: pollResult is undefined");
     }
 
     // Error polling
@@ -292,6 +308,7 @@ async function _processConditionalOrder(
         blockTimestamp,
         orderRef,
         dryRun,
+        metricLabels,
       });
 
       // In case of error, return early
@@ -317,7 +334,7 @@ async function _processConditionalOrder(
       signature,
     };
   } catch (e: any) {
-    pollingUnexpectedErrors.labels(chainId.toString()).inc();
+    pollingUnexpectedErrorsTotal.labels(...metricLabels).inc();
     return {
       result: PollResultCode.UNEXPECTED_ERROR,
       error: e,
@@ -379,9 +396,17 @@ async function _placeOrder(params: {
   orderRef: string;
   blockTimestamp: number;
   dryRun: boolean;
+  metricLabels: string[];
 }): Promise<Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors> {
-  const { orderUid, order, orderBook, orderRef, blockTimestamp, dryRun } =
-    params;
+  const {
+    orderUid,
+    order,
+    orderBook,
+    orderRef,
+    blockTimestamp,
+    dryRun,
+    metricLabels,
+  } = params;
   const log = getLogger(`checkForAndPlaceOrder:_placeOrder:${orderRef}`);
   const { chainId } = orderBook.context;
   try {
@@ -398,7 +423,7 @@ async function _placeOrder(params: {
     log.debug(`Order`, postOrder);
     if (!dryRun) {
       const orderUid = await orderBook.sendOrder(postOrder);
-      orderBookOrdersPlaced.labels(chainId.toString()).inc();
+      orderBookDiscreteOrdersTotal.labels(...metricLabels).inc();
       log.info(`API response`, { orderUid });
     }
   } catch (error: any) {
@@ -411,8 +436,8 @@ async function _placeOrder(params: {
         status,
         body,
         error,
-        chainId,
-        blockTimestamp
+        blockTimestamp,
+        metricLabels
       );
       const isSuccess = handleErrorResult.result === PollResultCode.SUCCESS;
 
@@ -455,12 +480,12 @@ function _handleOrderBookError(
   status: any,
   body: any,
   error: any,
-  chainId: SupportedChainId,
-  blockTimestamp: number
+  blockTimestamp: number,
+  metricLabels: string[]
 ): Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors {
   const apiError = body?.errorType as OrderPostError.errorType;
-  orderBookApiErrors
-    .labels(chainId.toString(), status.toString(), apiError)
+  orderBookErrorsTotal
+    .labels(...metricLabels, status.toString(), apiError)
     .inc();
   if (status === 400) {
     // The order is in the OrderBook, all good :)
@@ -512,6 +537,7 @@ async function _pollLegacy(
   const { contract, multicall, chainId } = context;
   const logPrefix = `checkForAndPlaceOrder:_pollLegacy:${orderRef}`;
   const log = getLogger(logPrefix);
+  const { handler } = conditionalOrder.params;
   // as we going to use multicall, with `aggregate3Value`, there is no need to do any simulation as the
   // calls are guaranteed to pass, and will return the results, or the reversion within the ABI-encoded data.
   // By not using `populateTransaction`, we avoid an `eth_estimateGas` RPC call.
@@ -520,6 +546,8 @@ async function _pollLegacy(
     "getTradeableOrderWithSignature",
     [owner, conditionalOrder.params, offchainInput, proof]
   );
+  const id = ConditionalOrderSDK.leafToId(conditionalOrder.params);
+  const metricLabels = [chainId.toString(), owner, handler, id];
 
   try {
     const lowLevelCall = await multicall.callStatic.aggregate3Value([
@@ -556,12 +584,13 @@ async function _pollLegacy(
       target,
       callData,
       revertData: returnData,
+      metricLabels,
     });
   } catch (error: any) {
     // We can only get here from some provider / ethers failure. As the contract hasn't had it's say
     // we will defer to try again.
-    // TODO: Add metrics to track this
     log.error(`${logPrefix} ethers/call Unexpected error`, error);
+    pollingOnChainEthersErrorsTotal.labels(...metricLabels).inc();
     return {
       result: PollResultCode.TRY_NEXT_BLOCK,
       reason:
