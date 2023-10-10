@@ -21,7 +21,7 @@ import {
 } from "../utils";
 import {
   blockHeight,
-  blockTime,
+  blockProducingRate,
   eventsProcessedTotal,
   processBlockDurationSeconds,
   reorgDepth,
@@ -284,7 +284,7 @@ export class ChainContext {
 
         // Set the block time metric
         const _blockTime = block.timestamp - lastBlockReceived.timestamp;
-        blockTime.labels(chainId.toString()).set(_blockTime);
+        blockProducingRate.labels(chainId.toString()).set(_blockTime);
 
         if (
           blockNumber <= lastBlockReceived.number &&
