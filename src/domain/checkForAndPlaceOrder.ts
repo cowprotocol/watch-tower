@@ -236,7 +236,8 @@ async function _processConditionalOrder(
   context: ChainContext,
   orderRef: string
 ): Promise<PollResult> {
-  const { provider, orderBook, dryRun, chainId } = context;
+  const { provider, orderBook, dryRun, chainId, orderBookApiBaseUrls } =
+    context;
   const { handler } = conditionalOrder.params;
   const log = getLogger(
     "checkForAndPlaceOrder:_processConditionalOrder",
@@ -262,6 +263,10 @@ async function _processConditionalOrder(
         blockNumber,
       },
       provider,
+      orderbookApiConfig: {
+        // TODO: Should work after this is merged https://github.com/cowprotocol/cow-sdk/pull/177
+        baseUrls: orderBookApiBaseUrls,
+      },
     };
     let pollResult = await pollConditionalOrder(
       pollParams,

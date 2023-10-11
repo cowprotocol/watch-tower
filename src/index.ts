@@ -100,6 +100,16 @@ const deploymentBlockOption = new Option(
   .env("DEPLOYMENT_BLOCK")
   .argParser(parseIntOption);
 
+const multiOrderBookApiOption = new Option(
+  "--orderBookApi <orderBookApi...>",
+  "Orderbook API base URLs (i.e. https://api.cow.fi/mainnet, https://api.cow.fi/xdai, etc.)"
+).default([]);
+
+const orderBookApiOption = new Option(
+  "--orderBookApi <orderBookApi>",
+  "Orderbook API base URL (i.e. https://api.cow.fi/mainnet)"
+).default(undefined);
+
 async function main() {
   program.name("watch-tower").description(description).version(version);
 
@@ -108,6 +118,7 @@ async function main() {
     .description("Run the watch-tower, monitoring only a single chain")
     .addOption(rpcOption)
     .addOption(deploymentBlockOption)
+    .addOption(orderBookApiOption)
     .addOption(databasePathOption)
     .addOption(logLevelOption)
     .addOption(watchdogTimeoutOption)
@@ -119,7 +130,8 @@ async function main() {
     .addOption(disableNotificationsOption)
     .addOption(slackWebhookOption)
     .action((options) => {
-      const { logLevel } = options;
+      const { logLevel, orderBookApi } = options;
+
       const [pageSize, apiPort, watchdogTimeout, deploymentBlock] = [
         options.pageSize,
         options.apiPort,
@@ -130,7 +142,14 @@ async function main() {
       initLogging({ logLevel });
 
       // Run the watch-tower
-      run({ ...options, deploymentBlock, pageSize, apiPort, watchdogTimeout });
+      run({
+        ...options,
+        deploymentBlock,
+        orderBookApi,
+        pageSize,
+        apiPort,
+        watchdogTimeout,
+      });
     });
 
   program
@@ -142,6 +161,7 @@ async function main() {
     )
     .addOption(multiRpcOption)
     .addOption(multiDeploymentBlockOption)
+    .addOption(multiOrderBookApiOption)
     .addOption(databasePathOption)
     .addOption(logLevelOption)
     .addOption(watchdogTimeoutOption)
@@ -161,7 +181,11 @@ async function main() {
       ].map((value) => Number(value));
 
       initLogging({ logLevel });
-      const { rpc: rpcs, deploymentBlock: deploymentBlocksEnv } = options;
+      const {
+        rpc: rpcs,
+        orderBookApi: orderBookApis,
+        deploymentBlock: deploymentBlocksEnv,
+      } = options;
 
       // Ensure that the deployment blocks are all numbers
       const deploymentBlocks = deploymentBlocksEnv.map((block) =>
@@ -174,6 +198,11 @@ async function main() {
       // Ensure that the RPCs and deployment blocks are the same length
       if (rpcs.length !== deploymentBlocks.length) {
         throw new Error("RPC and deployment blocks must be the same length");
+      }
+
+      // Ensure that the orderBookApis and RPCs are the same length
+      if (orderBookApis.length > 0 && rpcs.length !== orderBookApis.length) {
+        throw new Error("orderBookApi and RPC urls must be the same length");
       }
 
       // Run the watch-tower
