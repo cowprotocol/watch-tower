@@ -57,6 +57,11 @@ async function main() {
         .argParser(parseIntOption)
     )
     .addOption(logLevelOption)
+    .option(
+      "--database-path <databasePath>",
+      "Path to the database",
+      "./database"
+    )
     .action((options) => {
       const { logLevel } = options;
       const [pageSize, apiPort, watchdogTimeout] = [
@@ -88,6 +93,11 @@ async function main() {
     .description("Dump database as JSON to STDOUT")
     .requiredOption("--chain-id <chainId>", "Chain ID to dump")
     .addOption(logLevelOption)
+    .option(
+      "--database-path <databasePath>",
+      "Path to the database",
+      "./database"
+    )
     .action((options) => {
       const { logLevel } = options;
       initLogging({ logLevel });
@@ -109,6 +119,11 @@ async function main() {
     .requiredOption("--block <block>", "Block number to replay")
     .option("--dry-run", "Do not publish orders to the OrderBook API", false)
     .addOption(logLevelOption)
+    .option(
+      "--database-path <databasePath>",
+      "Path to the database",
+      "./database"
+    )
     .action((options) => {
       const { logLevel } = options;
       initLogging({ logLevel });
@@ -129,6 +144,11 @@ async function main() {
     .requiredOption("--tx <tx>", "Transaction hash to replay")
     .option("--dry-run", "Do not publish orders to the OrderBook API", false)
     .addOption(logLevelOption)
+    .option(
+      "--database-path <databasePath>",
+      "Path to the database",
+      "./database"
+    )
     .action((options: ReplayTxOptions) => {
       const { logLevel } = options;
       initLogging({ logLevel });

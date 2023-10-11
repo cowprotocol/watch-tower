@@ -15,8 +15,12 @@ export async function run(options: RunOptions) {
     oneShot,
     disableApi,
     apiPort,
+    databasePath,
     watchdogTimeout,
   } = options;
+
+  // Open the database
+  const storage = DBService.getInstance(databasePath);
 
   // Start the API server if it's not disabled
   if (!disableApi) {
@@ -45,7 +49,7 @@ export async function run(options: RunOptions) {
             rpc,
             deploymentBlock: deploymentBlock[index],
           },
-          DBService.getInstance()
+          storage
         );
       })
     );

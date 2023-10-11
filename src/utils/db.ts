@@ -8,15 +8,9 @@ export type DBLevel = Level<string, string>;
 export class DBService {
   protected db: DBLevel;
 
-  private static _instance: DBService = new DBService();
+  private static _instance: DBService | undefined;
 
   protected constructor(path = DEFAULT_DB_LOCATION) {
-    if (DBService._instance) {
-      throw new Error(
-        "Error: Instantiation failed: Use DBService.getInstance() instead of new."
-      );
-    }
-    DBService._instance = this;
     const options: DatabaseOptions<string, string> = {
       valueEncoding: "json",
       createIfMissing: true,
@@ -26,7 +20,10 @@ export class DBService {
     this.db = new Level<string, string>(path, options);
   }
 
-  public static getInstance(): DBService {
+  public static getInstance(path?: string): DBService {
+    if (!DBService._instance) {
+      DBService._instance = new DBService(path);
+    }
     return DBService._instance;
   }
 

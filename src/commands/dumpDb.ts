@@ -7,9 +7,9 @@ import { DBService, getLogger } from "../utils";
  */
 export async function dumpDb(options: DumpDbOptions) {
   const log = getLogger("commands:dumpDb");
-  const { chainId } = options;
+  const { chainId, databasePath } = options;
 
-  Registry.dump(DBService.getInstance(), chainId.toString())
+  Registry.dump(DBService.getInstance(databasePath), chainId.toString())
     .then((dump) => console.log(dump))
     .catch((error) => {
       log.error("Unexpected thrown when dumping DB", error);

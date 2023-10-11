@@ -1,5 +1,6 @@
 export interface LogOptions {
   logLevel: string;
+  databasePath: string;
 }
 
 export interface WatchtowerOptions extends LogOptions {
