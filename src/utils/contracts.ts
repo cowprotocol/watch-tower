@@ -200,15 +200,17 @@ export function handleOnChainCustomError(params: {
     revertData,
     metricLabels,
   } = params;
-  const logPrefix = `contracts:handleOnChainCustomError:${orderRef}`;
-
   try {
     // The below will throw if:
     // - the error is not a custom error (ie. the selector is not in the map)
     // - the error is a custom error, but the parameters are not as expected
     const parsedCustomError = parseCustomError(revertData);
     const { selector } = parsedCustomError;
-    const log = getLogger(`${logPrefix}:${selector}`);
+    const log = getLogger(
+      "contracts:handleOnChainCustomError",
+      orderRef,
+      selector
+    );
     const msgWithSelector = (message: string): string =>
       `${selector}: ${message}`;
     const dropOrder = (reason: string): PollResultErrors => {
@@ -279,8 +281,7 @@ export function handleOnChainCustomError(params: {
   } catch (err: any) {
     // Any errors thrown here can _ONLY_ come from non-compliant interfaces (ie. bad revert ABI encoding).
     // We log the error, and return a DONT_TRY_AGAIN result.
-    // TODO: Add metrics to track this
-    const log = getLogger(logPrefix);
+    const log = getLogger("contracts:handleOnChainCustomError", orderRef);
     log.debug(
       `Non-compliant interface error thrown${
         err.message ? `: ${err.message}` : ""

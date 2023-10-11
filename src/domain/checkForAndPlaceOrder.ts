@@ -85,13 +85,21 @@ export async function checkForAndPlaceOrder(
   let ownerCounter = 0;
   let orderCounter = 0;
 
-  const logPrefix = `checkForAndPlaceOrder:${chainId}:${blockNumber}`;
-  const log = getLogger(logPrefix);
+  const log = getLogger(
+    "checkForAndPlaceOrder:checkForAndPlaceOrder",
+    chainId.toString(),
+    blockNumber.toString()
+  );
   log.debug(`Total number of orders: ${numOrders}`);
 
   for (const [owner, conditionalOrders] of ownerOrders.entries()) {
     ownerCounter++;
-    const log = getLogger(`${logPrefix}:${ownerCounter}`);
+    const log = getLogger(
+      "checkForAndPlaceOrder:checkForAndPlaceOrder",
+      chainId.toString(),
+      blockNumber.toString(),
+      ownerCounter.toString()
+    );
     const ordersPendingDelete = [];
     // enumerate all the `ConditionalOrder`s for a given owner
     log.debug(
@@ -101,7 +109,12 @@ export async function checkForAndPlaceOrder(
       orderCounter++;
       const ownerRef = `${ownerCounter}.${orderCounter}`;
       const orderRef = `${chainId}:${ownerRef}@${blockNumber}`;
-      const log = getLogger(`${logPrefix}:${ownerRef}}`);
+      const log = getLogger(
+        "checkForAndPlaceOrder:checkForAndPlaceOrder",
+        chainId.toString(),
+        blockNumber.toString(),
+        ownerRef
+      );
       const logOrderDetails = `Processing order from TX ${conditionalOrder.tx} with params:`;
 
       const { result: lastHint } = conditionalOrder.pollResult || {};
@@ -226,7 +239,8 @@ async function _processConditionalOrder(
   const { provider, orderBook, dryRun, chainId } = context;
   const { handler } = conditionalOrder.params;
   const log = getLogger(
-    `checkForAndPlaceOrder:_processConditionalOrder:${orderRef}`
+    "checkForAndPlaceOrder:_processConditionalOrder",
+    orderRef
   );
   const id = ConditionalOrderSDK.leafToId(conditionalOrder.params);
   const metricLabels = [chainId.toString(), handler, owner, id];
@@ -407,7 +421,7 @@ async function _placeOrder(params: {
     dryRun,
     metricLabels,
   } = params;
-  const log = getLogger(`checkForAndPlaceOrder:_placeOrder:${orderRef}`);
+  const log = getLogger("checkForAndPlaceOrder:_placeOrder", orderRef);
   const { chainId } = orderBook.context;
   try {
     const postOrder: OrderCreation = {
@@ -535,8 +549,7 @@ async function _pollLegacy(
   orderRef: string
 ): Promise<PollResult> {
   const { contract, multicall, chainId } = context;
-  const logPrefix = `checkForAndPlaceOrder:_pollLegacy:${orderRef}`;
-  const log = getLogger(logPrefix);
+  const log = getLogger("checkForAndPlaceOrder:_pollLegacy", orderRef);
   const { handler } = conditionalOrder.params;
   // as we going to use multicall, with `aggregate3Value`, there is no need to do any simulation as the
   // calls are guaranteed to pass, and will return the results, or the reversion within the ABI-encoded data.
@@ -589,7 +602,7 @@ async function _pollLegacy(
   } catch (error: any) {
     // We can only get here from some provider / ethers failure. As the contract hasn't had it's say
     // we will defer to try again.
-    log.error(`${logPrefix} ethers/call Unexpected error`, error);
+    log.error(`ethers/call Unexpected error`, error);
     pollingOnChainEthersErrorsTotal.labels(...metricLabels).inc();
     return {
       result: PollResultCode.TRY_NEXT_BLOCK,

@@ -1,7 +1,7 @@
 import { Server } from "http";
 import express, { Request, Response, Router } from "express";
 import { Express } from "express-serve-static-core";
-import promMiddleware from "express-prometheus-middleware";
+import * as client from "prom-client";
 import { getLogger } from "./logging";
 import { DBService } from "./db";
 import { Registry } from "../types";
@@ -23,16 +23,16 @@ export class ApiService {
 
   private bootstrap() {
     this.app.use(express.json());
-    this.app.use(
-      promMiddleware({
-        metricsPath: "/metrics",
-        metricsApp: this.app,
-        collectDefaultMetrics: true,
-      })
-    );
+
+    client.collectDefaultMetrics();
     this.app.use(express.urlencoded({ extended: true }));
     this.app.get("/", (_req: Request, res: Response) => {
       res.send("🐮 Moooo!");
+    });
+    this.app.use("/metrics", (_req: Request, res: Response) => {
+      const { register } = client;
+      res.setHeader("Content-Type", register.contentType);
+      register.metrics().then((data) => res.status(200).send(data));
     });
     this.app.get("/health", async (_req: Request, res: Response) => {
       const health = ChainContext.health;
@@ -51,7 +51,7 @@ export class ApiService {
   async start(): Promise<Server> {
     return await new Promise((resolve, reject) => {
       try {
-        const log = getLogger("api");
+        const log = getLogger("api:start");
         if (this.server?.listening) {
           throw new Error("Server is already running");
         }

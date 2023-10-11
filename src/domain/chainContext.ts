@@ -135,7 +135,7 @@ export class ChainContext {
    */
   public async warmUp(watchdogTimeout: number, oneShot?: boolean) {
     const { provider, chainId } = this;
-    const log = getLogger(`chainContext:warmUp:${chainId}`);
+    const log = getLogger("chainContext:warmUp", chainId.toString());
     const { lastProcessedBlock } = this.registry;
     const { pageSize } = this;
 
@@ -272,7 +272,7 @@ export class ChainContext {
     lastProcessedBlock: ethers.providers.Block
   ) {
     const { provider, registry, chainId } = this;
-    const log = getLogger(`chainContext:runBlockWatcher:${chainId}`);
+    const log = getLogger("chainContext:runBlockWatcher", chainId.toString());
     // Watch for new blocks
     log.info(`👀 Start block watcher`);
     log.debug(`Watchdog timeout: ${watchdogTimeout} seconds`);
@@ -310,6 +310,7 @@ export class ChainContext {
 
           // Block height metric
           this.registry.lastProcessedBlock = blockToRegistryBlock(block);
+          this.registry.write();
           blockHeight.labels(chainId.toString()).set(Number(blockNumber));
         } catch {
           log.error(`Error processing block ${blockNumber}`);
@@ -410,7 +411,11 @@ async function processBlock(
   const timer = processBlockDurationSeconds
     .labels(context.chainId.toString())
     .startTimer();
-  const log = getLogger(`chainContext:processBlock:${chainId}:${block.number}`);
+  const log = getLogger(
+    "chainContext:processBlock",
+    chainId.toString(),
+    block.number.toString()
+  );
 
   // Transaction watcher for adding new contracts
   let hasErrors = false;
