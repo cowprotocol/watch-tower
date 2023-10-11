@@ -18,16 +18,60 @@ const REQUIRED_SELECTORS = [
 
 // Define an enum for the custom error revert hints that can be returned by the ComposableCoW's interfaces.
 export enum CustomErrorSelectors {
+  /**
+   * The owner has not authorized the order
+   */
   PROOF_NOT_AUTHED = "PROOF_NOT_AUTHED",
+
+  /**
+   * The owner has not authorized the order
+   */
   SINGLE_ORDER_NOT_AUTHED = "SINGLE_ORDER_NOT_AUTHED",
+
+  /**
+   * The conditional order didn't pass the swap guard
+   */
   SWAP_GUARD_RESTRICTED = "SWAP_GUARD_RESTRICTED",
+
+  /**
+   * The handler is not supported
+   */
   INVALID_HANDLER = "INVALID_HANDLER",
+
+  /**
+   * The Safe doesn't have the extensible fallback handler set
+   */
   INVALID_FALLBACK_HANDLER = "INVALID_FALLBACK_HANDLER",
+
+  /**
+   * `InterfaceNotSupported` is returned when the contract does not implement the `IERC165` interface
+   */
   INTERFACE_NOT_SUPPORTED = "INTERFACE_NOT_SUPPORTED",
+  /**
+   * `OrderNotValid` is generally returned when elements
+   * of the data struct are invalid. For example, if the `sellAmount` is zero, or the `validTo` is in
+   * the past
+   */
   ORDER_NOT_VALID = "ORDER_NOT_VALID",
+
+  /**
+   * The conditional order has signalled that it should be polled again on the next block
+   */
   POLL_TRY_NEXT_BLOCK = "POLL_TRY_NEXT_BLOCK",
+
+  /**
+   * Stop polling the order
+   */
   POLL_NEVER = "POLL_NEVER",
+
+  /**
+   * The conditional order has signalled that it should be polled again at the given block number
+   */
   POLL_TRY_AT_BLOCK = "POLL_TRY_AT_BLOCK",
+
+  /**
+   * The conditional order has signalled that it should be polled again at the given epoch
+   */
   POLL_TRY_AT_EPOCH = "POLL_TRY_AT_EPOCH",
 }
 
@@ -257,10 +301,6 @@ export function handleOnChainCustomError(params: {
         );
         return dropOrder(`Invalid order: ${reason}`);
       case CustomErrorSelectors.POLL_TRY_NEXT_BLOCK:
-        // OrderNotValid: With the revised custom errors, `OrderNotValid` is generally returned when elements
-        // of the data struct are invalid. For example, if the `sellAmount` is zero, or the `validTo` is in
-        // the past.
-        // PollTryNextBlock: The conditional order has signalled that it should be polled again on the next block.
         log.info(
           `Order on safe ${owner} not valid/signalled to try next block.`
         );
