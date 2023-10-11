@@ -126,7 +126,7 @@ export class Registry {
    * Get the raw conditional orders key from the registry.
    * @param storage The storage service to use
    * @param network The network to dump the registry for
-   * @returns The conditional orders that should also be present in the tenderly version
+   * @returns The conditional orders that are in the registry
    */
   public static async dump(
     storage: DBService,
