@@ -251,6 +251,11 @@ export function handleOnChainCustomError(params: {
         return dropOrder("The conditional order didn't pass the swap guard");
       // TODO: Add metrics to track this
       case CustomErrorSelectors.ORDER_NOT_VALID:
+        const reason = msgWithSelector(parsedCustomError.message);
+        log.info(
+          `Order for ${owner} is invalid. Reason: ${reason}. Deleting order...`
+        );
+        return dropOrder(`Invalid order: ${reason}`);
       case CustomErrorSelectors.POLL_TRY_NEXT_BLOCK:
         // OrderNotValid: With the revised custom errors, `OrderNotValid` is generally returned when elements
         // of the data struct are invalid. For example, if the `sellAmount` is zero, or the `validTo` is in
