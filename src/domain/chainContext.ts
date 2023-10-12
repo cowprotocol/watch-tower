@@ -1,5 +1,5 @@
 import {
-  SingularRunOptions,
+  RunSingleOptions,
   Registry,
   ReplayPlan,
   ConditionalOrderCreatedEvent,
@@ -79,7 +79,7 @@ export class ChainContext {
   multicall: Multicall3;
 
   protected constructor(
-    options: SingularRunOptions,
+    options: RunSingleOptions,
     provider: ethers.providers.Provider,
     chainId: SupportedChainId,
     registry: Registry
@@ -105,7 +105,7 @@ export class ChainContext {
    * @returns A chain context that is monitoring for orders on the chain.
    */
   public static async init(
-    options: SingularRunOptions,
+    options: RunSingleOptions,
     storage: DBService
   ): Promise<ChainContext> {
     const { rpc, deploymentBlock } = options;

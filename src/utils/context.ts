@@ -1,7 +1,7 @@
 import Slack = require("node-slack");
 import { DBService } from "./db";
 
-import { ExecutionContext, Registry, SingularRunOptions } from "../types";
+import { ExecutionContext, Registry, RunSingleOptions } from "../types";
 import { SupportedChainId } from "@cowprotocol/cow-sdk";
 import { getLogger } from "./logging";
 
@@ -12,7 +12,7 @@ let executionContext: ExecutionContext | undefined;
 export async function initContext(
   transactionName: string,
   chainId: SupportedChainId,
-  options: SingularRunOptions
+  options: RunSingleOptions
 ): Promise<ExecutionContext> {
   // Init storage
   const storage = DBService.getInstance();
@@ -37,7 +37,7 @@ export async function initContext(
   return executionContext;
 }
 
-function _getSlack(options: SingularRunOptions): Slack | undefined {
+function _getSlack(options: RunSingleOptions): Slack | undefined {
   if (executionContext) {
     return executionContext?.slack;
   }
