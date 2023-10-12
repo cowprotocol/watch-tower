@@ -210,6 +210,7 @@ async function main() {
         ...options,
         rpcs,
         deploymentBlocks,
+        orderBookApis,
         pageSize,
         apiPort,
         watchdogTimeout,

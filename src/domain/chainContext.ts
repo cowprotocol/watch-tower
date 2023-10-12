@@ -36,6 +36,8 @@ const WATCHDOG_FREQUENCY = 5 * 1000; // 5 seconds
 
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
+export const SDK_BACKOFF_NUM_OF_ATTEMPTS = 5;
+
 enum ChainSync {
   /** The chain is currently in the warm-up phase, synchronising from contract genesis or lastBlockProcessed */
   SYNCING = "SYNCING",
@@ -107,6 +109,9 @@ export class ChainContext {
     this.orderBook = new OrderBookApi({
       chainId: this.chainId,
       baseUrls: this.orderBookApiBaseUrls,
+      backoffOpts: {
+        numOfAttempts: SDK_BACKOFF_NUM_OF_ATTEMPTS,
+      },
     });
 
     this.contract = composableCowContract(this.provider, this.chainId);
