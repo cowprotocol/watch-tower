@@ -1,4 +1,4 @@
-import { RunSingleOptions } from "../types";
+import { RunMultiOptions } from "../types";
 import { getLogger, DBService } from "../utils";
 import { ChainContext } from "../domain";
 import { ApiService } from "../utils/api";
@@ -7,10 +7,17 @@ import { ApiService } from "../utils/api";
  * Run the watch-tower 👀🐮
  * @param options Specified by the CLI / environment for running the watch-tower
  */
-export async function run(options: RunSingleOptions) {
+export async function runMulti(options: RunMultiOptions) {
   const log = getLogger("commands:run");
-  const { oneShot, disableApi, apiPort, databasePath, watchdogTimeout } =
-    options;
+  const {
+    rpcs,
+    deploymentBlocks,
+    oneShot,
+    disableApi,
+    apiPort,
+    databasePath,
+    watchdogTimeout,
+  } = options;
 
   // Open the database
   const storage = DBService.getInstance(databasePath);
@@ -34,11 +41,26 @@ export async function run(options: RunSingleOptions) {
 
   let exitCode = 0;
   try {
-    const chainContext = await ChainContext.init(options, storage);
-    const runPromise = chainContext.warmUp(watchdogTimeout, oneShot);
+    const chainContexts = await Promise.all(
+      rpcs.map((rpc, index) => {
+        return ChainContext.init(
+          {
+            ...options,
+            rpc,
+            deploymentBlock: deploymentBlocks[index],
+          },
+          storage
+        );
+      })
+    );
 
-    // Run the block watcher after warm up for the chain
-    await runPromise;
+    // Run the block watcher after warm up for each chain
+    const runPromises = chainContexts.map(async (context) => {
+      return context.warmUp(watchdogTimeout, oneShot);
+    });
+
+    // Run all the chain contexts
+    await Promise.all(runPromises);
   } catch (error) {
     log.error("Unexpected error thrown when running watchtower", error);
     exitCode = 1;
