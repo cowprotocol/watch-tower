@@ -30,6 +30,7 @@ export interface RunSingleOptions extends RunOptions {
 export interface RunMultiOptions extends RunOptions {
   rpcs: string[];
   deploymentBlocks: number[];
+  orderBookApis: string[];
 }
 
 export interface ReplayBlockOptions extends WatchtowerReplayOptions {

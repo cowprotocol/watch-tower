@@ -28,7 +28,7 @@ import {
   SupportedChainId,
   formatEpoch,
 } from "@cowprotocol/cow-sdk";
-import { ChainContext } from "./chainContext";
+import { ChainContext, SDK_BACKOFF_NUM_OF_ATTEMPTS } from "./chainContext";
 import {
   pollingOnChainDurationSeconds,
   activeOrdersTotal,
@@ -266,6 +266,9 @@ async function _processConditionalOrder(
       orderbookApiConfig: {
         // TODO: Should work after this is merged https://github.com/cowprotocol/cow-sdk/pull/177
         baseUrls: orderBookApiBaseUrls,
+        backoffOpts: {
+          numOfAttempts: SDK_BACKOFF_NUM_OF_ATTEMPTS,
+        },
       },
     };
     let pollResult = await pollConditionalOrder(
