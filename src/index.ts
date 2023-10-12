@@ -10,6 +10,8 @@ import { dumpDb, replayBlock, replayTx, run, runMulti } from "./commands";
 import { initLogging } from "./utils";
 import { version, description } from "../package.json";
 
+const DEFAULT_DATABASE_PATH = "./database";
+
 const logLevelOption = new Option("--log-level <logLevel>", "Log level")
   .default("INFO")
   .env("LOG_LEVEL");
@@ -19,6 +21,7 @@ const pageSizeOption = new Option(
   "Number of historical blocks to fetch per page from eth_getLogs"
 )
   .default("5000")
+  .env("PAGE_SIZE")
   .argParser(parseIntOption);
 
 const disableNotificationsOption = new Option(
@@ -26,56 +29,63 @@ const disableNotificationsOption = new Option(
   "Disable notifications (local logging only)"
 )
   .conflicts(["slackWebhook"])
-  .default(false);
+  .default(false)
+  .env("DISABLE_NOTIFICATIONS");
 
 const dryRunOnlyOption = new Option(
   "--dry-run",
   "Do not publish orders to the OrderBook API"
-).default(false);
+)
+  .default(false)
+  .env("DRY_RUN");
 
-const disableApiOption = new Option(
-  "--disable-api",
-  "Disable the REST API"
-).default(false);
+const disableApiOption = new Option("--disable-api", "Disable the REST API")
+  .default(false)
+  .env("DISABLE_API");
 
 const apiPortOption = new Option(
   "--api-port <apiPort>",
   "Port for the REST API"
 )
   .default("8080")
+  .env("API_PORT")
   .argParser(parseIntOption);
 
 const oneShotOption = new Option(
   "--one-shot",
   "Run the watch-tower once and exit"
-).default(false);
+)
+  .default(false)
+  .env("ONE_SHOT");
 
 const slackWebhookOption = new Option(
   "--slack-webhook <slackWebhook>",
   "Slack webhook URL"
-);
+).env("SLACK_WEBHOOK");
 
 const watchdogTimeoutOption = new Option(
   "--watchdog-timeout <watchdogTimeout>",
   "Watchdog timeout (in seconds)"
 )
   .default("30")
+  .env("WATCHDOG_TIMEOUT")
   .argParser(parseIntOption);
 
 const databasePathOption = new Option(
   "--database-path <databasePath>",
   "Path to the database"
-).default("./database");
+)
+  .default(DEFAULT_DATABASE_PATH)
+  .env("DATABASE_PATH");
 
 const multiRpcOption = new Option(
   "--rpc <rpc...>",
   "Chain RPC endpoints to monitor"
 ).makeOptionMandatory(true);
 
-const rpcOption = new Option(
-  "--rpc <rpc>",
-  "Chain RPC endpoint to monitor"
-).makeOptionMandatory(true);
+const rpcOption = new Option("--rpc <rpc>", "Chain RPC endpoint to monitor")
+  .makeOptionMandatory(true)
+  .env("RPC");
 
 const multiDeploymentBlockOption = new Option(
   "--deployment-block <deploymentBlocks...>",
@@ -87,6 +97,7 @@ const deploymentBlockOption = new Option(
   "Block number at which the ComposableCoW was deployed"
 )
   .makeOptionMandatory(true)
+  .env("DEPLOYMENT_BLOCK")
   .argParser(parseIntOption);
 
 async function main() {
