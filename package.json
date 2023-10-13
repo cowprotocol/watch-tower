@@ -8,14 +8,17 @@
   },
   "main": "dist/src/index.js",
   "scripts": {
-    "build": "rm -rf dist && rm -rf src/types/generated && yarn typechain && tsc",
+    "build": "nx exec -- yarn _build ",
     "fmt": "prettier --write \"src/**/*.ts\"",
-    "lint": "eslint \"src/**/*.ts\" && prettier --check \"src/**/*.ts\"",
+    "lint": "nx exec -- yarn _lint ",
     "lint:fix": "eslint --fix \"src/**/*.ts\" && prettier --write \"src/**/*.ts\"",
-    "test": "yarn build && jest ./dist",
-    "typechain": "typechain --target ethers-v5 --out-dir src/types/generated/ \"abi/*.json\"",
+    "test": "nx exec -- yarn _test ",
+    "typechain": "nx exec -- typechain --target ethers-v5 --out-dir src/types/generated/ \"abi/*.json\"",
     "prepare": "husky install && yarn typechain",
-    "cli": "ts-node src/index.ts"
+    "cli": "ts-node src/index.ts",
+    "_build": "rm -rf dist && rm -rf src/types/generated && yarn typechain && tsc",
+    "_lint": "eslint \"src/**/*.ts\" && prettier --check \"src/**/*.ts\"",
+    "_test": "yarn build && jest ./dist"
   },
   "devDependencies": {
     "@commitlint/cli": "^17.6.7",
@@ -39,7 +42,8 @@
     "lint-staged": "^14.0.1",
     "prettier": "^2.8.8",
     "ts-node": "^10.9.1",
-    "typechain": "^8.3.1"
+    "typechain": "^8.3.1",
+    "nx": "16.10.0"
   },
   "dependencies": {
     "@commander-js/extra-typings": "^11.0.0",
@@ -76,5 +80,24 @@
     "src/**/*.ts": [
       "npm run lint:fix --"
     ]
+  },
+  "nx": {
+    "targets": {
+      "build": {
+        "outputs": [
+          "{projectRoot}/dist, src/types/generated"
+        ]
+      },
+      "lint": {
+        "outputs": [
+          "{projectRoot}/src"
+        ]
+      },
+      "typechain": {
+        "outputs": [
+          "{projectRoot}/src/types/generated"
+        ]
+      }
+    }
   }
 }
