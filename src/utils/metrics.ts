@@ -47,19 +47,19 @@ export const blockHeight = new client.Gauge({
 
 export const reorgDepth = new client.Gauge({
   name: "watch_tower_latest_reorg_depth",
-  help: "Depth of the last reorg",
+  help: "Depth of the most recent reorg",
   labelNames: ["chain_id"],
 });
 
 export const blockProducingRate = new client.Gauge({
-  name: "watch_tower_block_producing_rate_seconds",
+  name: "watch_tower_block_production_seconds",
   help: "Time since last block",
   labelNames: ["chain_id"],
 });
 
 export const eventsProcessedTotal = new client.Counter({
-  name: "watch_tower_order_creation_events_total",
-  help: "Total number of conditional order creation events processed",
+  name: "watch_tower_order_definition_events_total",
+  help: "Total number of conditional order creation or Merkle root update events processed (ConditionalOrderCreated and ConditionalOrderCreated respectively)",
   labelNames: ["chain_id"],
 });
 
