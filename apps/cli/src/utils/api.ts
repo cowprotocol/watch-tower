@@ -5,7 +5,7 @@ import * as client from "prom-client";
 import { getLogger } from "./logging";
 import { DBService } from "./db";
 import { Registry } from "../types";
-import { version, name, description } from "../../../../package.json";
+import versionInfo from "../version";
 import { ChainContext } from "../domain";
 
 export class ApiService {
@@ -106,9 +106,7 @@ const aboutRoute = (router: Router) => {
   router.get("/version", async (req: Request, res: Response) => {
     res.setHeader("Content-Type", "application/json");
     res.send({
-      version,
-      name,
-      description,
+      ...versionInfo,
       dockerImageTag: process.env.DOCKER_IMAGE_TAG, // Optional: convenient way to inform about the used docker image tag in docker environments
     });
   });

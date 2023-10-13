@@ -5,10 +5,10 @@ import {
   Option,
   InvalidArgumentError,
 } from "@commander-js/extra-typings";
-import { ReplayTxOptions } from "./types";
+
 import { dumpDb, replayBlock, replayTx, run, runMulti } from "./commands";
 import { initLogging } from "./utils";
-import { version, description } from "../../../package.json";
+import versionInfo from "./version";
 
 const DEFAULT_DATABASE_PATH = "./database";
 
@@ -101,7 +101,10 @@ const deploymentBlockOption = new Option(
   .argParser(parseIntOption);
 
 async function main() {
-  program.name("watch-tower").description(description).version(version);
+  program
+    .name("watch-tower")
+    .description(versionInfo.description)
+    .version(versionInfo.version);
 
   program
     .command("run")
@@ -119,8 +122,15 @@ async function main() {
     .addOption(disableNotificationsOption)
     .addOption(slackWebhookOption)
     .action((options) => {
-      const { rpc, databasePath, logLevel, silent, disableApi, dryRun } =
-        options;
+      const {
+        rpc,
+        databasePath,
+        logLevel,
+        silent,
+        disableApi,
+        dryRun,
+        oneShot,
+      } = options;
       const [pageSize, apiPort, watchdogTimeout, deploymentBlock] = [
         options.pageSize,
         options.apiPort,
@@ -142,6 +152,7 @@ async function main() {
         disableApi,
         dryRun,
         logLevel,
+        oneShot,
       });
     });
 
@@ -179,6 +190,8 @@ async function main() {
         disableApi,
         dryRun,
         databasePath,
+        silent,
+        oneShot,
       } = options;
 
       // Ensure that the deployment blocks are all numbers
@@ -205,6 +218,8 @@ async function main() {
         dryRun,
         logLevel,
         databasePath,
+        silent,
+        oneShot,
       });
     });
 
