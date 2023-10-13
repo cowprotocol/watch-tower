@@ -264,7 +264,6 @@ async function _processConditionalOrder(
       },
       provider,
       orderbookApiConfig: {
-        // TODO: Should work after this is merged https://github.com/cowprotocol/cow-sdk/pull/177
         baseUrls: orderBookApiBaseUrls,
         backoffOpts: {
           numOfAttempts: SDK_BACKOFF_NUM_OF_ATTEMPTS,
