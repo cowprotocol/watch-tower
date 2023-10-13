@@ -11,9 +11,6 @@ lcov.info
 # JS dependencies
 node_modules/
 
-# Typechain generated and artifacts
-/src/types/generated
-
 # Compiled production code
 /dist/
 .yalc

@@ -5,7 +5,7 @@ import * as client from "prom-client";
 import { getLogger } from "./logging";
 import { DBService } from "./db";
 import { Registry } from "../types";
-import { version, name, description } from "../../package.json";
+import { version, name, description } from "../../../../package.json";
 import { ChainContext } from "../domain";
 
 export class ApiService {

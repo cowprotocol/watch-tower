@@ -37,6 +37,12 @@
         }
       }
     },
+    "abi": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "typechain --target ethers-v5 --out-dir ./apps/cli/src/types/generated/ \"./apps/cli/abis/*.json\""
+      }
+    },
     "serve": {
       "executor": "@nx/js:node",
       "defaultConfiguration": "development",
