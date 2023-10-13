@@ -17,6 +17,8 @@ module.exports = {
       "warn",
       { allowConstantExport: true },
     ],
+    "require-await": "off",
+    "@typescript-eslint/require-await": "off",
   },
   parserOptions: {
     ecmaVersion: "latest",

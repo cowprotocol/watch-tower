@@ -502,6 +502,6 @@ function _formatResult(result: boolean) {
   return result ? "✅" : "❌";
 }
 
-async function asyncSleep(ms: number) {
+export async function asyncSleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

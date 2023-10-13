@@ -1,12 +1,7 @@
 import "./App.css";
-
+import { WatchTowerRunner } from "./components/watch-tower/WatchTowerRunner";
 function App() {
-  return (
-    <>
-      <h1>Watch Tower</h1>
-      this is an experiment
-    </>
-  );
+  return <WatchTowerRunner />;
 }
 
 export default App;
