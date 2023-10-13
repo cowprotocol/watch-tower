@@ -119,7 +119,8 @@ async function main() {
     .addOption(disableNotificationsOption)
     .addOption(slackWebhookOption)
     .action((options) => {
-      const { logLevel } = options;
+      const { rpc, databasePath, logLevel, silent, disableApi, dryRun } =
+        options;
       const [pageSize, apiPort, watchdogTimeout, deploymentBlock] = [
         options.pageSize,
         options.apiPort,
@@ -130,7 +131,18 @@ async function main() {
       initLogging({ logLevel });
 
       // Run the watch-tower
-      run({ ...options, deploymentBlock, pageSize, apiPort, watchdogTimeout });
+      run({
+        rpc,
+        databasePath,
+        deploymentBlock,
+        pageSize,
+        apiPort,
+        watchdogTimeout,
+        silent,
+        disableApi,
+        dryRun,
+        logLevel,
+      });
     });
 
   program
@@ -161,7 +173,13 @@ async function main() {
       ].map((value) => Number(value));
 
       initLogging({ logLevel });
-      const { rpc: rpcs, deploymentBlock: deploymentBlocksEnv } = options;
+      const {
+        rpc: rpcs,
+        deploymentBlock: deploymentBlocksEnv,
+        disableApi,
+        dryRun,
+        databasePath,
+      } = options;
 
       // Ensure that the deployment blocks are all numbers
       const deploymentBlocks = deploymentBlocksEnv.map((block) =>
@@ -178,12 +196,15 @@ async function main() {
 
       // Run the watch-tower
       runMulti({
-        ...options,
         rpcs,
         deploymentBlocks,
         pageSize,
         apiPort,
         watchdogTimeout,
+        disableApi,
+        dryRun,
+        logLevel,
+        databasePath,
       });
     });
 
@@ -194,7 +215,7 @@ async function main() {
     .addOption(logLevelOption)
     .addOption(databasePathOption)
     .action((options) => {
-      const { logLevel } = options;
+      const { logLevel, databasePath } = options;
       initLogging({ logLevel });
 
       // Ensure that the chain ID is a number
@@ -204,7 +225,7 @@ async function main() {
       }
 
       // Dump the database
-      dumpDb({ ...options, chainId });
+      dumpDb({ chainId, logLevel, databasePath });
     });
 
   program
@@ -216,7 +237,7 @@ async function main() {
     .addOption(logLevelOption)
     .addOption(databasePathOption)
     .action((options) => {
-      const { logLevel } = options;
+      const { logLevel, rpc, dryRun, databasePath } = options;
       initLogging({ logLevel });
 
       // Ensure that the block is a number
@@ -225,7 +246,7 @@ async function main() {
         throw new Error("Block must be a number");
       }
 
-      replayBlock({ ...options, block });
+      replayBlock({ block, rpc, dryRun, logLevel, databasePath });
     });
 
   program
@@ -236,11 +257,11 @@ async function main() {
     .addOption(logLevelOption)
     .addOption(databasePathOption)
     .requiredOption("--tx <tx>", "Transaction hash to replay")
-    .action((options: ReplayTxOptions) => {
-      const { logLevel } = options;
+    .action((options) => {
+      const { tx, rpc, dryRun, logLevel, databasePath } = options;
       initLogging({ logLevel });
 
-      replayTx(options);
+      replayTx({ tx, rpc, dryRun, logLevel, databasePath });
     });
 
   await program.parseAsync();
