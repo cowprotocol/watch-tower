@@ -59,7 +59,7 @@ export const blockProducingRate = new client.Gauge({
 
 export const eventsProcessedTotal = new client.Counter({
   name: "watch_tower_order_definition_events_total",
-  help: "Total number of conditional order creation or Merkle root update events processed (ConditionalOrderCreated and ConditionalOrderCreated respectively)",
+  help: "Total number of events for conditional order creation or Merkle root update (ConditionalOrderCreated and ConditionalOrderCreated respectively)",
   labelNames: ["chain_id"],
 });
 
