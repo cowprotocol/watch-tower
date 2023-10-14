@@ -8,7 +8,7 @@ import prefix from "loglevel-plugin-prefix";
 import chalk, { Chalk } from "chalk";
 
 const DEFAULT_LOG_LEVEL = "INFO";
-const LEVELS = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"];
+const LEVELS = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "SILENT"];
 
 interface LogLevelOverride {
   regex: RegExp;
