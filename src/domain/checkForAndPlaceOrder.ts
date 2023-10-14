@@ -66,7 +66,7 @@ const API_ERRORS_BACKOFF: BackOffApiErrorsDelays = {
 /**
  * Watch for new blocks and check for orders to place
  *
- * @param context tenderly context
+ * @param context chain context
  * @param event block event
  */
 export async function checkForAndPlaceOrder(
@@ -207,7 +207,7 @@ export async function checkForAndPlaceOrder(
   }
 
   // It may be handy in other versions of the watch tower implemented in other languages
-  // (ie. not for Tenderly) to not delete owners, so we can keep track of them.
+  // to not delete owners, so we can keep track of them.
   for (const [owner, conditionalOrders] of Array.from(ownerOrders.entries())) {
     if (conditionalOrders.size === 0) {
       ownerOrders.delete(owner);

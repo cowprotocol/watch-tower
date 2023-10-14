@@ -26,8 +26,8 @@ A clear and concise description of what you expected to happen.
 ### Screenshots/logs
 If applicable, add screenshots or logs to help explain your problem.
 
-### Tenderly watch-tower version/commit hash
-State the version of tenderly-watch-tower where you've encountered the bug or, if built off a specific commit, the relevant commit hash.
+### watch-tower version/commit hash
+State the version of watch-tower where you've encountered the bug or, if built off a specific commit, the relevant commit hash.
 - e.g. `v0.9` or `ed53bcd`
 
 ### Additional context
