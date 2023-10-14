@@ -12,8 +12,6 @@ export interface WatchtowerReplayOptions extends WatchtowerOptions {
 }
 
 export interface RunOptions extends WatchtowerOptions {
-  rpc: string[];
-  deploymentBlock: number[];
   pageSize: number;
   silent: boolean;
   slackWebhook?: string;
@@ -23,10 +21,15 @@ export interface RunOptions extends WatchtowerOptions {
   watchdogTimeout: number;
 }
 
-export type SingularRunOptions = Omit<RunOptions, "rpc" | "deploymentBlock"> & {
+export interface RunSingleOptions extends RunOptions {
   rpc: string;
   deploymentBlock: number;
-};
+}
+
+export interface RunMultiOptions extends RunOptions {
+  rpcs: string[];
+  deploymentBlocks: number[];
+}
 
 export interface ReplayBlockOptions extends WatchtowerReplayOptions {
   block: number;
