@@ -191,6 +191,14 @@ export class ChainContext {
           toBlock =
             toBlock > currentBlock.number ? currentBlock.number : toBlock;
 
+          // This happens when the watch-tower has restarted and the last processed block is
+          // the current block. Therefore the `fromBlock` is the current block + 1, which is
+          // greater than the current block number. In this case, we are in sync.
+          if (fromBlock > currentBlock.number) {
+            this.sync = ChainSync.IN_SYNC;
+            break;
+          }
+
           log.debug(
             `Reaching tip of chain, current block number: ${currentBlock.number}`
           );
