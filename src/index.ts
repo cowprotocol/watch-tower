@@ -71,7 +71,7 @@ const databasePathOption = new Option(
   .default(DEFAULT_DATABASE_PATH)
   .env("DATABASE_PATH");
 
-const chainConfigHelp = `Chain configuration in the format of <rpc>,<deploymentBlock>,<watchdogTimeout>, e.g. http://erigon.dappnode:8545,12345678,30`;
+const chainConfigHelp = `Chain configuration in the format of <rpc>,<deploymentBlock>[,<orderBookApi>,<watchdogTimeout>], e.g. http://erigon.dappnode:8545,12345678,https://api.cow.fi/mainnet,30`;
 const multiChainConfigOption = new Option(
   "--chain-config <chainConfig...>",
   chainConfigHelp
