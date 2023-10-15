@@ -1,49 +1,54 @@
-export interface LogOptions {
+export type LogOptions = {
   logLevel: string;
   databasePath: string;
-}
+};
 
-export interface WatchtowerOptions extends LogOptions {
+export type WatchtowerOptions = LogOptions & {
   dryRun: boolean;
-}
+};
 
-export interface WatchtowerReplayOptions extends WatchtowerOptions {
+export type WatchtowerReplayOptions = WatchtowerOptions & {
   rpc: string;
-}
+};
 
-export interface RunOptions extends WatchtowerOptions {
+export type RunOptions = WatchtowerOptions & {
   pageSize: number;
   silent: boolean;
   slackWebhook?: string;
   oneShot: boolean;
   disableApi: boolean;
   apiPort: number;
-  watchdogTimeout: number;
-}
+  addresses?: string[];
+};
 
-export interface RunSingleOptions extends RunOptions {
+export type ChainConfigOptions = {
   rpc: string;
-  orderBookApi?: string;
   deploymentBlock: number;
-}
+  watchdogTimeout: number;
+  orderBookApi?: string;
+};
 
-export interface RunMultiOptions extends RunOptions {
+export type MultiChainConfigOptions = {
   rpcs: string[];
   deploymentBlocks: number[];
+  watchdogTimeouts: number[];
   orderBookApis: string[];
-}
+};
 
-export interface ReplayBlockOptions extends WatchtowerReplayOptions {
+export type RunSingleOptions = RunOptions & ChainConfigOptions;
+export type RunMultiOptions = RunOptions & MultiChainConfigOptions;
+
+export type ReplayBlockOptions = WatchtowerReplayOptions & {
   block: number;
-}
+};
 
-export interface ReplayTxOptions extends WatchtowerReplayOptions {
+export type ReplayTxOptions = WatchtowerReplayOptions & {
   tx: string;
-}
+};
 
-export interface DumpDbOptions extends LogOptions {
+export type DumpDbOptions = LogOptions & {
   chainId: number;
-}
+};
 
 export type ToBlock = "latest" | number;
 

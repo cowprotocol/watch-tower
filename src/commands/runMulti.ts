@@ -16,7 +16,7 @@ export async function runMulti(options: RunMultiOptions) {
     disableApi,
     apiPort,
     databasePath,
-    watchdogTimeout,
+    watchdogTimeouts,
   } = options;
 
   // Open the database
@@ -48,6 +48,7 @@ export async function runMulti(options: RunMultiOptions) {
             ...options,
             rpc,
             deploymentBlock: deploymentBlocks[index],
+            watchdogTimeout: watchdogTimeouts[index],
           },
           storage
         );
@@ -56,7 +57,7 @@ export async function runMulti(options: RunMultiOptions) {
 
     // Run the block watcher after warm up for each chain
     const runPromises = chainContexts.map(async (context) => {
-      return context.warmUp(watchdogTimeout, oneShot);
+      return context.warmUp(oneShot);
     });
 
     // Run all the chain contexts

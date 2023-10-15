@@ -33,10 +33,11 @@ As an example, to run the latest version of the watch-tower via `docker`:
 docker run --rm -it \
   ghcr.io/cowprotocol/watch-tower:latest \
   run \
-  --rpc <rpc-url> \
-  --deployment-block <deployment-block> \
+  --chain-config <rpc-url>,<deployment-block>,<watchdog-timeout> \
   --page-size 5000
 ```
+
+**NOTE**: `watchdog-timeout` above is _optional_. If not specified, the default is 30 seconds. This is the timeout from which if the watch-tower does not receive a new block, it will exit, or signal non-live to Kubernetes. This is used to restart the watch-tower in the event of a RPC / network failure.
 
 ### Dappnode
 
@@ -55,7 +56,7 @@ docker run --rm -it \
 # Install dependencies
 yarn
 # Run watch-tower
-yarn cli run --rpc <rpc-url> --deployment-block <deployment-block> --page-size 5000
+yarn cli run --chain-config <rpc-url>,<deployment-block> --page-size 5000
 ```
 
 ## Architecture
@@ -178,7 +179,7 @@ It is recommended to test against the Goerli testnet. To run the watch-tower:
 # Install dependencies
 yarn
 # Run watch-tower
-yarn cli run --rpc <rpc-url> --deployment-block <deployment-block> --page-size 5000
+yarn cli run --chain-config <rpc-url>,<deployment-block> --page-size 5000
 ```
 
 ### Testing

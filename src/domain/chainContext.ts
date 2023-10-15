@@ -16,7 +16,7 @@ import {
 } from "@cowprotocol/cow-sdk";
 import { addContract } from "./addContract";
 import { checkForAndPlaceOrder } from "./checkForAndPlaceOrder";
-import { ethers } from "ethers";
+import { EventFilter, providers } from "ethers";
 import {
   composableCowContract,
   DBService,
@@ -31,6 +31,7 @@ import {
   reorgDepth,
   reorgsTotal,
 } from "../utils/metrics";
+import { hexZeroPad } from "ethers/lib/utils";
 
 const WATCHDOG_FREQUENCY = 5 * 1000; // 5 seconds
 
@@ -74,10 +75,12 @@ export class ChainContext {
   readonly deploymentBlock: number;
   readonly pageSize: number;
   readonly dryRun: boolean;
+  readonly watchdogTimeout: number;
+  readonly addresses?: string[];
   private sync: ChainSync = ChainSync.SYNCING;
   static chains: Chains = {};
 
-  provider: ethers.providers.Provider;
+  provider: providers.Provider;
   chainId: SupportedChainId;
   registry: Registry;
   orderBook: OrderBookApi;
@@ -87,15 +90,18 @@ export class ChainContext {
 
   protected constructor(
     options: RunSingleOptions,
-    provider: ethers.providers.Provider,
+    provider: providers.Provider,
     chainId: SupportedChainId,
     registry: Registry,
     orderBookApi?: string
   ) {
-    const { deploymentBlock, pageSize, dryRun } = options;
+    const { deploymentBlock, pageSize, dryRun, watchdogTimeout, addresses } =
+      options;
     this.deploymentBlock = deploymentBlock;
     this.pageSize = pageSize;
     this.dryRun = dryRun;
+    this.watchdogTimeout = watchdogTimeout;
+    this.addresses = addresses;
 
     this.provider = provider;
     this.chainId = chainId;
@@ -130,7 +136,7 @@ export class ChainContext {
   ): Promise<ChainContext> {
     const { rpc, orderBookApi, deploymentBlock } = options;
 
-    const provider = new ethers.providers.JsonRpcProvider(rpc);
+    const provider = new providers.JsonRpcProvider(rpc);
     const chainId = (await provider.getNetwork()).chainId;
 
     const registry = await Registry.load(
@@ -159,7 +165,7 @@ export class ChainContext {
    * @param oneShot if true, only warm up the chain watcher and return
    * @returns the run promises for what needs to be watched
    */
-  public async warmUp(watchdogTimeout: number, oneShot?: boolean) {
+  public async warmUp(oneShot?: boolean) {
     const { provider, chainId } = this;
     const log = getLogger("chainContext:warmUp", chainId.toString());
     const { lastProcessedBlock } = this.registry;
@@ -285,7 +291,7 @@ export class ChainContext {
     }
 
     // Otherwise, run the block watcher
-    return await this.runBlockWatcher(watchdogTimeout, currentBlock);
+    return await this.runBlockWatcher(currentBlock);
   }
 
   /**
@@ -293,11 +299,8 @@ export class ChainContext {
    * 1. Check if there are any `ConditionalOrderCreated` events, and index these.
    * 2. Check if any orders want to create discrete orders.
    */
-  private async runBlockWatcher(
-    watchdogTimeout: number,
-    lastProcessedBlock: ethers.providers.Block
-  ) {
-    const { provider, registry, chainId } = this;
+  private async runBlockWatcher(lastProcessedBlock: providers.Block) {
+    const { provider, registry, chainId, watchdogTimeout } = this;
     const log = getLogger("chainContext:runBlockWatcher", chainId.toString());
     // Watch for new blocks
     log.info(`👀 Start block watcher`);
@@ -428,7 +431,7 @@ export class ChainContext {
  */
 async function processBlock(
   context: ChainContext,
-  block: ethers.providers.Block,
+  block: providers.Block,
   events: ConditionalOrderCreatedEvent[],
   blockNumberOverride?: number,
   blockTimestampOverride?: number
@@ -492,9 +495,16 @@ function pollContractForEvents(
   toBlock: number | "latest",
   context: ChainContext
 ): Promise<ConditionalOrderCreatedEvent[]> {
-  const { provider, chainId } = context;
+  const { provider, chainId, addresses } = context;
   const composableCow = composableCowContract(provider, chainId);
-  const filter = composableCow.filters.ConditionalOrderCreated();
+  const filter = composableCow.filters.ConditionalOrderCreated() as EventFilter;
+
+  if (addresses) {
+    filter.topics?.push(
+      addresses.map((address) => hexZeroPad(address.toLowerCase(), 32))
+    );
+  }
+
   return composableCow.queryFilter(filter, fromBlock, toBlock);
 }
 
