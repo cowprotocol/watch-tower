@@ -86,7 +86,6 @@ export class ChainContext {
   orderBook: OrderBookApi;
   contract: ComposableCoW;
   multicall: Multicall3;
-  orderBookApiBaseUrls?: ApiBaseUrls;
 
   protected constructor(
     options: RunSingleOptions,
@@ -106,15 +105,16 @@ export class ChainContext {
     this.provider = provider;
     this.chainId = chainId;
     this.registry = registry;
-    this.orderBookApiBaseUrls = orderBookApi
+
+    const baseUrls = orderBookApi
       ? ({
           [this.chainId]: orderBookApi,
         } as ApiBaseUrls) // FIXME: do not do this casting once this is fixed https://github.com/cowprotocol/cow-sdk/issues/176
       : undefined;
 
     this.orderBook = new OrderBookApi({
-      chainId: this.chainId,
-      baseUrls: this.orderBookApiBaseUrls,
+      chainId,
+      baseUrls,
       backoffOpts: {
         numOfAttempts: SDK_BACKOFF_NUM_OF_ATTEMPTS,
       },

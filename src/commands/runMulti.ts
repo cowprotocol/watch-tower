@@ -12,6 +12,7 @@ export async function runMulti(options: RunMultiOptions) {
   const {
     rpcs,
     deploymentBlocks,
+    orderBookApis,
     oneShot,
     disableApi,
     apiPort,
@@ -49,6 +50,7 @@ export async function runMulti(options: RunMultiOptions) {
             rpc,
             deploymentBlock: deploymentBlocks[index],
             watchdogTimeout: watchdogTimeouts[index],
+            orderBookApi: orderBookApis[index],
           },
           storage
         );

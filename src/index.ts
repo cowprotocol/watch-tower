@@ -231,14 +231,20 @@ function parseChainConfigOption(option: string): ChainConfigOptions {
   // Ensure there are at least two parts (rpc and deploymentBlock)
   if (parts.length < 2) {
     throw new InvalidArgumentError(
-      `Chain configuration must be in the format of <rpc>,<deploymentBlock>[,<watchdogTimeout>], e.g. http://erigon.dappnode:8545,12345678,30`
+      `Chain configuration must be in the format of <rpc>,<deploymentBlock>[,<orderBookApi>,<watchdogTimeout>], e.g. http://erigon.dappnode:8545,12345678,https://api.cow.fi/mainnet,30`
     );
   }
 
   // Extract rpc and deploymentBlock from the parts
   const rpc = parts[0];
-  const rawDeploymentBlock = parts[1];
+  // Ensure that the RPC is a valid URL
+  if (!isValidUrl(rpc)) {
+    throw new InvalidArgumentError(
+      `${rpc} must be a valid URL (RPC) (chainConfig)`
+    );
+  }
 
+  const rawDeploymentBlock = parts[1];
   // Ensure that the deployment block is a number
   const deploymentBlock = Number(rawDeploymentBlock);
   if (isNaN(deploymentBlock)) {
@@ -247,17 +253,26 @@ function parseChainConfigOption(option: string): ChainConfigOptions {
     );
   }
 
-  // Default the watchdogTimeout to 30 seconds if not provided
-  const watchdogTimeout = parts.length > 2 ? Number(parts[2]) : 30;
-
-  // Ensure that the RPC is a valid URL
-  try {
-    new URL(rpc);
-  } catch (error) {
-    throw new InvalidArgumentError(`${rpc} must be a valid URL (RPC)`);
+  // If there is a third part, it is the orderBookApi
+  const orderBookApi = parts.length > 2 ? parts[2] : undefined;
+  // Ensure that the orderBookApi is a valid URL
+  if (orderBookApi && !isValidUrl(orderBookApi)) {
+    throw new InvalidArgumentError(
+      `${orderBookApi} must be a valid URL (orderBookApi)`
+    );
   }
 
-  return { rpc, deploymentBlock, watchdogTimeout };
+  const rawWatchdogTimeout = parts[3];
+  // If there is a fourth part, it is the watchdogTimeout
+  const watchdogTimeout = parts.length > 3 ? Number(rawWatchdogTimeout) : 30;
+  // Ensure that the watchdogTimeout is a number
+  if (isNaN(watchdogTimeout)) {
+    throw new InvalidArgumentError(
+      `${rawWatchdogTimeout} must be a number (watchdogTimeout)`
+    );
+  }
+
+  return { rpc, deploymentBlock, watchdogTimeout, orderBookApi };
 }
 
 function parseChainConfigOptions(
@@ -270,12 +285,22 @@ function parseChainConfigOptions(
   }
 ): MultiChainConfigOptions {
   const parsedOption = parseChainConfigOption(option);
-  const { rpc, deploymentBlock, watchdogTimeout } = parsedOption;
+  const { rpc, deploymentBlock, watchdogTimeout, orderBookApi } = parsedOption;
 
   previous.rpcs.push(rpc);
   previous.deploymentBlocks.push(deploymentBlock);
   previous.watchdogTimeouts.push(watchdogTimeout);
+  previous.orderBookApis.push(orderBookApi);
   return previous;
+}
+
+function isValidUrl(url: string): boolean {
+  try {
+    new URL(url);
+    return true;
+  } catch (error) {
+    return false;
+  }
 }
 
 function parseAddressOption(option: string, previous: string[] = []): string[] {

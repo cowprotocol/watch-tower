@@ -21,18 +21,20 @@ export type RunOptions = WatchtowerOptions & {
   addresses?: string[];
 };
 
+export type OrderBookApi = string | undefined;
+
 export type ChainConfigOptions = {
   rpc: string;
   deploymentBlock: number;
+  orderBookApi: OrderBookApi;
   watchdogTimeout: number;
-  orderBookApi?: string;
 };
 
 export type MultiChainConfigOptions = {
   rpcs: string[];
   deploymentBlocks: number[];
+  orderBookApis: OrderBookApi[];
   watchdogTimeouts: number[];
-  orderBookApis: string[];
 };
 
 export type RunSingleOptions = RunOptions & ChainConfigOptions;
