@@ -282,7 +282,9 @@ export class ChainContext {
         oneShot ? "Chain watcher is in sync" : "Chain watcher is warmed up"
       }`
     );
-    log.debug(`Last processed block: ${this.registry.lastProcessedBlock}`);
+    log.debug(
+      `Last processed block: ${this.registry.lastProcessedBlock.number}`
+    );
 
     // If one-shot, return
     if (oneShot) {
@@ -362,14 +364,13 @@ export class ChainContext {
       const now = Math.floor(new Date().getTime() / 1000);
       const timeElapsed = now - lastBlockReceived.timestamp;
 
-      log.debug(`Time since last block processed: ${timeElapsed}ms`);
+      log.debug(`Time since last block processed: ${timeElapsed}s`);
 
       // If we haven't received a block within `watchdogTimeout` seconds, either signal
       // an error or exit if not running in a kubernetes pod
-      if (timeElapsed >= watchdogTimeout * 1000) {
-        const formattedElapsedTime = Math.floor(timeElapsed / 1000);
+      if (timeElapsed >= watchdogTimeout) {
         log.error(
-          `Chain watcher last processed a block ${formattedElapsedTime}s ago (${watchdogTimeout}s timeout configured). Check the RPC.`
+          `Chain watcher last processed a block ${timeElapsed}s ago (${watchdogTimeout}s timeout configured). Check the RPC.`
         );
         if (isRunningInKubernetesPod()) {
           this.sync = ChainSync.UNKNOWN;
