@@ -12,12 +12,12 @@ export async function runMulti(options: RunMultiOptions) {
   const {
     rpcs,
     deploymentBlocks,
+    watchdogTimeouts,
     orderBookApis,
     oneShot,
     disableApi,
     apiPort,
     databasePath,
-    watchdogTimeouts,
   } = options;
 
   // Open the database

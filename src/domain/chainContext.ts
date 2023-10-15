@@ -92,11 +92,16 @@ export class ChainContext {
     options: RunSingleOptions,
     provider: providers.Provider,
     chainId: SupportedChainId,
-    registry: Registry,
-    orderBookApi?: string
+    registry: Registry
   ) {
-    const { deploymentBlock, pageSize, dryRun, watchdogTimeout, addresses } =
-      options;
+    const {
+      deploymentBlock,
+      pageSize,
+      dryRun,
+      watchdogTimeout,
+      addresses,
+      orderBookApi,
+    } = options;
     this.deploymentBlock = deploymentBlock;
     this.pageSize = pageSize;
     this.dryRun = dryRun;
@@ -135,7 +140,7 @@ export class ChainContext {
     options: RunSingleOptions,
     storage: DBService
   ): Promise<ChainContext> {
-    const { rpc, orderBookApi, deploymentBlock } = options;
+    const { rpc, deploymentBlock } = options;
 
     const provider = new providers.JsonRpcProvider(rpc);
     const chainId = (await provider.getNetwork()).chainId;
@@ -147,13 +152,7 @@ export class ChainContext {
     );
 
     // Save the context to the static map to be used by the API
-    const context = new ChainContext(
-      options,
-      provider,
-      chainId,
-      registry,
-      orderBookApi
-    );
+    const context = new ChainContext(options, provider, chainId, registry);
     ChainContext.chains[chainId] = context;
 
     return context;
@@ -162,7 +161,6 @@ export class ChainContext {
   /**
    * Warm up the chain watcher by fetching the latest block number and
    * checking if the chain is in sync.
-   * @param watchdogTimeout the timeout for the watchdog
    * @param oneShot if true, only warm up the chain watcher and return
    * @returns the run promises for what needs to be watched
    */

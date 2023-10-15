@@ -71,7 +71,7 @@ const databasePathOption = new Option(
   .default(DEFAULT_DATABASE_PATH)
   .env("DATABASE_PATH");
 
-const chainConfigHelp = `Chain configuration in the format of <rpc>,<deploymentBlock>[,<orderBookApi>,<watchdogTimeout>], e.g. http://erigon.dappnode:8545,12345678,https://api.cow.fi/mainnet,30`;
+const chainConfigHelp = `Chain configuration in the format of <rpc>,<deploymentBlock>[,<watchdogTimeout>,<orderBookApi>], e.g. http://erigon.dappnode:8545,12345678,30,https://api.cow.fi/mainnet`;
 const multiChainConfigOption = new Option(
   "--chain-config <chainConfig...>",
   chainConfigHelp
@@ -231,7 +231,7 @@ function parseChainConfigOption(option: string): ChainConfigOptions {
   // Ensure there are at least two parts (rpc and deploymentBlock)
   if (parts.length < 2) {
     throw new InvalidArgumentError(
-      `Chain configuration must be in the format of <rpc>,<deploymentBlock>[,<orderBookApi>,<watchdogTimeout>], e.g. http://erigon.dappnode:8545,12345678,https://api.cow.fi/mainnet,30`
+      `Chain configuration must be in the format of <rpc>,<deploymentBlock>[,<watchdogTimeout>,<orderBookApi>], e.g. http://erigon.dappnode:8545,12345678,30,https://api.cow.fi/mainnet`
     );
   }
 
@@ -253,22 +253,22 @@ function parseChainConfigOption(option: string): ChainConfigOptions {
     );
   }
 
-  // If there is a third part, it is the orderBookApi
-  const orderBookApi = parts.length > 2 ? parts[2] : undefined;
-  // Ensure that the orderBookApi is a valid URL
-  if (orderBookApi && !isValidUrl(orderBookApi)) {
-    throw new InvalidArgumentError(
-      `${orderBookApi} must be a valid URL (orderBookApi)`
-    );
-  }
-
-  const rawWatchdogTimeout = parts[3];
-  // If there is a fourth part, it is the watchdogTimeout
-  const watchdogTimeout = parts.length > 3 ? Number(rawWatchdogTimeout) : 30;
+  const rawWatchdogTimeout = parts[2];
+  // If there is a third part, it is the watchdogTimeout
+  const watchdogTimeout = parts.length > 2 ? Number(rawWatchdogTimeout) : 30;
   // Ensure that the watchdogTimeout is a number
   if (isNaN(watchdogTimeout)) {
     throw new InvalidArgumentError(
       `${rawWatchdogTimeout} must be a number (watchdogTimeout)`
+    );
+  }
+
+  // If there is a fourth part, it is the orderBookApi
+  const orderBookApi = parts.length > 3 ? parts[3] : undefined;
+  // Ensure that the orderBookApi is a valid URL
+  if (orderBookApi && !isValidUrl(orderBookApi)) {
+    throw new InvalidArgumentError(
+      `${orderBookApi} must be a valid URL (orderBookApi)`
     );
   }
 

@@ -26,15 +26,15 @@ export type OrderBookApi = string | undefined;
 export type ChainConfigOptions = {
   rpc: string;
   deploymentBlock: number;
-  orderBookApi: OrderBookApi;
   watchdogTimeout: number;
+  orderBookApi: OrderBookApi;
 };
 
 export type MultiChainConfigOptions = {
   rpcs: string[];
   deploymentBlocks: number[];
-  orderBookApis: OrderBookApi[];
   watchdogTimeouts: number[];
+  orderBookApis: OrderBookApi[];
 };
 
 export type RunSingleOptions = RunOptions & ChainConfigOptions;

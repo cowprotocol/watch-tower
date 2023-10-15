@@ -33,7 +33,7 @@ As an example, to run the latest version of the watch-tower via `docker`:
 docker run --rm -it \
   ghcr.io/cowprotocol/watch-tower:latest \
   run \
-  --chain-config <rpc-url>,<deployment-block>,<watchdog-timeout> \
+  --chain-config <rpc>,<deployment-block>,<watchdog-timeout> \
   --page-size 5000
 ```
 
@@ -56,7 +56,7 @@ docker run --rm -it \
 # Install dependencies
 yarn
 # Run watch-tower
-yarn cli run --chain-config <rpc-url>,<deployment-block> --page-size 5000
+yarn cli run --chain-config <rpc>,<deployment-block> --page-size 5000
 ```
 
 ## Architecture
@@ -179,7 +179,7 @@ It is recommended to test against the Goerli testnet. To run the watch-tower:
 # Install dependencies
 yarn
 # Run watch-tower
-yarn cli run --chain-config <rpc-url>,<deployment-block> --page-size 5000
+yarn cli run --chain-config <rpc>,<deployment-block> --page-size 5000
 ```
 
 ### Testing
