@@ -263,6 +263,8 @@ async function _processConditionalOrder(
         blockNumber,
       },
       provider,
+      // TODO: This should be DRY'ed. Upstream should take just an `orderBook` object that
+      //       is already configured.
       orderbookApiConfig: {
         baseUrls: orderBookApiBaseUrls,
         backoffOpts: {
