@@ -44,6 +44,14 @@ import {
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
 
+const HANDLED_RESULT_CODES = [
+  PollResultCode.SUCCESS,
+  PollResultCode.TRY_AT_EPOCH,
+  PollResultCode.TRY_ON_BLOCK,
+  PollResultCode.TRY_NEXT_BLOCK,
+  PollResultCode.DONT_TRY_AGAIN,
+];
+
 const ApiErrors = OrderPostError.errorType;
 type NextBlockApiErrorsArray = Array<OrderPostError.errorType>;
 type BackOffApiErrorsDelays = {
@@ -460,21 +468,16 @@ async function _placeOrder(params: {
         blockTimestamp,
         metricLabels
       );
-      const isSuccess = handleErrorResult.result === PollResultCode.SUCCESS;
-
-      // The request was made and the server responded with a status code
-      // that falls out of the range of 2xx
-      log[isSuccess ? "warn" : "error"](
-        `Error placing order in API. Result: ${status}`,
+      const isHandled = HANDLED_RESULT_CODES.includes(handleErrorResult.result);
+      const logLevel = isHandled ? "info" : "error";
+      log[logLevel](
+        `${
+          isHandled ? "Unable to place" : "Error placing"
+        } order in API. Result: ${status}`,
         body
       );
 
-      if (isSuccess) {
-        log.debug(`All good! continuing with warnings...`);
-        return { result: PollResultCode.SUCCESS };
-      } else {
-        return handleErrorResult;
-      }
+      return handleErrorResult;
     } else if (error.request) {
       // The request was made but no response was received
       // `error.request` is an instance of XMLHttpRequest in the browser and an instance of
