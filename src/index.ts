@@ -245,21 +245,21 @@ function parseChainConfigOption(option: string): ChainConfigOptions {
   }
 
   const rawDeploymentBlock = parts[1];
-  // Ensure that the deployment block is a number
+  // Ensure that the deployment block is a positive number
   const deploymentBlock = Number(rawDeploymentBlock);
-  if (isNaN(deploymentBlock)) {
+  if (isNaN(deploymentBlock) || deploymentBlock < 0) {
     throw new InvalidArgumentError(
-      `${rawDeploymentBlock} must be a number (deployment block)`
+      `${rawDeploymentBlock} must be a positive number (deployment block)`
     );
   }
 
   const rawWatchdogTimeout = parts[2];
   // If there is a third part, it is the watchdogTimeout
   const watchdogTimeout = parts.length > 2 ? Number(rawWatchdogTimeout) : 30;
-  // Ensure that the watchdogTimeout is a number
-  if (isNaN(watchdogTimeout)) {
+  // Ensure that the watchdogTimeout is a positive number
+  if (isNaN(watchdogTimeout) || watchdogTimeout < 0) {
     throw new InvalidArgumentError(
-      `${rawWatchdogTimeout} must be a number (watchdogTimeout)`
+      `${rawWatchdogTimeout} must be a positive number (watchdogTimeout)`
     );
   }
 
