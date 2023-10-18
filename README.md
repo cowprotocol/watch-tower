@@ -33,15 +33,22 @@ As an example, to run the latest version of the watch-tower via `docker`:
 docker run --rm -it \
   ghcr.io/cowprotocol/watch-tower:latest \
   run \
-  --chain-config <rpc>,<deployment-block>,<watchdog-timeout> \
+  --chain-config <rpc>,<deployment-block> \
   --page-size 5000
 ```
 
-**NOTE**: `watchdog-timeout` above is _optional_. If not specified, the default is 30 seconds. This is the timeout from which if the watch-tower does not receive a new block, it will exit, or signal non-live to Kubernetes. This is used to restart the watch-tower in the event of a RPC / network failure.
+**NOTE**: There are multiple optional arguments on the `--chain-config` parameter. For a full explanation of the optional arguments, use the `--help` flag:
 
-### Dappnode
+  ```bash
+  docker run --rm -it \
+    ghcr.io/cowprotocol/watch-tower:latest \
+    run \
+    --help
+  ```
 
-**TODO**: Add instructions for deploying to Dappnode.
+### DAppNode
+
+For [DAppNode](https://dappnode.com), the watch-tower is available as a package. This package is held in a [separate repository](https://github.com/cowprotocol/dappnodepackage-cow-watch-tower).
 
 ### Running locally
 
