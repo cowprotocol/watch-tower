@@ -9,7 +9,11 @@ import {
   RegistryBlock,
   blockToRegistryBlock,
 } from "../types";
-import { SupportedChainId, OrderBookApi } from "@cowprotocol/cow-sdk";
+import {
+  SupportedChainId,
+  OrderBookApi,
+  ApiBaseUrls,
+} from "@cowprotocol/cow-sdk";
 import { addContract } from "./addContract";
 import { checkForAndPlaceOrder } from "./checkForAndPlaceOrder";
 import { ethers } from "ethers";
@@ -31,6 +35,8 @@ import {
 const WATCHDOG_FREQUENCY = 5 * 1000; // 5 seconds
 
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
+
+export const SDK_BACKOFF_NUM_OF_ATTEMPTS = 5;
 
 enum ChainSync {
   /** The chain is currently in the warm-up phase, synchronising from contract genesis or lastBlockProcessed */
@@ -77,12 +83,14 @@ export class ChainContext {
   orderBook: OrderBookApi;
   contract: ComposableCoW;
   multicall: Multicall3;
+  orderBookApiBaseUrls?: ApiBaseUrls;
 
   protected constructor(
     options: RunSingleOptions,
     provider: ethers.providers.Provider,
     chainId: SupportedChainId,
-    registry: Registry
+    registry: Registry,
+    orderBookApi?: string
   ) {
     const { deploymentBlock, pageSize, dryRun } = options;
     this.deploymentBlock = deploymentBlock;
@@ -92,7 +100,19 @@ export class ChainContext {
     this.provider = provider;
     this.chainId = chainId;
     this.registry = registry;
-    this.orderBook = new OrderBookApi({ chainId: this.chainId });
+    this.orderBookApiBaseUrls = orderBookApi
+      ? ({
+          [this.chainId]: orderBookApi,
+        } as ApiBaseUrls) // FIXME: do not do this casting once this is fixed https://github.com/cowprotocol/cow-sdk/issues/176
+      : undefined;
+
+    this.orderBook = new OrderBookApi({
+      chainId: this.chainId,
+      baseUrls: this.orderBookApiBaseUrls,
+      backoffOpts: {
+        numOfAttempts: SDK_BACKOFF_NUM_OF_ATTEMPTS,
+      },
+    });
 
     this.contract = composableCowContract(this.provider, this.chainId);
     this.multicall = Multicall3__factory.connect(MULTICALL3, this.provider);
@@ -108,7 +128,7 @@ export class ChainContext {
     options: RunSingleOptions,
     storage: DBService
   ): Promise<ChainContext> {
-    const { rpc, deploymentBlock } = options;
+    const { rpc, orderBookApi, deploymentBlock } = options;
 
     const provider = new ethers.providers.JsonRpcProvider(rpc);
     const chainId = (await provider.getNetwork()).chainId;
@@ -120,7 +140,13 @@ export class ChainContext {
     );
 
     // Save the context to the static map to be used by the API
-    const context = new ChainContext(options, provider, chainId, registry);
+    const context = new ChainContext(
+      options,
+      provider,
+      chainId,
+      registry,
+      orderBookApi
+    );
     ChainContext.chains[chainId] = context;
 
     return context;

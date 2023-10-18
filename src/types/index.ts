@@ -23,12 +23,14 @@ export interface RunOptions extends WatchtowerOptions {
 
 export interface RunSingleOptions extends RunOptions {
   rpc: string;
+  orderBookApi?: string;
   deploymentBlock: number;
 }
 
 export interface RunMultiOptions extends RunOptions {
   rpcs: string[];
   deploymentBlocks: number[];
+  orderBookApis: string[];
 }
 
 export interface ReplayBlockOptions extends WatchtowerReplayOptions {

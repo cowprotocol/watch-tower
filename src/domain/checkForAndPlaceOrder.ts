@@ -28,7 +28,7 @@ import {
   SupportedChainId,
   formatEpoch,
 } from "@cowprotocol/cow-sdk";
-import { ChainContext } from "./chainContext";
+import { ChainContext, SDK_BACKOFF_NUM_OF_ATTEMPTS } from "./chainContext";
 import {
   pollingOnChainDurationSeconds,
   activeOrdersTotal,
@@ -236,7 +236,8 @@ async function _processConditionalOrder(
   context: ChainContext,
   orderRef: string
 ): Promise<PollResult> {
-  const { provider, orderBook, dryRun, chainId } = context;
+  const { provider, orderBook, dryRun, chainId, orderBookApiBaseUrls } =
+    context;
   const { handler } = conditionalOrder.params;
   const log = getLogger(
     "checkForAndPlaceOrder:_processConditionalOrder",
@@ -262,6 +263,12 @@ async function _processConditionalOrder(
         blockNumber,
       },
       provider,
+      orderbookApiConfig: {
+        baseUrls: orderBookApiBaseUrls,
+        backoffOpts: {
+          numOfAttempts: SDK_BACKOFF_NUM_OF_ATTEMPTS,
+        },
+      },
     };
     let pollResult = await pollConditionalOrder(
       pollParams,
