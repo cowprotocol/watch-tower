@@ -108,7 +108,7 @@ const multiOrderBookApiOption = new Option(
 const orderBookApiOption = new Option(
   "--orderBookApi <orderBookApi>",
   "Orderbook API base URL (i.e. https://api.cow.fi/mainnet)"
-).default(undefined);
+);
 
 async function main() {
   program.name("watch-tower").description(description).version(version);
@@ -130,7 +130,7 @@ async function main() {
     .addOption(disableNotificationsOption)
     .addOption(slackWebhookOption)
     .action((options) => {
-      const { logLevel, orderBookApi } = options;
+      const { logLevel } = options;
 
       const [pageSize, apiPort, watchdogTimeout, deploymentBlock] = [
         options.pageSize,
@@ -145,7 +145,6 @@ async function main() {
       run({
         ...options,
         deploymentBlock,
-        orderBookApi,
         pageSize,
         apiPort,
         watchdogTimeout,
