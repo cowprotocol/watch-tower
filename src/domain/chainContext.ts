@@ -32,6 +32,7 @@ import {
   reorgsTotal,
 } from "../utils/metrics";
 import { hexZeroPad } from "ethers/lib/utils";
+import { FilterPolicy, fetchPolicy } from "../utils/policy";
 
 const WATCHDOG_FREQUENCY = 5 * 1000; // 5 seconds
 
@@ -85,6 +86,7 @@ export class ChainContext {
   chainId: SupportedChainId;
   registry: Registry;
   orderBook: OrderBookApi;
+  filterPolicy: FilterPolicy;
   contract: ComposableCoW;
   multicall: Multicall3;
 
@@ -126,6 +128,7 @@ export class ChainContext {
       },
     });
 
+    this.filterPolicy = new FilterPolicy();
     this.contract = composableCowContract(this.provider, this.chainId);
     this.multicall = Multicall3__factory.connect(MULTICALL3, this.provider);
   }
@@ -444,7 +447,7 @@ async function processBlock(
   blockNumberOverride?: number,
   blockTimestampOverride?: number
 ) {
-  const { provider, chainId } = context;
+  const { provider, chainId, filterPolicy } = context;
   const timer = processBlockDurationSeconds
     .labels(context.chainId.toString())
     .startTimer();
@@ -453,6 +456,11 @@ async function processBlock(
     chainId.toString(),
     block.number.toString()
   );
+
+  // Update filter policy
+  const policy = await fetchPolicy();
+  filterPolicy.setHandlers(policy.handlers);
+  filterPolicy.setOwners(policy.owners);
 
   // Transaction watcher for adding new contracts
   let hasErrors = false;
