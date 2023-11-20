@@ -1,11 +1,9 @@
-import fetch from "node-fetch";
-
 import { ConditionalOrderParams, SupportedChainId } from "@cowprotocol/cow-sdk";
 
 export enum FilterAction {
-  DROP,
-  IGNORE,
-  ACCEPT,
+  DROP = "DROP",
+  SKIP = "SKIP",
+  ACCEPT = "ACCEPT",
 }
 
 export interface FilterParams {

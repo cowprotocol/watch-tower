@@ -32,7 +32,10 @@ import {
   reorgsTotal,
 } from "../utils/metrics";
 import { hexZeroPad } from "ethers/lib/utils";
-import { FilterPolicy, fetchPolicy } from "../utils/policy";
+import {
+  FilterPolicy,
+  fetchPolicy as fetchFilterPolicyConfig,
+} from "../utils/policy";
 
 const WATCHDOG_FREQUENCY = 5 * 1000; // 5 seconds
 
@@ -457,10 +460,16 @@ async function processBlock(
     block.number.toString()
   );
 
-  // Update filter policy
-  const policy = await fetchPolicy(chainId);
-  filterPolicy.setHandlers(policy.handlers);
-  filterPolicy.setOwners(policy.owners);
+  // Get the latest  filter policy
+  const policyConfig = await fetchFilterPolicyConfig(chainId).catch((error) => {
+    console.log(`Error fetching the filter policy config for chain `, error);
+    return null;
+  });
+
+  if (policyConfig) {
+    filterPolicy.setHandlers(policyConfig.handlers);
+    filterPolicy.setOwners(policyConfig.owners);
+  }
 
   // Transaction watcher for adding new contracts
   let hasErrors = false;
