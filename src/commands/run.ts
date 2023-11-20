@@ -9,8 +9,7 @@ import { ApiService } from "../utils/api";
  */
 export async function run(options: RunSingleOptions) {
   const log = getLogger("commands:run");
-  const { oneShot, disableApi, apiPort, databasePath, watchdogTimeout } =
-    options;
+  const { oneShot, disableApi, apiPort, databasePath } = options;
 
   // Open the database
   const storage = DBService.getInstance(databasePath);
@@ -35,7 +34,7 @@ export async function run(options: RunSingleOptions) {
   let exitCode = 0;
   try {
     const chainContext = await ChainContext.init(options, storage);
-    const runPromise = chainContext.warmUp(watchdogTimeout, oneShot);
+    const runPromise = chainContext.warmUp(oneShot);
 
     // Run the block watcher after warm up for the chain
     await runPromise;

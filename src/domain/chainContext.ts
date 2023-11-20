@@ -16,7 +16,7 @@ import {
 } from "@cowprotocol/cow-sdk";
 import { addContract } from "./addContract";
 import { checkForAndPlaceOrder } from "./checkForAndPlaceOrder";
-import { ethers } from "ethers";
+import { EventFilter, providers } from "ethers";
 import {
   composableCowContract,
   DBService,
@@ -31,6 +31,7 @@ import {
   reorgDepth,
   reorgsTotal,
 } from "../utils/metrics";
+import { hexZeroPad } from "ethers/lib/utils";
 
 const WATCHDOG_FREQUENCY = 5 * 1000; // 5 seconds
 
@@ -74,32 +75,43 @@ export class ChainContext {
   readonly deploymentBlock: number;
   readonly pageSize: number;
   readonly dryRun: boolean;
+  readonly watchdogTimeout: number;
+  readonly addresses?: string[];
+  readonly orderBookApiBaseUrls?: ApiBaseUrls;
   private sync: ChainSync = ChainSync.SYNCING;
   static chains: Chains = {};
 
-  provider: ethers.providers.Provider;
+  provider: providers.Provider;
   chainId: SupportedChainId;
   registry: Registry;
   orderBook: OrderBookApi;
   contract: ComposableCoW;
   multicall: Multicall3;
-  orderBookApiBaseUrls?: ApiBaseUrls;
 
   protected constructor(
     options: RunSingleOptions,
-    provider: ethers.providers.Provider,
+    provider: providers.Provider,
     chainId: SupportedChainId,
-    registry: Registry,
-    orderBookApi?: string
+    registry: Registry
   ) {
-    const { deploymentBlock, pageSize, dryRun } = options;
+    const {
+      deploymentBlock,
+      pageSize,
+      dryRun,
+      watchdogTimeout,
+      owners,
+      orderBookApi,
+    } = options;
     this.deploymentBlock = deploymentBlock;
     this.pageSize = pageSize;
     this.dryRun = dryRun;
+    this.watchdogTimeout = watchdogTimeout;
+    this.addresses = owners;
 
     this.provider = provider;
     this.chainId = chainId;
     this.registry = registry;
+
     this.orderBookApiBaseUrls = orderBookApi
       ? ({
           [this.chainId]: orderBookApi,
@@ -107,7 +119,7 @@ export class ChainContext {
       : undefined;
 
     this.orderBook = new OrderBookApi({
-      chainId: this.chainId,
+      chainId,
       baseUrls: this.orderBookApiBaseUrls,
       backoffOpts: {
         numOfAttempts: SDK_BACKOFF_NUM_OF_ATTEMPTS,
@@ -128,9 +140,9 @@ export class ChainContext {
     options: RunSingleOptions,
     storage: DBService
   ): Promise<ChainContext> {
-    const { rpc, orderBookApi, deploymentBlock } = options;
+    const { rpc, deploymentBlock } = options;
 
-    const provider = new ethers.providers.JsonRpcProvider(rpc);
+    const provider = new providers.JsonRpcProvider(rpc);
     const chainId = (await provider.getNetwork()).chainId;
 
     const registry = await Registry.load(
@@ -140,13 +152,7 @@ export class ChainContext {
     );
 
     // Save the context to the static map to be used by the API
-    const context = new ChainContext(
-      options,
-      provider,
-      chainId,
-      registry,
-      orderBookApi
-    );
+    const context = new ChainContext(options, provider, chainId, registry);
     ChainContext.chains[chainId] = context;
 
     return context;
@@ -155,11 +161,10 @@ export class ChainContext {
   /**
    * Warm up the chain watcher by fetching the latest block number and
    * checking if the chain is in sync.
-   * @param watchdogTimeout the timeout for the watchdog
    * @param oneShot if true, only warm up the chain watcher and return
    * @returns the run promises for what needs to be watched
    */
-  public async warmUp(watchdogTimeout: number, oneShot?: boolean) {
+  public async warmUp(oneShot?: boolean) {
     const { provider, chainId } = this;
     const log = getLogger("chainContext:warmUp", chainId.toString());
     const { lastProcessedBlock } = this.registry;
@@ -185,6 +190,14 @@ export class ChainContext {
           currentBlock = await provider.getBlock("latest");
           toBlock =
             toBlock > currentBlock.number ? currentBlock.number : toBlock;
+
+          // This happens when the watch-tower has restarted and the last processed block is
+          // the current block. Therefore the `fromBlock` is the current block + 1, which is
+          // greater than the current block number. In this case, we are in sync.
+          if (fromBlock > currentBlock.number) {
+            this.sync = ChainSync.IN_SYNC;
+            break;
+          }
 
           log.debug(
             `Reaching tip of chain, current block number: ${currentBlock.number}`
@@ -277,7 +290,9 @@ export class ChainContext {
         oneShot ? "Chain watcher is in sync" : "Chain watcher is warmed up"
       }`
     );
-    log.debug(`Last processed block: ${this.registry.lastProcessedBlock}`);
+    log.debug(
+      `Last processed block: ${this.registry.lastProcessedBlock.number}`
+    );
 
     // If one-shot, return
     if (oneShot) {
@@ -285,7 +300,7 @@ export class ChainContext {
     }
 
     // Otherwise, run the block watcher
-    return await this.runBlockWatcher(watchdogTimeout, currentBlock);
+    return await this.runBlockWatcher(currentBlock);
   }
 
   /**
@@ -293,11 +308,8 @@ export class ChainContext {
    * 1. Check if there are any `ConditionalOrderCreated` events, and index these.
    * 2. Check if any orders want to create discrete orders.
    */
-  private async runBlockWatcher(
-    watchdogTimeout: number,
-    lastProcessedBlock: ethers.providers.Block
-  ) {
-    const { provider, registry, chainId } = this;
+  private async runBlockWatcher(lastProcessedBlock: providers.Block) {
+    const { provider, registry, chainId, watchdogTimeout } = this;
     const log = getLogger("chainContext:runBlockWatcher", chainId.toString());
     // Watch for new blocks
     log.info(`👀 Start block watcher`);
@@ -360,14 +372,13 @@ export class ChainContext {
       const now = Math.floor(new Date().getTime() / 1000);
       const timeElapsed = now - lastBlockReceived.timestamp;
 
-      log.debug(`Time since last block processed: ${timeElapsed}ms`);
+      log.debug(`Time since last block processed: ${timeElapsed}s`);
 
       // If we haven't received a block within `watchdogTimeout` seconds, either signal
       // an error or exit if not running in a kubernetes pod
-      if (timeElapsed >= watchdogTimeout * 1000) {
-        const formattedElapsedTime = Math.floor(timeElapsed / 1000);
+      if (timeElapsed >= watchdogTimeout) {
         log.error(
-          `Chain watcher last processed a block ${formattedElapsedTime}s ago (${watchdogTimeout}s timeout configured). Check the RPC.`
+          `Chain watcher last processed a block ${timeElapsed}s ago (${watchdogTimeout}s timeout configured). Check the RPC.`
         );
         if (isRunningInKubernetesPod()) {
           this.sync = ChainSync.UNKNOWN;
@@ -428,7 +439,7 @@ export class ChainContext {
  */
 async function processBlock(
   context: ChainContext,
-  block: ethers.providers.Block,
+  block: providers.Block,
   events: ConditionalOrderCreatedEvent[],
   blockNumberOverride?: number,
   blockTimestampOverride?: number
@@ -492,9 +503,16 @@ function pollContractForEvents(
   toBlock: number | "latest",
   context: ChainContext
 ): Promise<ConditionalOrderCreatedEvent[]> {
-  const { provider, chainId } = context;
+  const { provider, chainId, addresses } = context;
   const composableCow = composableCowContract(provider, chainId);
-  const filter = composableCow.filters.ConditionalOrderCreated();
+  const filter = composableCow.filters.ConditionalOrderCreated() as EventFilter;
+
+  if (addresses) {
+    filter.topics?.push(
+      addresses.map((address) => hexZeroPad(address.toLowerCase(), 32))
+    );
+  }
+
   return composableCow.queryFilter(filter, fromBlock, toBlock);
 }
 

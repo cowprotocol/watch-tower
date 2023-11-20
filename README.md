@@ -33,14 +33,22 @@ As an example, to run the latest version of the watch-tower via `docker`:
 docker run --rm -it \
   ghcr.io/cowprotocol/watch-tower:latest \
   run \
-  --rpc <rpc-url> \
-  --deployment-block <deployment-block> \
+  --chain-config <rpc>,<deployment-block> \
   --page-size 5000
 ```
 
-### Dappnode
+**NOTE**: There are multiple optional arguments on the `--chain-config` parameter. For a full explanation of the optional arguments, use the `--help` flag:
 
-**TODO**: Add instructions for deploying to Dappnode.
+  ```bash
+  docker run --rm -it \
+    ghcr.io/cowprotocol/watch-tower:latest \
+    run \
+    --help
+  ```
+
+### DAppNode
+
+For [DAppNode](https://dappnode.com), the watch-tower is available as a package. This package is held in a [separate repository](https://github.com/cowprotocol/dappnodepackage-cow-watch-tower).
 
 ### Running locally
 
@@ -55,7 +63,7 @@ docker run --rm -it \
 # Install dependencies
 yarn
 # Run watch-tower
-yarn cli run --rpc <rpc-url> --deployment-block <deployment-block> --page-size 5000
+yarn cli run --chain-config <rpc>,<deployment-block> --page-size 5000
 ```
 
 ## Architecture
@@ -178,7 +186,7 @@ It is recommended to test against the Goerli testnet. To run the watch-tower:
 # Install dependencies
 yarn
 # Run watch-tower
-yarn cli run --rpc <rpc-url> --deployment-block <deployment-block> --page-size 5000
+yarn cli run --chain-config <rpc>,<deployment-block> --page-size 5000
 ```
 
 ### Testing

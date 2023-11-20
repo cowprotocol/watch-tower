@@ -5,7 +5,8 @@ import {
   Option,
   InvalidArgumentError,
 } from "@commander-js/extra-typings";
-import { ReplayTxOptions } from "./types";
+import { MultiChainConfigOptions, ChainConfigOptions } from "./types";
+import { getAddress, isHexString } from "ethers/lib/utils";
 import { dumpDb, replayBlock, replayTx, run, runMulti } from "./commands";
 import { initLogging } from "./utils";
 import { version, description } from "../package.json";
@@ -63,14 +64,6 @@ const slackWebhookOption = new Option(
   "Slack webhook URL"
 ).env("SLACK_WEBHOOK");
 
-const watchdogTimeoutOption = new Option(
-  "--watchdog-timeout <watchdogTimeout>",
-  "Watchdog timeout (in seconds)"
-)
-  .default("30")
-  .env("WATCHDOG_TIMEOUT")
-  .argParser(parseIntOption);
-
 const databasePathOption = new Option(
   "--database-path <databasePath>",
   "Path to the database"
@@ -78,37 +71,26 @@ const databasePathOption = new Option(
   .default(DEFAULT_DATABASE_PATH)
   .env("DATABASE_PATH");
 
-const multiRpcOption = new Option(
-  "--rpc <rpc...>",
-  "Chain RPC endpoints to monitor"
-).makeOptionMandatory(true);
-
-const rpcOption = new Option("--rpc <rpc>", "Chain RPC endpoint to monitor")
-  .makeOptionMandatory(true)
-  .env("RPC");
-
-const multiDeploymentBlockOption = new Option(
-  "--deployment-block <deploymentBlocks...>",
-  "Block number at which the ComposableCoW contract was deployed on the respective chains"
-).makeOptionMandatory(true);
-
-const deploymentBlockOption = new Option(
-  "--deployment-block <deploymentBlock>",
-  "Block number at which the ComposableCoW was deployed"
+const chainConfigHelp = `Chain configuration in the format of <rpc>,<deploymentBlock>[,<watchdogTimeout>,<orderBookApi>], e.g. http://erigon.dappnode:8545,12345678,30,https://api.cow.fi/mainnet`;
+const multiChainConfigOption = new Option(
+  "--chain-config <chainConfig...>",
+  chainConfigHelp
 )
   .makeOptionMandatory(true)
-  .env("DEPLOYMENT_BLOCK")
-  .argParser(parseIntOption);
+  .argParser(parseChainConfigOptions);
 
-const multiOrderBookApiOption = new Option(
-  "--orderBookApi <orderBookApi...>",
-  "Orderbook API base URLs (i.e. https://api.cow.fi/mainnet, https://api.cow.fi/xdai, etc.)"
-).default([]);
+const chainConfigOption = new Option(
+  "--chain-config <chainConfig>",
+  chainConfigHelp
+)
+  .makeOptionMandatory(true)
+  .env("CHAIN_CONFIG")
+  .argParser(parseChainConfigOption);
 
-const orderBookApiOption = new Option(
-  "--orderBookApi <orderBookApi>",
-  "Orderbook API base URL (i.e. https://api.cow.fi/mainnet)"
-).default(undefined);
+const onlyOwnerOption = new Option(
+  "--only-owner <onlyOwner...>",
+  "Addresses of contracts / safes to monitor conditional orders for"
+).argParser(parseAddressOption);
 
 async function main() {
   program.name("watch-tower").description(description).version(version);
@@ -116,12 +98,10 @@ async function main() {
   program
     .command("run")
     .description("Run the watch-tower, monitoring only a single chain")
-    .addOption(rpcOption)
-    .addOption(deploymentBlockOption)
-    .addOption(orderBookApiOption)
+    .addOption(chainConfigOption)
+    .addOption(onlyOwnerOption)
     .addOption(databasePathOption)
     .addOption(logLevelOption)
-    .addOption(watchdogTimeoutOption)
     .addOption(pageSizeOption)
     .addOption(dryRunOnlyOption)
     .addOption(oneShotOption)
@@ -130,41 +110,24 @@ async function main() {
     .addOption(disableNotificationsOption)
     .addOption(slackWebhookOption)
     .action((options) => {
-      const { logLevel, orderBookApi } = options;
-
-      const [pageSize, apiPort, watchdogTimeout, deploymentBlock] = [
-        options.pageSize,
-        options.apiPort,
-        options.watchdogTimeout,
-        options.deploymentBlock,
-      ].map((value) => Number(value));
+      const { logLevel, chainConfig, onlyOwner: owners } = options;
+      const [pageSize, apiPort] = [options.pageSize, options.apiPort].map(
+        (value) => Number(value)
+      );
 
       initLogging({ logLevel });
 
       // Run the watch-tower
-      run({
-        ...options,
-        deploymentBlock,
-        orderBookApi,
-        pageSize,
-        apiPort,
-        watchdogTimeout,
-      });
+      run({ ...options, ...chainConfig, owners, pageSize, apiPort });
     });
 
   program
     .command("run-multi")
     .description("Run the watch-tower monitoring multiple blockchains")
-    .addHelpText(
-      "before",
-      "RPC and deployment blocks must be the same length, and in the same order"
-    )
-    .addOption(multiRpcOption)
-    .addOption(multiDeploymentBlockOption)
-    .addOption(multiOrderBookApiOption)
+    .addOption(multiChainConfigOption)
+    .addOption(onlyOwnerOption)
     .addOption(databasePathOption)
     .addOption(logLevelOption)
-    .addOption(watchdogTimeoutOption)
     .addOption(pageSizeOption)
     .addOption(dryRunOnlyOption)
     .addOption(oneShotOption)
@@ -173,47 +136,24 @@ async function main() {
     .addOption(disableNotificationsOption)
     .addOption(slackWebhookOption)
     .action((options) => {
-      const { logLevel } = options;
-      const [pageSize, apiPort, watchdogTimeout] = [
-        options.pageSize,
-        options.apiPort,
-        options.watchdogTimeout,
-      ].map((value) => Number(value));
+      const {
+        logLevel,
+        chainConfig: chainConfigs,
+        onlyOwner: owners,
+      } = options;
+      const [pageSize, apiPort] = [options.pageSize, options.apiPort].map(
+        (value) => Number(value)
+      );
 
       initLogging({ logLevel });
-      const {
-        rpc: rpcs,
-        orderBookApi: orderBookApis,
-        deploymentBlock: deploymentBlocksEnv,
-      } = options;
-
-      // Ensure that the deployment blocks are all numbers
-      const deploymentBlocks = deploymentBlocksEnv.map((block) =>
-        Number(block)
-      );
-      if (deploymentBlocks.some((block) => isNaN(block))) {
-        throw new Error("Deployment blocks must be numbers");
-      }
-
-      // Ensure that the RPCs and deployment blocks are the same length
-      if (rpcs.length !== deploymentBlocks.length) {
-        throw new Error("RPC and deployment blocks must be the same length");
-      }
-
-      // Ensure that the orderBookApis and RPCs are the same length
-      if (orderBookApis.length > 0 && rpcs.length !== orderBookApis.length) {
-        throw new Error("orderBookApi and RPC urls must be the same length");
-      }
 
       // Run the watch-tower
       runMulti({
         ...options,
-        rpcs,
-        deploymentBlocks,
-        orderBookApis,
+        ...chainConfigs,
+        owners,
         pageSize,
         apiPort,
-        watchdogTimeout,
       });
     });
 
@@ -261,16 +201,16 @@ async function main() {
   program
     .command("replay-tx")
     .description("Reply a transaction")
-    .addOption(rpcOption)
+    .addOption(chainConfigOption)
     .addOption(dryRunOnlyOption)
     .addOption(logLevelOption)
     .addOption(databasePathOption)
     .requiredOption("--tx <tx>", "Transaction hash to replay")
-    .action((options: ReplayTxOptions) => {
-      const { logLevel } = options;
+    .action((options) => {
+      const { logLevel, chainConfig } = options;
       initLogging({ logLevel });
 
-      replayTx(options);
+      replayTx({ ...options, ...chainConfig });
     });
 
   await program.parseAsync();
@@ -282,6 +222,100 @@ function parseIntOption(option: string) {
     throw new InvalidArgumentError(`${option} must be a number`);
   }
   return parsed.toString();
+}
+
+function parseChainConfigOption(option: string): ChainConfigOptions {
+  // Split the option using ',' as the delimiter
+  const parts = option.split(",");
+
+  // Ensure there are at least two parts (rpc and deploymentBlock)
+  if (parts.length < 2) {
+    throw new InvalidArgumentError(
+      `Chain configuration must be in the format of <rpc>,<deploymentBlock>[,<watchdogTimeout>,<orderBookApi>], e.g. http://erigon.dappnode:8545,12345678,30,https://api.cow.fi/mainnet`
+    );
+  }
+
+  // Extract rpc and deploymentBlock from the parts
+  const rpc = parts[0];
+  // Ensure that the RPC is a valid URL
+  if (!isValidUrl(rpc)) {
+    throw new InvalidArgumentError(
+      `${rpc} must be a valid URL (RPC) (chainConfig)`
+    );
+  }
+
+  const rawDeploymentBlock = parts[1];
+  // Ensure that the deployment block is a positive number
+  const deploymentBlock = Number(rawDeploymentBlock);
+  if (isNaN(deploymentBlock) || deploymentBlock < 0) {
+    throw new InvalidArgumentError(
+      `${rawDeploymentBlock} must be a positive number (deployment block)`
+    );
+  }
+
+  const rawWatchdogTimeout = parts[2];
+  // If there is a third part, it is the watchdogTimeout
+  const watchdogTimeout = parts.length > 2 ? Number(rawWatchdogTimeout) : 30;
+  // Ensure that the watchdogTimeout is a positive number
+  if (isNaN(watchdogTimeout) || watchdogTimeout < 0) {
+    throw new InvalidArgumentError(
+      `${rawWatchdogTimeout} must be a positive number (watchdogTimeout)`
+    );
+  }
+
+  // If there is a fourth part, it is the orderBookApi
+  const orderBookApi = parts.length > 3 ? parts[3] : undefined;
+  // Ensure that the orderBookApi is a valid URL
+  if (orderBookApi && !isValidUrl(orderBookApi)) {
+    throw new InvalidArgumentError(
+      `${orderBookApi} must be a valid URL (orderBookApi)`
+    );
+  }
+
+  return { rpc, deploymentBlock, watchdogTimeout, orderBookApi };
+}
+
+function parseChainConfigOptions(
+  option: string,
+  previous: MultiChainConfigOptions = {
+    rpcs: [],
+    deploymentBlocks: [],
+    watchdogTimeouts: [],
+    orderBookApis: [],
+  }
+): MultiChainConfigOptions {
+  const parsedOption = parseChainConfigOption(option);
+  const { rpc, deploymentBlock, watchdogTimeout, orderBookApi } = parsedOption;
+
+  previous.rpcs.push(rpc);
+  previous.deploymentBlocks.push(deploymentBlock);
+  previous.watchdogTimeouts.push(watchdogTimeout);
+  previous.orderBookApis.push(orderBookApi);
+  return previous;
+}
+
+function isValidUrl(url: string): boolean {
+  try {
+    new URL(url);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+function parseAddressOption(option: string, previous: string[] = []): string[] {
+  // Use ethers to validate the address
+  try {
+    if (!isHexString(option)) {
+      throw new Error();
+    }
+    getAddress(option);
+  } catch (error) {
+    throw new InvalidArgumentError(
+      `${option} must be a valid '0x' prefixed address`
+    );
+  }
+  return [...previous, option];
 }
 
 main().catch((error) => {
