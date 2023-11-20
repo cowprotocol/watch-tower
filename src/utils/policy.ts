@@ -1,6 +1,6 @@
 import fetch from "node-fetch";
 
-import { ConditionalOrderParams } from "@cowprotocol/cow-sdk";
+import { ConditionalOrderParams, SupportedChainId } from "@cowprotocol/cow-sdk";
 
 export enum FilterAction {
   DROP,
@@ -45,9 +45,9 @@ export interface Policy {
   handlers: Map<string, FilterAction>;
 }
 
-export async function fetchPolicy(): Promise<Policy> {
+export async function fetchPolicy(chainId: SupportedChainId): Promise<Policy> {
   const configResponse = await fetch(
-    "https://raw.githubusercontent.com/cowprotocol/watch-tower/config/accept-policy.json"
+    `https://raw.githubusercontent.com/cowprotocol/watch-tower/config/filter-policy-${chainId}.json`
   );
 
   if (!configResponse.ok) {

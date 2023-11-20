@@ -458,7 +458,7 @@ async function processBlock(
   );
 
   // Update filter policy
-  const policy = await fetchPolicy();
+  const policy = await fetchPolicy(chainId);
   filterPolicy.setHandlers(policy.handlers);
   filterPolicy.setOwners(policy.owners);
 
