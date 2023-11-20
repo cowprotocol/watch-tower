@@ -35,7 +35,7 @@ import { hexZeroPad } from "ethers/lib/utils";
 import {
   FilterPolicy,
   fetchPolicy as fetchFilterPolicyConfig,
-} from "../utils/policy";
+} from "../utils/filterPolicy";
 
 const WATCHDOG_FREQUENCY = 5 * 1000; // 5 seconds
 

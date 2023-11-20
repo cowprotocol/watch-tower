@@ -41,7 +41,7 @@ import {
   pollingOnChainEthersErrorsTotal,
   measureTime,
 } from "../utils/metrics";
-import { FilterAction } from "../utils/policy";
+import { FilterAction } from "../utils/filterPolicy";
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
 
