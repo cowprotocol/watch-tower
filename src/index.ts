@@ -87,9 +87,9 @@ const chainConfigOption = new Option(
   .env("CHAIN_CONFIG")
   .argParser(parseChainConfigOption);
 
-const addressOption = new Option(
-  "--address <address...>",
-  "Addresses of Safes to monitor conditional orders for"
+const onlyOwnerOption = new Option(
+  "--only-owner <onlyOwner...>",
+  "Addresses of contracts / safes to monitor conditional orders for"
 ).argParser(parseAddressOption);
 
 async function main() {
@@ -99,7 +99,7 @@ async function main() {
     .command("run")
     .description("Run the watch-tower, monitoring only a single chain")
     .addOption(chainConfigOption)
-    .addOption(addressOption)
+    .addOption(onlyOwnerOption)
     .addOption(databasePathOption)
     .addOption(logLevelOption)
     .addOption(pageSizeOption)
@@ -110,7 +110,7 @@ async function main() {
     .addOption(disableNotificationsOption)
     .addOption(slackWebhookOption)
     .action((options) => {
-      const { logLevel, chainConfig, address: addresses } = options;
+      const { logLevel, chainConfig, onlyOwner: owners } = options;
       const [pageSize, apiPort] = [options.pageSize, options.apiPort].map(
         (value) => Number(value)
       );
@@ -118,14 +118,14 @@ async function main() {
       initLogging({ logLevel });
 
       // Run the watch-tower
-      run({ ...options, ...chainConfig, addresses, pageSize, apiPort });
+      run({ ...options, ...chainConfig, owners, pageSize, apiPort });
     });
 
   program
     .command("run-multi")
     .description("Run the watch-tower monitoring multiple blockchains")
     .addOption(multiChainConfigOption)
-    .addOption(addressOption)
+    .addOption(onlyOwnerOption)
     .addOption(databasePathOption)
     .addOption(logLevelOption)
     .addOption(pageSizeOption)
@@ -139,7 +139,7 @@ async function main() {
       const {
         logLevel,
         chainConfig: chainConfigs,
-        address: addresses,
+        onlyOwner: owners,
       } = options;
       const [pageSize, apiPort] = [options.pageSize, options.apiPort].map(
         (value) => Number(value)
@@ -151,7 +151,7 @@ async function main() {
       runMulti({
         ...options,
         ...chainConfigs,
-        addresses,
+        owners,
         pageSize,
         apiPort,
       });

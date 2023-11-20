@@ -18,7 +18,7 @@ export type RunOptions = WatchtowerOptions & {
   oneShot: boolean;
   disableApi: boolean;
   apiPort: number;
-  addresses?: string[];
+  owners?: string[];
 };
 
 export type OrderBookApi = string | undefined;

@@ -99,14 +99,14 @@ export class ChainContext {
       pageSize,
       dryRun,
       watchdogTimeout,
-      addresses,
+      owners,
       orderBookApi,
     } = options;
     this.deploymentBlock = deploymentBlock;
     this.pageSize = pageSize;
     this.dryRun = dryRun;
     this.watchdogTimeout = watchdogTimeout;
-    this.addresses = addresses;
+    this.addresses = owners;
 
     this.provider = provider;
     this.chainId = chainId;
