@@ -138,18 +138,12 @@ export async function checkForAndPlaceOrder(
 
         switch (filterResult) {
           case FilterAction.DROP:
-            log.debug(
-              "Dropping conditional order. Reason: AcceptPolicy: DROP",
-              conditionalOrder.params
-            );
+            log.debug("Dropping conditional order. Reason: AcceptPolicy: DROP");
             ordersPendingDelete.push(conditionalOrder);
 
             continue;
           case FilterAction.SKIP:
-            log.debug(
-              "Skipping conditional order. Reason: AcceptPolicy: SKIP",
-              conditionalOrder.params
-            );
+            log.debug("Skipping conditional order. Reason: AcceptPolicy: SKIP");
             continue;
         }
       }
