@@ -42,7 +42,7 @@ export class FilterPolicy {
     const { owners, handlers } = this.config;
 
     const action =
-      owners.get(owner) || handlers.get(conditionalOrderParams.handler);
+      handlers.get(conditionalOrderParams.handler) || owners.get(owner);
 
     if (action) {
       return action;
