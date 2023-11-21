@@ -255,7 +255,8 @@ function parseChainConfigOption(option: string): ChainConfigOptions {
 
   const rawWatchdogTimeout = parts[2];
   // If there is a third part, it is the watchdogTimeout
-  const watchdogTimeout = parts.length > 2 ? Number(rawWatchdogTimeout) : 30;
+  const watchdogTimeout =
+    parts.length > 2 && rawWatchdogTimeout ? Number(rawWatchdogTimeout) : 30;
   // Ensure that the watchdogTimeout is a positive number
   if (isNaN(watchdogTimeout) || watchdogTimeout < 0) {
     throw new InvalidArgumentError(
