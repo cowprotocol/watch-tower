@@ -134,7 +134,6 @@ export class ChainContext {
       },
     });
 
-    console.log("filterPolicyConfig", filterPolicyConfig);
     this.filterPolicy = filterPolicyConfig
       ? new FilterPolicy({
           configBaseUrl: filterPolicyConfig,
