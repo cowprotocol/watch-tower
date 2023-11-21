@@ -25,6 +25,7 @@ import {
   PollResultCode,
   PollResultErrors,
   PollResultSuccess,
+  SigningScheme,
   SupportedChainId,
   formatEpoch,
 } from "@cowprotocol/cow-sdk";
@@ -129,26 +130,28 @@ export async function checkForAndPlaceOrder(
       const { result: lastHint } = conditionalOrder.pollResult || {};
 
       // Apply filtering policy
-      const filterResult = filterPolicy.preFilter({
-        owner,
-        conditionalOrderParams: conditionalOrder.params,
-      });
+      if (filterPolicy) {
+        const filterResult = filterPolicy.preFilter({
+          owner,
+          conditionalOrderParams: conditionalOrder.params,
+        });
 
-      switch (filterResult) {
-        case FilterAction.DROP:
-          log.debug(
-            "Dropping conditional order. Reason: AcceptPolicy: DROP",
-            conditionalOrder.params
-          );
-          ordersPendingDelete.push(conditionalOrder);
+        switch (filterResult) {
+          case FilterAction.DROP:
+            log.debug(
+              "Dropping conditional order. Reason: AcceptPolicy: DROP",
+              conditionalOrder.params
+            );
+            ordersPendingDelete.push(conditionalOrder);
 
-          continue;
-        case FilterAction.SKIP:
-          log.debug(
-            "Skipping conditional order. Reason: AcceptPolicy: SKIP",
-            conditionalOrder.params
-          );
-          continue;
+            continue;
+          case FilterAction.SKIP:
+            log.debug(
+              "Skipping conditional order. Reason: AcceptPolicy: SKIP",
+              conditionalOrder.params
+            );
+            continue;
+        }
       }
 
       // Check if the order is due (by epoch)
@@ -466,16 +469,26 @@ async function _placeOrder(params: {
   const { chainId } = orderBook.context;
   try {
     const postOrder: OrderCreation = {
-      ...order,
+      kind: order.kind,
+      from: order.from,
+      sellToken: order.sellToken,
+      buyToken: order.buyToken,
       sellAmount: order.sellAmount.toString(),
       buyAmount: order.buyAmount.toString(),
+      receiver: order.receiver,
       feeAmount: order.feeAmount.toString(),
-      signingScheme: "eip1271",
+      validTo: order.validTo,
+      appData: order.appData,
+      partiallyFillable: order.partiallyFillable,
+      sellTokenBalance: order.sellTokenBalance,
+      buyTokenBalance: order.buyTokenBalance,
+      signingScheme: SigningScheme.EIP1271,
+      signature: order.signature,
     };
 
     // If the operation is a dry run, don't post to the API
     log.info(`Post order ${orderUid} to OrderBook on chain ${chainId}`);
-    log.debug(`Order`, postOrder);
+    log.debug(`Post order details`, postOrder);
     if (!dryRun) {
       const orderUid = await orderBook.sendOrder(postOrder);
       orderBookDiscreteOrdersTotal.labels(...metricLabels).inc();

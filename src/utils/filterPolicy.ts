@@ -1,4 +1,4 @@
-import { ConditionalOrderParams, SupportedChainId } from "@cowprotocol/cow-sdk";
+import { ConditionalOrderParams } from "@cowprotocol/cow-sdk";
 
 export enum FilterAction {
   DROP = "DROP",
@@ -6,29 +6,43 @@ export enum FilterAction {
   ACCEPT = "ACCEPT",
 }
 
+interface PolicyConfig {
+  owners: Map<string, FilterAction>;
+  handlers: Map<string, FilterAction>;
+}
+
 export interface FilterParams {
   owner: string;
   conditionalOrderParams: ConditionalOrderParams;
 }
 
+export interface FilterPolicyParams {
+  configBaseUrl: string;
+  // configAuthToken: string; // TODO: Implement authToken
+}
 export class FilterPolicy {
-  private static _instance: FilterPolicy | undefined;
+  protected configUrl: string;
+  protected config: PolicyConfig | undefined;
 
-  protected owners: Map<string, FilterAction> = new Map();
-  protected handlers: Map<string, FilterAction> = new Map();
-
-  setOwners(owners: Map<string, FilterAction>) {
-    this.owners = owners;
+  constructor({ configBaseUrl }: FilterPolicyParams) {
+    this.configUrl = configBaseUrl;
   }
 
-  setHandlers(handlers: Map<string, FilterAction>) {
-    this.handlers = handlers;
-  }
-
+  /**
+   * Decide if a conditional order should be processed, ignored, or dropped base in some filtering rules
+   *
+   * @param filterParams params required for the pre-filtering, including the conditional order params, chainId and the owner contract
+   * @returns The action that should be performed with the conditional order
+   */
   preFilter({ owner, conditionalOrderParams }: FilterParams): FilterAction {
+    if (!this.config) {
+      return FilterAction.ACCEPT;
+    }
+
+    const { owners, handlers } = this.config;
+
     const action =
-      this.owners.get(owner) ||
-      this.handlers.get(conditionalOrderParams.handler);
+      owners.get(owner) || handlers.get(conditionalOrderParams.handler);
 
     if (action) {
       return action;
@@ -36,28 +50,35 @@ export class FilterPolicy {
 
     return FilterAction.ACCEPT;
   }
-}
 
-export interface Policy {
-  owners: Map<string, FilterAction>;
-  handlers: Map<string, FilterAction>;
-}
+  /**
+   * Reloads the policies with their latest version
+   */
+  async reloadPolicies() {
+    const policyConfig = await this.getConfig();
 
-export async function fetchPolicy(chainId: SupportedChainId): Promise<Policy> {
-  const configResponse = await fetch(
-    `https://raw.githubusercontent.com/cowprotocol/watch-tower/config/filter-policy-${chainId}.json`
-  );
-
-  if (!configResponse.ok) {
-    throw new Error(
-      `Failed to fetch policy. Error ${
-        configResponse.status
-      }: ${await configResponse.text().catch(() => "")}`
-    );
+    if (policyConfig) {
+      this.config = policyConfig;
+    }
   }
-  const config = await configResponse.json();
-  return {
-    owners: new Map(Object.entries(config.owners)),
-    handlers: new Map(Object.entries(config.handlers)),
-  };
+
+  protected async getConfig(): Promise<PolicyConfig> {
+    if (!this.configUrl) {
+      throw new Error("configUrl must be defined");
+    }
+    const configResponse = await fetch(this.configUrl); // TODO: Implement authToken
+
+    if (!configResponse.ok) {
+      throw new Error(
+        `Failed to fetch policy. Error ${
+          configResponse.status
+        }: ${await configResponse.text().catch(() => "")}`
+      );
+    }
+    const config = await configResponse.json();
+    return {
+      owners: new Map(Object.entries(config.owners)),
+      handlers: new Map(Object.entries(config.handlers)),
+    };
+  }
 }

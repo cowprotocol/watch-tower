@@ -14,6 +14,7 @@ export async function runMulti(options: RunMultiOptions) {
     deploymentBlocks,
     watchdogTimeouts,
     orderBookApis,
+    filterPolicyConfigFiles,
     oneShot,
     disableApi,
     apiPort,
@@ -51,6 +52,7 @@ export async function runMulti(options: RunMultiOptions) {
             deploymentBlock: deploymentBlocks[index],
             watchdogTimeout: watchdogTimeouts[index],
             orderBookApi: orderBookApis[index],
+            filterPolicyConfig: filterPolicyConfigFiles[index],
           },
           storage
         );

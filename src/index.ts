@@ -71,7 +71,7 @@ const databasePathOption = new Option(
   .default(DEFAULT_DATABASE_PATH)
   .env("DATABASE_PATH");
 
-const chainConfigHelp = `Chain configuration in the format of <rpc>,<deploymentBlock>[,<watchdogTimeout>,<orderBookApi>], e.g. http://erigon.dappnode:8545,12345678,30,https://api.cow.fi/mainnet`;
+const chainConfigHelp = `Chain configuration in the format of <rpc>,<deploymentBlock>[,<watchdogTimeout>,<orderBookApi>,<filterPolicyConfig>], e.g. http://erigon.dappnode:8545,12345678,30,https://api.cow.fi/mainnet,https://raw.githubusercontent.com/cowprotocol/watch-tower/config/filter-policy-1.json`;
 const multiChainConfigOption = new Option(
   "--chain-config <chainConfig...>",
   chainConfigHelp
@@ -231,7 +231,7 @@ function parseChainConfigOption(option: string): ChainConfigOptions {
   // Ensure there are at least two parts (rpc and deploymentBlock)
   if (parts.length < 2) {
     throw new InvalidArgumentError(
-      `Chain configuration must be in the format of <rpc>,<deploymentBlock>[,<watchdogTimeout>,<orderBookApi>], e.g. http://erigon.dappnode:8545,12345678,30,https://api.cow.fi/mainnet`
+      `Chain configuration must be in the format of <rpc>,<deploymentBlock>[,<watchdogTimeout>,<orderBookApi>,<filterPolicyConfig>], e.g. http://erigon.dappnode:8545,12345678,30,https://api.cow.fi/mainnet,https://raw.githubusercontent.com/cowprotocol/watch-tower/config/filter-policy-1.json`
     );
   }
 
@@ -264,7 +264,7 @@ function parseChainConfigOption(option: string): ChainConfigOptions {
   }
 
   // If there is a fourth part, it is the orderBookApi
-  const orderBookApi = parts.length > 3 ? parts[3] : undefined;
+  const orderBookApi = parts.length > 3 && parts[3] ? parts[3] : undefined;
   // Ensure that the orderBookApi is a valid URL
   if (orderBookApi && !isValidUrl(orderBookApi)) {
     throw new InvalidArgumentError(
@@ -272,7 +272,23 @@ function parseChainConfigOption(option: string): ChainConfigOptions {
     );
   }
 
-  return { rpc, deploymentBlock, watchdogTimeout, orderBookApi };
+  // If there is a fifth part, it is the filterPolicyConfig
+  const filterPolicyConfig =
+    parts.length > 4 && parts[4] ? parts[4] : undefined;
+  // Ensure that the orderBookApi is a valid URL
+  if (filterPolicyConfig && !isValidUrl(filterPolicyConfig)) {
+    throw new InvalidArgumentError(
+      `${filterPolicyConfig} must be a valid URL (orderBookApi)`
+    );
+  }
+
+  return {
+    rpc,
+    deploymentBlock,
+    watchdogTimeout,
+    orderBookApi,
+    filterPolicyConfig,
+  };
 }
 
 function parseChainConfigOptions(
@@ -282,15 +298,23 @@ function parseChainConfigOptions(
     deploymentBlocks: [],
     watchdogTimeouts: [],
     orderBookApis: [],
+    filterPolicyConfigFiles: [],
   }
 ): MultiChainConfigOptions {
   const parsedOption = parseChainConfigOption(option);
-  const { rpc, deploymentBlock, watchdogTimeout, orderBookApi } = parsedOption;
+  const {
+    rpc,
+    deploymentBlock,
+    watchdogTimeout,
+    orderBookApi,
+    filterPolicyConfig,
+  } = parsedOption;
 
   previous.rpcs.push(rpc);
   previous.deploymentBlocks.push(deploymentBlock);
   previous.watchdogTimeouts.push(watchdogTimeout);
   previous.orderBookApis.push(orderBookApi);
+  previous.filterPolicyConfigFiles.push(filterPolicyConfig);
   return previous;
 }
 

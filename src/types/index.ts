@@ -27,14 +27,17 @@ export type ChainConfigOptions = {
   rpc: string;
   deploymentBlock: number;
   watchdogTimeout: number;
-  orderBookApi: OrderBookApi;
+  orderBookApi?: string;
+  filterPolicyConfig?: string;
+  // filterPolicyConfigAuthToken?: string; // TODO: Implement authToken
 };
 
 export type MultiChainConfigOptions = {
   rpcs: string[];
   deploymentBlocks: number[];
   watchdogTimeouts: number[];
-  orderBookApis: OrderBookApi[];
+  orderBookApis: (string | undefined)[];
+  filterPolicyConfigFiles: (string | undefined)[];
 };
 
 export type RunSingleOptions = RunOptions & ChainConfigOptions;
