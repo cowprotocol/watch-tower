@@ -112,9 +112,7 @@ export async function checkForAndPlaceOrder(
     );
     const ordersPendingDelete = [];
     // enumerate all the `ConditionalOrder`s for a given owner
-    log.debug(
-      `Process owner ${owner} (${conditionalOrders.size} orders): ${registry.numOrders}`
-    );
+    log.debug(`Process owner ${owner} (${conditionalOrders.size} orders)`);
     for (const conditionalOrder of conditionalOrders) {
       orderCounter++;
       const ownerRef = `${ownerCounter}.${orderCounter}`;
