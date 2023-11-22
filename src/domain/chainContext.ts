@@ -32,6 +32,7 @@ import {
   reorgsTotal,
 } from "../utils/metrics";
 import { hexZeroPad } from "ethers/lib/utils";
+import { FilterPolicy } from "../utils/filterPolicy";
 
 const WATCHDOG_FREQUENCY = 5 * 1000; // 5 seconds
 
@@ -67,6 +68,11 @@ export interface ChainWatcherHealth {
   };
 }
 
+export interface FilterPolicyConfig {
+  baseUrl: string;
+  // authToken: string; // TODO: Implement authToken
+}
+
 /**
  * The chain context handles watching a single chain for new conditional orders
  * and executing them.
@@ -85,6 +91,7 @@ export class ChainContext {
   chainId: SupportedChainId;
   registry: Registry;
   orderBook: OrderBookApi;
+  filterPolicy: FilterPolicy | undefined;
   contract: ComposableCoW;
   multicall: Multicall3;
 
@@ -101,6 +108,7 @@ export class ChainContext {
       watchdogTimeout,
       owners,
       orderBookApi,
+      filterPolicyConfig,
     } = options;
     this.deploymentBlock = deploymentBlock;
     this.pageSize = pageSize;
@@ -126,12 +134,19 @@ export class ChainContext {
       },
     });
 
+    this.filterPolicy = filterPolicyConfig
+      ? new FilterPolicy({
+          configBaseUrl: filterPolicyConfig,
+          // configAuthToken: filterPolicyConfigAuthToken, // TODO: Implement authToken
+        })
+      : undefined;
     this.contract = composableCowContract(this.provider, this.chainId);
     this.multicall = Multicall3__factory.connect(MULTICALL3, this.provider);
   }
 
   /**
-   * Initialise a chain context.
+   * Initialize a chain context.
+   *
    * @param options as parsed by commander from the command line arguments.
    * @param storage the db singleton that provides persistence.
    * @returns A chain context that is monitoring for orders on the chain.
@@ -444,7 +459,7 @@ async function processBlock(
   blockNumberOverride?: number,
   blockTimestampOverride?: number
 ) {
-  const { provider, chainId } = context;
+  const { provider, chainId, filterPolicy } = context;
   const timer = processBlockDurationSeconds
     .labels(context.chainId.toString())
     .startTimer();
@@ -453,6 +468,14 @@ async function processBlock(
     chainId.toString(),
     block.number.toString()
   );
+
+  // Get the latest filter policy
+  if (filterPolicy) {
+    filterPolicy.reloadPolicies().catch((error) => {
+      console.log(`Error fetching the filter policy config for chain `, error);
+      return null;
+    });
+  }
 
   // Transaction watcher for adding new contracts
   let hasErrors = false;

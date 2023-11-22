@@ -25,6 +25,7 @@ import {
   PollResultCode,
   PollResultErrors,
   PollResultSuccess,
+  SigningScheme,
   SupportedChainId,
   formatEpoch,
 } from "@cowprotocol/cow-sdk";
@@ -41,6 +42,7 @@ import {
   pollingOnChainEthersErrorsTotal,
   measureTime,
 } from "../utils/metrics";
+import { FilterAction } from "../utils/filterPolicy";
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
 
@@ -83,7 +85,7 @@ export async function checkForAndPlaceOrder(
   blockNumberOverride?: number,
   blockTimestampOverride?: number
 ) {
-  const { chainId, registry } = context;
+  const { chainId, registry, filterPolicy } = context;
   const { ownerOrders, numOrders } = registry;
 
   const blockNumber = blockNumberOverride || block.number;
@@ -110,9 +112,7 @@ export async function checkForAndPlaceOrder(
     );
     const ordersPendingDelete = [];
     // enumerate all the `ConditionalOrder`s for a given owner
-    log.debug(
-      `Process owner ${owner} (${conditionalOrders.size} orders): ${registry.numOrders}`
-    );
+    log.debug(`Process owner ${owner} (${conditionalOrders.size} orders)`);
     for (const conditionalOrder of conditionalOrders) {
       orderCounter++;
       const ownerRef = `${ownerCounter}.${orderCounter}`;
@@ -127,13 +127,32 @@ export async function checkForAndPlaceOrder(
 
       const { result: lastHint } = conditionalOrder.pollResult || {};
 
+      // Apply filtering policy
+      if (filterPolicy) {
+        const filterResult = filterPolicy.preFilter({
+          owner,
+          conditionalOrderParams: conditionalOrder.params,
+        });
+
+        switch (filterResult) {
+          case FilterAction.DROP:
+            log.debug("Dropping conditional order. Reason: AcceptPolicy: DROP");
+            ordersPendingDelete.push(conditionalOrder);
+
+            continue;
+          case FilterAction.SKIP:
+            log.debug("Skipping conditional order. Reason: AcceptPolicy: SKIP");
+            continue;
+        }
+      }
+
       // Check if the order is due (by epoch)
       if (
         lastHint?.result === PollResultCode.TRY_AT_EPOCH &&
         blockTimestamp < lastHint.epoch
       ) {
         log.debug(
-          `Skipping conditional. Reason: Not due yet (TRY_AT_EPOCH=${
+          `Skipping conditional order. Reason: Not due yet (TRY_AT_EPOCH=${
             lastHint.epoch
           }, ${formatEpoch(lastHint.epoch)}). ${logOrderDetails}`,
           conditionalOrder.params
@@ -147,7 +166,7 @@ export async function checkForAndPlaceOrder(
         blockNumber < lastHint.blockNumber
       ) {
         log.debug(
-          `Skipping conditional. Reason: Not due yet (TRY_ON_BLOCK=${
+          `Skipping conditional order. Reason: Not due yet (TRY_ON_BLOCK=${
             lastHint.blockNumber
           }, in ${
             lastHint.blockNumber - blockNumber
@@ -442,16 +461,26 @@ async function _placeOrder(params: {
   const { chainId } = orderBook.context;
   try {
     const postOrder: OrderCreation = {
-      ...order,
+      kind: order.kind,
+      from: order.from,
+      sellToken: order.sellToken,
+      buyToken: order.buyToken,
       sellAmount: order.sellAmount.toString(),
       buyAmount: order.buyAmount.toString(),
+      receiver: order.receiver,
       feeAmount: order.feeAmount.toString(),
-      signingScheme: "eip1271",
+      validTo: order.validTo,
+      appData: order.appData,
+      partiallyFillable: order.partiallyFillable,
+      sellTokenBalance: order.sellTokenBalance,
+      buyTokenBalance: order.buyTokenBalance,
+      signingScheme: SigningScheme.EIP1271,
+      signature: order.signature,
     };
 
     // If the operation is a dry run, don't post to the API
     log.info(`Post order ${orderUid} to OrderBook on chain ${chainId}`);
-    log.debug(`Order`, postOrder);
+    log.debug(`Post order details`, postOrder);
     if (!dryRun) {
       const orderUid = await orderBook.sendOrder(postOrder);
       orderBookDiscreteOrdersTotal.labels(...metricLabels).inc();
