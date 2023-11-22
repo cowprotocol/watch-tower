@@ -7,6 +7,7 @@ export enum FilterAction {
 }
 
 interface PolicyConfig {
+  defaultAction: FilterAction;
   owners: Map<string, FilterAction>;
   handlers: Map<string, FilterAction>;
 }
@@ -48,7 +49,7 @@ export class FilterPolicy {
       return action;
     }
 
-    return FilterAction.ACCEPT;
+    return this.config.defaultAction;
   }
 
   /**
@@ -77,6 +78,7 @@ export class FilterPolicy {
     }
     const config = await configResponse.json();
     return {
+      defaultAction: config.defaultAction,
       owners: new Map(Object.entries(config.owners)),
       handlers: new Map(Object.entries(config.handlers)),
     };
