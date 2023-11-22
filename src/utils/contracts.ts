@@ -301,9 +301,7 @@ export function handleOnChainCustomError(params: {
         );
         return dropOrder(`Invalid order: ${reason}`);
       case CustomErrorSelectors.POLL_TRY_NEXT_BLOCK:
-        log.info(
-          `Order on safe ${owner} not valid/signalled to try next block.`
-        );
+        log.info(`Order on safe ${owner} not signalled to try next block`);
         return {
           result: PollResultCode.TRY_NEXT_BLOCK,
           reason: msgWithSelector(parsedCustomError.message),
