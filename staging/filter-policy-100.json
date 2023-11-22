@@ -1,4 +1,5 @@
 {
+  "defaultAction": "ACCEPT",
   "owners": {},
   "handlers": {
     "0xB68597b15fE0BefDB438842AcDb4Ab18391aC35c": "DROP",

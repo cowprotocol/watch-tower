@@ -1,4 +1,5 @@
 {
+  "defaultAction": "ACCEPT",
   "owners": {},
   "handlers": {}
 }
