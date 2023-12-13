@@ -71,7 +71,9 @@ const databasePathOption = new Option(
   .default(DEFAULT_DATABASE_PATH)
   .env("DATABASE_PATH");
 
-const chainConfigHelp = `Chain configuration in the format of <rpc>,<deploymentBlock>[,<watchdogTimeout>,<orderBookApi>,<filterPolicyConfig>], e.g. http://erigon.dappnode:8545,12345678,30,https://api.cow.fi/mainnet,https://raw.githubusercontent.com/cowprotocol/watch-tower/config/filter-policy-1.json`;
+const CHAIN_CONFIG_PARAMS =
+  "<rpc>,<deploymentBlock>[,<watchdogTimeout>,<orderBookApi>,<filterPolicyConfig>,<rpcUser>,<rpcPassword>";
+const chainConfigHelp = `Chain configuration in the format of ${CHAIN_CONFIG_PARAMS}], e.g. http://erigon.dappnode:8545,12345678,30,https://api.cow.fi/mainnet,https://raw.githubusercontent.com/cowprotocol/watch-tower/config/filter-policy-1.json`;
 const multiChainConfigOption = new Option(
   "--chain-config <chainConfig...>",
   chainConfigHelp
@@ -231,7 +233,7 @@ function parseChainConfigOption(option: string): ChainConfigOptions {
   // Ensure there are at least two parts (rpc and deploymentBlock)
   if (parts.length < 2) {
     throw new InvalidArgumentError(
-      `Chain configuration must be in the format of <rpc>,<deploymentBlock>[,<watchdogTimeout>,<orderBookApi>,<filterPolicyConfig>], e.g. http://erigon.dappnode:8545,12345678,30,https://api.cow.fi/mainnet,https://raw.githubusercontent.com/cowprotocol/watch-tower/config/filter-policy-1.json`
+      `Chain configuration must be in the format of ${CHAIN_CONFIG_PARAMS}], e.g. http://erigon.dappnode:8545,12345678,30,https://api.cow.fi/mainnet,https://raw.githubusercontent.com/cowprotocol/watch-tower/config/filter-policy-1.json`
     );
   }
 
@@ -283,8 +285,16 @@ function parseChainConfigOption(option: string): ChainConfigOptions {
     );
   }
 
+  // If there is a sixth part, it is the rpcUser
+  const rpcUserConfig = parts.length > 5 && parts[5] ? parts[5] : undefined;
+
+  // If there is a seventh part, it is the rpcUser
+  const rpcPasswordConfig = parts.length > 6 && parts[6] ? parts[6] : undefined;
+
   return {
     rpc,
+    rpcUser: rpcUserConfig,
+    rpcPassword: rpcPasswordConfig,
     deploymentBlock,
     watchdogTimeout,
     orderBookApi,

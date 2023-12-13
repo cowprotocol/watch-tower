@@ -31,7 +31,7 @@ import {
   reorgDepth,
   reorgsTotal,
 } from "../utils/metrics";
-import { hexZeroPad } from "ethers/lib/utils";
+import { ConnectionInfo, hexZeroPad } from "ethers/lib/utils";
 import { FilterPolicy } from "../utils/filterPolicy";
 
 const WATCHDOG_FREQUENCY = 5 * 1000; // 5 seconds
@@ -155,9 +155,9 @@ export class ChainContext {
     options: RunSingleOptions,
     storage: DBService
   ): Promise<ChainContext> {
-    const { rpc, deploymentBlock } = options;
+    const { rpc, rpcUser, rpcPassword, deploymentBlock } = options;
 
-    const provider = new providers.JsonRpcProvider(rpc);
+    const provider = getProvider(rpc, rpcUser, rpcPassword);
     const chainId = (await provider.getNetwork()).chainId;
 
     const registry = await Registry.load(
@@ -442,6 +442,43 @@ export class ChainContext {
   static isHealthy(): boolean {
     return ChainContext.health.overallHealth;
   }
+}
+
+function getProvider(
+  rpc: string,
+  user?: string,
+  password?: string
+): providers.Provider {
+  const providerConfig: ConnectionInfo = { url: rpc };
+
+  if (user && password) {
+    if (rpc.startsWith("http")) {
+      // FIXME: Not a good idea to use HTTP and basic auth, but this is a temporary solution to support it (some RPCs are only exposes under HTTP and have basic auth)
+      // Only run it in our own infra
+      providerConfig.headers = {
+        Authorization: getAuthHeader({ user, password }),
+      };
+    } else {
+      // Set basic auth
+      providerConfig.user = user;
+      providerConfig.password = password;
+    }
+  }
+
+  return new providers.JsonRpcProvider(providerConfig);
+}
+
+/**
+ * Helper method to create the basic AUTH header for the provider
+ * In principle, ethersjs already deals with it, however i need to manually set it when using HTTP.
+ *
+ * Its not a good idea to use auth headers with HTTP, so this is a temporary solution.
+ *
+ * @param params user and password
+ * @returns the basic auth header
+ */
+function getAuthHeader({ user, password }: { user: string; password: string }) {
+  return "Basic " + Buffer.from(`${user}:${password}`).toString("base64");
 }
 
 /**
