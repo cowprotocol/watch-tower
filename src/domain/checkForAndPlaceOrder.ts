@@ -43,6 +43,7 @@ import {
   measureTime,
 } from "../utils/metrics";
 import { FilterAction } from "../utils/filterPolicy";
+import { validateOrder } from "../utils/filterOrder";
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
 
@@ -344,6 +345,10 @@ async function _processConditionalOrder(
       buyTokenBalance: balanceToString(order.buyTokenBalance.toString()),
       validTo: Number(order.validTo),
     };
+
+    // We now have the order, so we can validate it. This will throw if the order is invalid
+    // and we will catch it below.
+    validateOrder(orderToSubmit);
 
     // calculate the orderUid
     const orderUid = _getOrderUid(chainId, orderToSubmit, owner);
