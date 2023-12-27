@@ -157,7 +157,7 @@ export class ChainContext {
   ): Promise<ChainContext> {
     const { rpc, deploymentBlock } = options;
 
-    const provider = new providers.JsonRpcProvider(rpc);
+    const provider = new providers.WebSocketProvider(rpc);
     const chainId = (await provider.getNetwork()).chainId;
 
     const registry = await Registry.load(
