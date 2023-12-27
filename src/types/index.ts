@@ -29,8 +29,6 @@ export type ChainConfigOptions = {
   watchdogTimeout: number;
   orderBookApi?: string;
   filterPolicyConfig?: string;
-  rpcUser?: string;
-  rpcPassword?: string;
   // filterPolicyConfigAuthToken?: string; // TODO: Implement authToken
 };
 
