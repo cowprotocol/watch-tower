@@ -469,8 +469,11 @@ async function processBlock(
     block.number.toString()
   );
 
-  // Get the latest filter policy
-  if (filterPolicy) {
+  // Refresh the policy every hour
+  // NOTE: This is a temporary solution until we have a better way to update the filter policy
+  const filterFrequency =
+    3600 / (context.chainId === SupportedChainId.GNOSIS_CHAIN ? 5 : 12); // 5 seconds for gnosis, 12 seconds for mainnet
+  if (filterPolicy && block.number % (3600 / filterFrequency) == 0) {
     filterPolicy.reloadPolicies().catch((error) => {
       console.log(`Error fetching the filter policy config for chain `, error);
       return null;
