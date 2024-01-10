@@ -37,6 +37,7 @@ import { FilterPolicy } from "../utils/filterPolicy";
 const WATCHDOG_FREQUENCY = 5 * 1000; // 5 seconds
 
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
+const FILTER_FREQUENCY_SECS = 60 * 60; // 1 hour
 
 export const SDK_BACKOFF_NUM_OF_ATTEMPTS = 5;
 
@@ -471,9 +472,13 @@ async function processBlock(
 
   // Refresh the policy every hour
   // NOTE: This is a temporary solution until we have a better way to update the filter policy
-  const filterFrequency =
-    3600 / (context.chainId === SupportedChainId.GNOSIS_CHAIN ? 5 : 12); // 5 seconds for gnosis, 12 seconds for mainnet
-  if (filterPolicy && block.number % (3600 / filterFrequency) == 0) {
+  const blocksPerFilterFrequency =
+    FILTER_FREQUENCY_SECS /
+    (context.chainId === SupportedChainId.GNOSIS_CHAIN ? 5 : 12); // 5 seconds for gnosis, 12 seconds for mainnet
+  if (
+    filterPolicy &&
+    block.number % (FILTER_FREQUENCY_SECS / blocksPerFilterFrequency) == 0
+  ) {
     filterPolicy.reloadPolicies().catch((error) => {
       console.log(`Error fetching the filter policy config for chain `, error);
       return null;
