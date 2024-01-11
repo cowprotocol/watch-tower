@@ -10,6 +10,10 @@ import { getAddress, isHexString } from "ethers/lib/utils";
 import { dumpDb, replayBlock, replayTx, run, runMulti } from "./commands";
 import { initLogging } from "./utils";
 import { version, description } from "../package.json";
+import { ethers, utils } from "ethers";
+
+// Enable trace logging
+ethers.utils.Logger.setLogLevel(utils.Logger.levels.DEBUG);
 
 const DEFAULT_DATABASE_PATH = "./database";
 
