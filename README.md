@@ -1,21 +1,21 @@
-# Watch-Tower for Composable CoWs 🐮🎶
+# Watch-Tower for Programmatic Orders 🐮🎶
 
 ## Overview
 
-The [`ComposableCoW`](https://github.com/cowprotocol/composable-cow) conditional order framework requires a watch-tower to monitor the blockchain for new orders, and to post them to the [CoW Protocol `OrderBook` API](https://api.cow.fi/docs/#/). The watch-tower is a standalone application that can be run locally as a script for development, or deployed as a docker container to a server, or dappnode.
+The [programmatic order](https://docs.cow.fi/cow-protocol/concepts/order-types/programmatic-orders) framework requires a watch-tower to monitor the blockchain for new orders, and to post them to the [CoW Protocol `OrderBook` API](https://docs.cow.fi/cow-protocol/reference/apis/orderbook). The watch-tower is a standalone application that can be run locally as a script for development, or deployed as a docker container to a server, or dappnode.
 
 ## Deployment
 
 If running your own watch-tower instance, you will need the following:
 
 - An RPC node connected to the Ethereum mainnet, Gnosis Chain, or Goerli.
-- Internet access to the [CoW Protocol `OrderBook` API](https://api.cow.fi/docs/#/).
+- Internet access to the [CoW Protocol `OrderBook` API](https://docs.cow.fi/cow-protocol/reference/apis/orderbook).
 
 **CAUTION**: Conditional order types may consume considerable RPC calls.
 
 **NOTE**: `deployment-block` refers to the block number at which the **`ComposableCoW`** contract was deployed to the respective chain. This is used to optimise the watch-tower by only fetching events from the blockchain after this block number. Refer to [Deployed Contracts](https://github.com/cowprotocol/composable-cow#deployed-contracts) for the respective chains.
 
-**NOTE**: The `--page-size` option is used to specify the number of blocks to fetch from the blockchain when querying historical events (`eth_getLogs`). The default is `5000`, which is the maximum number of blocks that can be fetched in a single request from Infura. If you are running the watch-tower against your own RPC, you may want to set this to `0` to fetch all blocks in one request, as opposed to paging requests.
+**NOTE**: The `pageSize` option is used to specify the number of blocks to fetch from the blockchain when querying historical events (`eth_getLogs`). The default is `5000`, which is the maximum number of blocks that can be fetched in a single request from Infura. If you are running the watch-tower against your own RPC, you may want to set this to `0` to fetch all blocks in one request, as opposed to paging requests.
 
 
 ### Docker
@@ -31,20 +31,13 @@ As an example, to run the latest version of the watch-tower via `docker`:
 
 ```bash
 docker run --rm -it \
+  -v "$(pwd)/config.json.example:/config.json" \
   ghcr.io/cowprotocol/watch-tower:latest \
   run \
-  --chain-config <rpc>,<deployment-block> \
-  --page-size 5000
+  --config-path /config.json
 ```
 
-**NOTE**: There are multiple optional arguments on the `--chain-config` parameter. For a full explanation of the optional arguments, use the `--help` flag:
-
-  ```bash
-  docker run --rm -it \
-    ghcr.io/cowprotocol/watch-tower:latest \
-    run \
-    --help
-  ```
+**NOTE**: See the example `config.json.example` for an example configuration file.
 
 ### DAppNode
 
@@ -78,7 +71,7 @@ The watch-tower monitors the following events:
 When a new event is discovered, the watch-tower will:
 
 1. Fetch the conditional order(s) from the blockchain.
-2. Post the **discrete** order(s) to the [CoW Protocol `OrderBook` API](https://api.cow.fi/docs/#/).
+2. Post the **discrete** order(s) to the [CoW Protocol `OrderBook` API](https://docs.cow.fi/cow-protocol/reference/apis/orderbook).
 
 ### Storage (registry)
 
@@ -186,7 +179,7 @@ It is recommended to test against the Goerli testnet. To run the watch-tower:
 # Install dependencies
 yarn
 # Run watch-tower
-yarn cli run --chain-config <rpc>,<deployment-block> --page-size 5000
+yarn cli run --config-path ./config.json
 ```
 
 ### Testing
