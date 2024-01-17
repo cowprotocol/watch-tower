@@ -1,3 +1,5 @@
+import type { Config } from "./types";
+
 export type LogOptions = {
   logLevel: string;
   databasePath: string;

@@ -1,4 +1,5 @@
 import { ConditionalOrderParams } from "@cowprotocol/cow-sdk";
+import { Config } from "../types";
 
 export enum FilterAction {
   DROP = "DROP",
@@ -22,11 +23,14 @@ export interface FilterPolicyParams {
   // configAuthToken: string; // TODO: Implement authToken
 }
 export class FilterPolicy {
-  protected configUrl: string;
   protected config: PolicyConfig | undefined;
 
-  constructor({ configBaseUrl }: FilterPolicyParams) {
-    this.configUrl = configBaseUrl;
+  constructor(config: Config["networks"][number]["filterPolicy"]) {
+    this.config = {
+      defaultAction: FilterAction[config.defaultAction],
+      owners: this.convertToMap(config.owners),
+      handlers: this.convertToMap(config.handlers),
+    };
   }
 
   /**
@@ -52,35 +56,16 @@ export class FilterPolicy {
     return this.config.defaultAction;
   }
 
-  /**
-   * Reloads the policies with their latest version
-   */
-  async reloadPolicies() {
-    const policyConfig = await this.getConfig();
-
-    if (policyConfig) {
-      this.config = policyConfig;
-    }
-  }
-
-  protected async getConfig(): Promise<PolicyConfig> {
-    if (!this.configUrl) {
-      throw new Error("configUrl must be defined");
-    }
-    const configResponse = await fetch(this.configUrl); // TODO: Implement authToken
-
-    if (!configResponse.ok) {
-      throw new Error(
-        `Failed to fetch policy. Error ${
-          configResponse.status
-        }: ${await configResponse.text().catch(() => "")}`
-      );
-    }
-    const config = await configResponse.json();
-    return {
-      defaultAction: config.defaultAction,
-      owners: new Map(Object.entries(config.owners)),
-      handlers: new Map(Object.entries(config.handlers)),
-    };
+  private convertToMap(object?: {
+    [k: string]: "ACCEPT" | "DROP" | "SKIP";
+  }): Map<string, FilterAction> {
+    return object
+      ? new Map(
+          Object.entries(object).map(([key, value]) => [
+            key,
+            FilterAction[value],
+          ])
+        )
+      : new Map<string, FilterAction>();
   }
 }

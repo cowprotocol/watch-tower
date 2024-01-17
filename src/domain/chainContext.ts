@@ -1,5 +1,4 @@
 import {
-  RunSingleOptions,
   Registry,
   ReplayPlan,
   ConditionalOrderCreatedEvent,
@@ -8,6 +7,7 @@ import {
   Multicall3__factory,
   RegistryBlock,
   blockToRegistryBlock,
+  ContextOptions,
 } from "../types";
 import {
   SupportedChainId,
@@ -34,10 +34,11 @@ import {
 import { hexZeroPad } from "ethers/lib/utils";
 import { FilterPolicy } from "../utils/filterPolicy";
 
-const WATCHDOG_FREQUENCY = 5 * 1000; // 5 seconds
+const WATCHDOG_FREQUENCY_SECS = 5; // 5 seconds
+const WATCHDOG_TIMEOUT_DEFAULT_SECS = 30;
 
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
-const FILTER_FREQUENCY_SECS = 60 * 60; // 1 hour
+const PAGE_SIZE_DEFAULT = 5000;
 
 export const SDK_BACKOFF_NUM_OF_ATTEMPTS = 5;
 
@@ -97,7 +98,7 @@ export class ChainContext {
   multicall: Multicall3;
 
   protected constructor(
-    options: RunSingleOptions,
+    options: ContextOptions,
     provider: providers.Provider,
     chainId: SupportedChainId,
     registry: Registry
@@ -109,12 +110,12 @@ export class ChainContext {
       watchdogTimeout,
       owners,
       orderBookApi,
-      filterPolicyConfig,
+      filterPolicy,
     } = options;
     this.deploymentBlock = deploymentBlock;
-    this.pageSize = pageSize;
+    this.pageSize = pageSize ?? PAGE_SIZE_DEFAULT;
     this.dryRun = dryRun;
-    this.watchdogTimeout = watchdogTimeout;
+    this.watchdogTimeout = watchdogTimeout ?? WATCHDOG_TIMEOUT_DEFAULT_SECS;
     this.addresses = owners;
 
     this.provider = provider;
@@ -135,12 +136,7 @@ export class ChainContext {
       },
     });
 
-    this.filterPolicy = filterPolicyConfig
-      ? new FilterPolicy({
-          configBaseUrl: filterPolicyConfig,
-          // configAuthToken: filterPolicyConfigAuthToken, // TODO: Implement authToken
-        })
-      : undefined;
+    this.filterPolicy = new FilterPolicy(filterPolicy);
     this.contract = composableCowContract(this.provider, this.chainId);
     this.multicall = Multicall3__factory.connect(MULTICALL3, this.provider);
   }
@@ -153,7 +149,7 @@ export class ChainContext {
    * @returns A chain context that is monitoring for orders on the chain.
    */
   public static async init(
-    options: RunSingleOptions,
+    options: ContextOptions,
     storage: DBService
   ): Promise<ChainContext> {
     const { rpc, deploymentBlock } = options;
@@ -384,7 +380,7 @@ export class ChainContext {
     // pod, we don't exit, but we do log an error and set the sync status to unknown.
     while (true) {
       // sleep for 5 seconds
-      await asyncSleep(WATCHDOG_FREQUENCY);
+      await asyncSleep(WATCHDOG_FREQUENCY_SECS * 1000);
       const now = Math.floor(new Date().getTime() / 1000);
       const timeElapsed = now - lastBlockReceived.timestamp;
 
@@ -460,7 +456,7 @@ async function processBlock(
   blockNumberOverride?: number,
   blockTimestampOverride?: number
 ) {
-  const { provider, chainId, filterPolicy } = context;
+  const { provider, chainId } = context;
   const timer = processBlockDurationSeconds
     .labels(context.chainId.toString())
     .startTimer();
@@ -469,21 +465,6 @@ async function processBlock(
     chainId.toString(),
     block.number.toString()
   );
-
-  // Refresh the policy every hour
-  // NOTE: This is a temporary solution until we have a better way to update the filter policy
-  const blocksPerFilterFrequency =
-    FILTER_FREQUENCY_SECS /
-    (context.chainId === SupportedChainId.GNOSIS_CHAIN ? 5 : 12); // 5 seconds for gnosis, 12 seconds for mainnet
-  if (
-    filterPolicy &&
-    block.number % (FILTER_FREQUENCY_SECS / blocksPerFilterFrequency) == 0
-  ) {
-    filterPolicy.reloadPolicies().catch((error) => {
-      console.log(`Error fetching the filter policy config for chain `, error);
-      return null;
-    });
-  }
 
   // Transaction watcher for adding new contracts
   let hasErrors = false;
