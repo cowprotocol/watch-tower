@@ -31,33 +31,18 @@
                         "type": "object",
                         "properties": {
                             "defaultAction": {
-                                "type": "string",
-                                "enum": [
-                                    "ACCEPT",
-                                    "DROP",
-                                    "SKIP"
-                                ]
+                                "$ref": "#/$defs/filterAction"
                             },
                             "owners": {
                                 "type": "object",
                                 "additionalProperties": {
-                                    "type": "string",
-                                    "enum": [
-                                        "ACCEPT",
-                                        "DROP",
-                                        "SKIP"
-                                    ]
+                                    "$ref": "#/$defs/filterAction"
                                 }
                             },
                             "handlers": {
                                 "type": "object",
                                 "additionalProperties": {
-                                    "type": "string",
-                                    "enum": [
-                                        "ACCEPT",
-                                        "DROP",
-                                        "SKIP"
-                                    ]
+                                    "$ref": "#/$defs/filterAction"
                                 }
                             }
                         },
@@ -80,5 +65,15 @@
     "required": [
         "networks"
     ],
-    "additionalProperties": false
+    "additionalProperties": false,
+    "$defs": {
+        "filterAction": {
+            "type": "string",
+            "enum": [
+                "ACCEPT",
+                "DROP",
+                "SKIP"
+            ]
+        }
+    }
 }
