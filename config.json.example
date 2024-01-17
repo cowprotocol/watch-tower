@@ -1,0 +1,12 @@
+{
+    "networks": [
+        {
+            "name": "mainnet",
+            "rpc": "ws://172.20.0.5:8546",
+            "deploymentBlock": 17883049,
+            "filterPolicy": {
+                "defaultAction": "ACCEPT"
+            }
+        }
+    ]
+}
