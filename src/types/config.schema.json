@@ -1,0 +1,84 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "networks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "rpc": {
+                        "type": "string",
+                        "format": "uri"
+                    },
+                    "deploymentBlock": {
+                        "type": "integer"
+                    },
+                    "watchdogTimeout": {
+                        "type": "integer"
+                    },
+                    "orderBookApi": {
+                        "type": "string",
+                        "format": "uri"
+                    },
+                    "pageSize": {
+                        "type": "integer"
+                    },
+                    "filterPolicy": {
+                        "type": "object",
+                        "properties": {
+                            "defaultAction": {
+                                "type": "string",
+                                "enum": [
+                                    "ACCEPT",
+                                    "DROP",
+                                    "SKIP"
+                                ]
+                            },
+                            "owners": {
+                                "type": "object",
+                                "additionalProperties": {
+                                    "type": "string",
+                                    "enum": [
+                                        "ACCEPT",
+                                        "DROP",
+                                        "SKIP"
+                                    ]
+                                }
+                            },
+                            "handlers": {
+                                "type": "object",
+                                "additionalProperties": {
+                                    "type": "string",
+                                    "enum": [
+                                        "ACCEPT",
+                                        "DROP",
+                                        "SKIP"
+                                    ]
+                                }
+                            }
+                        },
+                        "required": [
+                            "defaultAction"
+                        ],
+                        "additionalProperties": false
+                    }
+                },
+                "required": [
+                    "name",
+                    "rpc",
+                    "deploymentBlock",
+                    "filterPolicy"
+                ],
+                "additionalProperties": false
+            }
+        }
+    },
+    "required": [
+        "networks"
+    ],
+    "additionalProperties": false
+}

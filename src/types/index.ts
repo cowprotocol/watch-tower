@@ -60,3 +60,4 @@ export type ToBlock = "latest" | number;
 export * from "./model";
 export * from "./generated";
 export * from "./generated/ComposableCoW";
+export type { Config } from "./types";
