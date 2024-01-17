@@ -1,29 +1,27 @@
 import "dotenv/config";
+import Ajv, { JSONSchemaType } from "ajv";
+import addFormats from "ajv-formats";
+import fs from "fs";
+import path from "path";
 
 import {
   program,
   Option,
   InvalidArgumentError,
 } from "@commander-js/extra-typings";
-import { MultiChainConfigOptions, ChainConfigOptions } from "./types";
+import { Config } from "./types";
 import { getAddress, isHexString } from "ethers/lib/utils";
-import { dumpDb, replayBlock, replayTx, run, runMulti } from "./commands";
+import { dumpDb, run } from "./commands";
 import { initLogging } from "./utils";
 import { version, description } from "../package.json";
 
+const CONFIG_SCHEMA_PATH = path.join(__dirname, "types", "config.schema.json");
 const DEFAULT_DATABASE_PATH = "./database";
+const DEFAULT_CONFIG_PATH = "./config.json";
 
 const logLevelOption = new Option("--log-level <logLevel>", "Log level")
   .default("INFO")
   .env("LOG_LEVEL");
-
-const pageSizeOption = new Option(
-  "--page-size <pageSize>",
-  "Number of historical blocks to fetch per page from eth_getLogs"
-)
-  .default("5000")
-  .env("PAGE_SIZE")
-  .argParser(parseIntOption);
 
 const disableNotificationsOption = new Option(
   "--silent",
@@ -71,21 +69,12 @@ const databasePathOption = new Option(
   .default(DEFAULT_DATABASE_PATH)
   .env("DATABASE_PATH");
 
-const chainConfigHelp = `Chain configuration in the format of <rpc>,<deploymentBlock>[,<watchdogTimeout>,<orderBookApi>,<filterPolicyConfig>], e.g. http://erigon.dappnode:8545,12345678,30,https://api.cow.fi/mainnet,https://raw.githubusercontent.com/cowprotocol/watch-tower/config/filter-policy-1.json`;
-const multiChainConfigOption = new Option(
-  "--chain-config <chainConfig...>",
-  chainConfigHelp
+const configPathOption = new Option(
+  "--config-path <configPath>",
+  "Path to chain configuration file"
 )
-  .makeOptionMandatory(true)
-  .argParser(parseChainConfigOptions);
-
-const chainConfigOption = new Option(
-  "--chain-config <chainConfig>",
-  chainConfigHelp
-)
-  .makeOptionMandatory(true)
-  .env("CHAIN_CONFIG")
-  .argParser(parseChainConfigOption);
+  .default(DEFAULT_CONFIG_PATH)
+  .env("CONFIG_PATH");
 
 const onlyOwnerOption = new Option(
   "--only-owner <onlyOwner...>",
@@ -97,12 +86,11 @@ async function main() {
 
   program
     .command("run")
-    .description("Run the watch-tower, monitoring only a single chain")
-    .addOption(chainConfigOption)
+    .description("Run the watch-tower")
+    .addOption(configPathOption)
     .addOption(onlyOwnerOption)
     .addOption(databasePathOption)
     .addOption(logLevelOption)
-    .addOption(pageSizeOption)
     .addOption(dryRunOnlyOption)
     .addOption(oneShotOption)
     .addOption(disableApiOption)
@@ -110,49 +98,20 @@ async function main() {
     .addOption(disableNotificationsOption)
     .addOption(slackWebhookOption)
     .action((options) => {
-      const { logLevel, chainConfig, onlyOwner: owners } = options;
-      const [pageSize, apiPort] = [options.pageSize, options.apiPort].map(
-        (value) => Number(value)
-      );
+      const { logLevel, configPath, onlyOwner: owners } = options;
+
+      // Load the config file
+      const config = validateJSON(configPath);
+
+      const apiPort = Number(options.apiPort);
 
       initLogging({ logLevel });
 
       // Run the watch-tower
-      run({ ...options, ...chainConfig, owners, pageSize, apiPort });
-    });
-
-  program
-    .command("run-multi")
-    .description("Run the watch-tower monitoring multiple blockchains")
-    .addOption(multiChainConfigOption)
-    .addOption(onlyOwnerOption)
-    .addOption(databasePathOption)
-    .addOption(logLevelOption)
-    .addOption(pageSizeOption)
-    .addOption(dryRunOnlyOption)
-    .addOption(oneShotOption)
-    .addOption(disableApiOption)
-    .addOption(apiPortOption)
-    .addOption(disableNotificationsOption)
-    .addOption(slackWebhookOption)
-    .action((options) => {
-      const {
-        logLevel,
-        chainConfig: chainConfigs,
-        onlyOwner: owners,
-      } = options;
-      const [pageSize, apiPort] = [options.pageSize, options.apiPort].map(
-        (value) => Number(value)
-      );
-
-      initLogging({ logLevel });
-
-      // Run the watch-tower
-      runMulti({
+      run({
         ...options,
-        ...chainConfigs,
+        ...config,
         owners,
-        pageSize,
         apiPort,
       });
     });
@@ -177,42 +136,6 @@ async function main() {
       dumpDb({ ...options, chainId });
     });
 
-  program
-    .command("replay-block")
-    .description("Replay a block")
-    .requiredOption("--rpc <rpc>", "Chain RPC endpoint to execute on")
-    .requiredOption("--block <block>", "Block number to replay")
-    .addOption(dryRunOnlyOption)
-    .addOption(logLevelOption)
-    .addOption(databasePathOption)
-    .action((options) => {
-      const { logLevel } = options;
-      initLogging({ logLevel });
-
-      // Ensure that the block is a number
-      const block = Number(options.block);
-      if (isNaN(block)) {
-        throw new Error("Block must be a number");
-      }
-
-      replayBlock({ ...options, block });
-    });
-
-  program
-    .command("replay-tx")
-    .description("Reply a transaction")
-    .addOption(chainConfigOption)
-    .addOption(dryRunOnlyOption)
-    .addOption(logLevelOption)
-    .addOption(databasePathOption)
-    .requiredOption("--tx <tx>", "Transaction hash to replay")
-    .action((options) => {
-      const { logLevel, chainConfig } = options;
-      initLogging({ logLevel });
-
-      replayTx({ ...options, ...chainConfig });
-    });
-
   await program.parseAsync();
 }
 
@@ -222,110 +145,6 @@ function parseIntOption(option: string) {
     throw new InvalidArgumentError(`${option} must be a number`);
   }
   return parsed.toString();
-}
-
-function parseChainConfigOption(option: string): ChainConfigOptions {
-  // Split the option using ',' as the delimiter
-  const parts = option.split(",");
-
-  // Ensure there are at least two parts (rpc and deploymentBlock)
-  if (parts.length < 2) {
-    throw new InvalidArgumentError(
-      `Chain configuration must be in the format of <rpc>,<deploymentBlock>[,<watchdogTimeout>,<orderBookApi>,<filterPolicyConfig>], e.g. http://erigon.dappnode:8545,12345678,30,https://api.cow.fi/mainnet,https://raw.githubusercontent.com/cowprotocol/watch-tower/config/filter-policy-1.json`
-    );
-  }
-
-  // Extract rpc and deploymentBlock from the parts
-  const rpc = parts[0];
-  // Ensure that the RPC is a valid URL
-  if (!isValidUrl(rpc)) {
-    throw new InvalidArgumentError(
-      `${rpc} must be a valid URL (RPC) (chainConfig)`
-    );
-  }
-
-  const rawDeploymentBlock = parts[1];
-  // Ensure that the deployment block is a positive number
-  const deploymentBlock = Number(rawDeploymentBlock);
-  if (isNaN(deploymentBlock) || deploymentBlock < 0) {
-    throw new InvalidArgumentError(
-      `${rawDeploymentBlock} must be a positive number (deployment block)`
-    );
-  }
-
-  const rawWatchdogTimeout = parts[2];
-  // If there is a third part, it is the watchdogTimeout
-  const watchdogTimeout =
-    parts.length > 2 && rawWatchdogTimeout ? Number(rawWatchdogTimeout) : 30;
-  // Ensure that the watchdogTimeout is a positive number
-  if (isNaN(watchdogTimeout) || watchdogTimeout < 0) {
-    throw new InvalidArgumentError(
-      `${rawWatchdogTimeout} must be a positive number (watchdogTimeout)`
-    );
-  }
-
-  // If there is a fourth part, it is the orderBookApi
-  const orderBookApi = parts.length > 3 && parts[3] ? parts[3] : undefined;
-  // Ensure that the orderBookApi is a valid URL
-  if (orderBookApi && !isValidUrl(orderBookApi)) {
-    throw new InvalidArgumentError(
-      `${orderBookApi} must be a valid URL (orderBookApi)`
-    );
-  }
-
-  // If there is a fifth part, it is the filterPolicyConfig
-  const filterPolicyConfig =
-    parts.length > 4 && parts[4] ? parts[4] : undefined;
-  // Ensure that the orderBookApi is a valid URL
-  if (filterPolicyConfig && !isValidUrl(filterPolicyConfig)) {
-    throw new InvalidArgumentError(
-      `${filterPolicyConfig} must be a valid URL (orderBookApi)`
-    );
-  }
-
-  return {
-    rpc,
-    deploymentBlock,
-    watchdogTimeout,
-    orderBookApi,
-    filterPolicyConfig,
-  };
-}
-
-function parseChainConfigOptions(
-  option: string,
-  previous: MultiChainConfigOptions = {
-    rpcs: [],
-    deploymentBlocks: [],
-    watchdogTimeouts: [],
-    orderBookApis: [],
-    filterPolicyConfigFiles: [],
-  }
-): MultiChainConfigOptions {
-  const parsedOption = parseChainConfigOption(option);
-  const {
-    rpc,
-    deploymentBlock,
-    watchdogTimeout,
-    orderBookApi,
-    filterPolicyConfig,
-  } = parsedOption;
-
-  previous.rpcs.push(rpc);
-  previous.deploymentBlocks.push(deploymentBlock);
-  previous.watchdogTimeouts.push(watchdogTimeout);
-  previous.orderBookApis.push(orderBookApi);
-  previous.filterPolicyConfigFiles.push(filterPolicyConfig);
-  return previous;
-}
-
-function isValidUrl(url: string): boolean {
-  try {
-    new URL(url);
-    return true;
-  } catch (error) {
-    return false;
-  }
 }
 
 function parseAddressOption(option: string, previous: string[] = []): string[] {
@@ -341,6 +160,30 @@ function parseAddressOption(option: string, previous: string[] = []): string[] {
     );
   }
   return [...previous, option];
+}
+
+function validateJSON(filePath: string): Config {
+  const ajv = new Ajv();
+  addFormats(ajv);
+  const schema: JSONSchemaType<Config> = JSON.parse(
+    fs.readFileSync(CONFIG_SCHEMA_PATH, "utf8")
+  );
+  const validate = ajv.compile(schema);
+  try {
+    // Read and prase the JSON file
+    const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
+
+    // Validate the data against the schema
+    if (!validate(data)) {
+      console.error("Configuration file validation failed:", validate.errors);
+      process.exit(1);
+    }
+
+    return data;
+  } catch (error) {
+    console.error("Error parsing configuration file:", error);
+    process.exit(1);
+  }
 }
 
 main().catch((error) => {
