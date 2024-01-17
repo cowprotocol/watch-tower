@@ -170,7 +170,7 @@ function validateJSON(filePath: string): Config {
   );
   const validate = ajv.compile(schema);
   try {
-    // Read and prase the JSON file
+    // Read and parse the JSON file
     const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
 
     // Validate the data against the schema
