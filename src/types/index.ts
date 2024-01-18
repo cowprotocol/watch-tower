@@ -32,4 +32,4 @@ export type OrderBookApi = string | undefined;
 export * from "./model";
 export * from "./generated";
 export * from "./generated/ComposableCoW";
-export type { Config } from "./types";
+export type { Config, FilterAction } from "./types";

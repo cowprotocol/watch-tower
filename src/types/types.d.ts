@@ -5,6 +5,8 @@
  * and run json-schema-to-typescript to regenerate this file.
  */
 
+export type FilterAction = "ACCEPT" | "DROP" | "SKIP";
+
 export interface Config {
   networks: {
     name: string;
@@ -14,12 +16,12 @@ export interface Config {
     orderBookApi?: string;
     pageSize?: number;
     filterPolicy: {
-      defaultAction: "ACCEPT" | "DROP" | "SKIP";
+      defaultAction: FilterAction;
       owners?: {
-        [k: string]: "ACCEPT" | "DROP" | "SKIP";
+        [k: string]: FilterAction;
       };
       handlers?: {
-        [k: string]: "ACCEPT" | "DROP" | "SKIP";
+        [k: string]: FilterAction;
       };
     };
   }[];

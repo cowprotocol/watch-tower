@@ -1,5 +1,5 @@
 import { ConditionalOrderParams } from "@cowprotocol/cow-sdk";
-import { Config } from "../types";
+import { Config, FilterAction as FilterActionSchema } from "../types";
 
 export enum FilterAction {
   DROP = "DROP",
@@ -57,7 +57,7 @@ export class FilterPolicy {
   }
 
   private convertToMap(object?: {
-    [k: string]: "ACCEPT" | "DROP" | "SKIP";
+    [k: string]: FilterActionSchema;
   }): Map<string, FilterAction> {
     return object
       ? new Map(
