@@ -8,7 +8,7 @@
   },
   "main": "dist/src/index.js",
   "scripts": {
-    "build": "rm -rf dist && rm -rf src/types/generated && yarn typechain && tsc",
+    "build": "rm -rf dist && rm -rf src/types/generated && yarn typechain && tsc && cp ./src/types/config.schema.json dist/src/types/config.schema.json",
     "fmt": "prettier --write \"src/**/*.ts\"",
     "lint": "eslint \"src/**/*.ts\" && prettier --check \"src/**/*.ts\"",
     "lint:fix": "eslint --fix \"src/**/*.ts\" && prettier --write \"src/**/*.ts\"",
