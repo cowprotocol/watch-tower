@@ -147,8 +147,8 @@ export const pollingDurationSeconds = new client.Histogram({
   labelNames: ["chain_id", "block"],
 });
 
-export const pollingDurationSecondsByOwner = new client.Histogram({
-  name: "watch_tower_polling_duration_by_owner_seconds",
+export const pollingByOwnerDurationSeconds = new client.Histogram({
+  name: "watch_tower_polling_by_owner_duration_seconds",
   help: "Duration of polling run",
   labelNames: ["chain_id", "block", "owner"],
 });

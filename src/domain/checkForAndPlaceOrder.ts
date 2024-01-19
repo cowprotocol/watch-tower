@@ -32,7 +32,7 @@ import {
 import { ChainContext, SDK_BACKOFF_NUM_OF_ATTEMPTS } from "./chainContext";
 import {
   pollingDurationSeconds,
-  pollingDurationSecondsByOwner,
+  pollingByOwnerDurationSeconds,
   pollingPostProcessingDurationSeconds,
   pollingOnChainDurationSeconds,
   activeOrdersTotal,
@@ -109,7 +109,7 @@ export async function checkForAndPlaceOrder(
   // No guarantee is made that the order of the owners is the same over multiple blocks
   const ownerPromises = Array.from(ownerOrders.entries()).map(
     async ([owner, conditionalOrders]) => {
-      const ownerTimer = pollingDurationSecondsByOwner
+      const ownerTimer = pollingByOwnerDurationSeconds
         .labels(owner, chainId.toString(), blockNumber.toString())
         .startTimer();
       const log = getLogger(
