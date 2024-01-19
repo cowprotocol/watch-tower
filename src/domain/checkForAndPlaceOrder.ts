@@ -272,7 +272,7 @@ export async function checkForAndPlaceOrder(
 
   // Start the post-processing timer
   const postProcessingTimer = pollingPostProcessingDurationSeconds
-    .labels(chainId.toString())
+    .labels(chainId.toString(), blockNumber.toString())
     .startTimer();
 
   // Now that we have all the results, we can update the registry synchronously
@@ -323,6 +323,9 @@ export async function checkForAndPlaceOrder(
             }
           }
         }
+
+        // Update the registry
+        registry.ownerOrders.set(owner, conditionalOrders);
       }
     }
 
