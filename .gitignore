@@ -20,4 +20,4 @@ yalc.lock
 database*
 
 # Default config
-config.json
+/config*.json
