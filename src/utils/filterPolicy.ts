@@ -18,10 +18,6 @@ export interface FilterParams {
   conditionalOrderParams: ConditionalOrderParams;
 }
 
-export interface FilterPolicyParams {
-  configBaseUrl: string;
-  // configAuthToken: string; // TODO: Implement authToken
-}
 export class FilterPolicy {
   protected config: PolicyConfig | undefined;
 

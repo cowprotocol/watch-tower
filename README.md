@@ -1,4 +1,4 @@
-# Watch-Tower for Programmatic Orders 🐮🎶
+# Watch-Tower for Programmatic Orders 🐄🤖
 
 ## Overview
 
@@ -56,7 +56,7 @@ For [DAppNode](https://dappnode.com), the watch-tower is available as a package.
 # Install dependencies
 yarn
 # Run watch-tower
-yarn cli run --chain-config <rpc>,<deployment-block> --page-size 5000
+yarn cli run --config-path ./config.json
 ```
 
 ## Architecture
