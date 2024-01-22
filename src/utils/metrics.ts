@@ -141,6 +141,24 @@ export const pollingRunsTotal = new client.Counter({
   labelNames: ["chain_id", "handler", "owner", "id"],
 });
 
+export const pollingDurationSeconds = new client.Histogram({
+  name: "watch_tower_polling_duration_seconds",
+  help: "Duration of polling run",
+  labelNames: ["chain_id", "block"],
+});
+
+export const pollingByOwnerDurationSeconds = new client.Histogram({
+  name: "watch_tower_polling_by_owner_duration_seconds",
+  help: "Duration of polling run",
+  labelNames: ["chain_id", "block", "owner"],
+});
+
+export const pollingPostProcessingDurationSeconds = new client.Histogram({
+  name: "watch_tower_polling_post_processing_duration_seconds",
+  help: "Duration of polling post processing",
+  labelNames: ["chain_id", "block"],
+});
+
 export const pollingOnChainChecksTotal = new client.Counter({
   name: "watch_tower_polling_onchain_checks_total",
   help: "Total number of on-chain hint checks",
