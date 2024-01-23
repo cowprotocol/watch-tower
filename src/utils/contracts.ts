@@ -8,7 +8,7 @@ import {
   SupportedChainId,
 } from "@cowprotocol/cow-sdk";
 import { getLogger } from "./logging";
-import { pollingOnChainInvalidInterfacesTotal } from "./metrics";
+import { metrics } from ".";
 
 // Selectors that are required to be part of the contract's bytecode in order to be considered compatible
 const REQUIRED_SELECTORS = [
@@ -293,7 +293,6 @@ export function handleOnChainCustomError(params: {
           `Order for safe ${owner} where the Safe has swap guard enabled. Deleting order...`
         );
         return dropOrder("The conditional order didn't pass the swap guard");
-      // TODO: Add metrics to track this
       case CustomErrorSelectors.ORDER_NOT_VALID:
         const reason = msgWithSelector(parsedCustomError.message);
         log.info(
@@ -333,7 +332,7 @@ export function handleOnChainCustomError(params: {
     log.debug(
       `Contract returned a non-compliant interface revert via getTradeableOrderWithSignature. Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${target}&rawFunctionInput=${callData}`
     );
-    pollingOnChainInvalidInterfacesTotal.labels(...metricLabels).inc();
+    metrics.pollingOnChainInvalidInterfacesTotal.labels(...metricLabels).inc();
     return {
       result: PollResultCode.DONT_TRY_AGAIN,
       reason: "Order returned a non-compliant (invalid/erroneous) revert hint",
