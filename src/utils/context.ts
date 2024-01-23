@@ -1,5 +1,5 @@
 import Slack = require("node-slack");
-import { DBService } from "./db";
+import { DBService } from "../services";
 
 import { ContextOptions, ExecutionContext, Registry } from "../types";
 import { SupportedChainId } from "@cowprotocol/cow-sdk";

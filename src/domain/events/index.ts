@@ -4,7 +4,7 @@ import {
   handleExecutionError,
   isComposableCowCompatible,
   metrics,
-} from "../utils";
+} from "../../utils";
 import { BytesLike, ethers } from "ethers";
 
 import {
@@ -17,9 +17,9 @@ import {
   Owner,
   Proof,
   Registry,
-} from "../types";
+} from "../../types";
 
-import { ChainContext } from "./chainContext";
+import { ChainContext } from "../../services/chain";
 import { ConditionalOrderParams } from "@cowprotocol/cow-sdk";
 
 /**

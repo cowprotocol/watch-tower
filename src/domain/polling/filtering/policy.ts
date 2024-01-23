@@ -1,5 +1,5 @@
 import { ConditionalOrderParams } from "@cowprotocol/cow-sdk";
-import { Config, FilterAction as FilterActionSchema } from "../types";
+import { Config, FilterAction as FilterActionSchema } from "../../../types";
 
 export enum FilterAction {
   DROP = "DROP",

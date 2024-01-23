@@ -1,6 +1,6 @@
 import { RunOptions } from "../types";
-import { getLogger, DBService, ApiService } from "../utils";
-import { ChainContext } from "../domain";
+import { getLogger } from "../utils";
+import { DBService, ApiService, ChainContext } from "../services";
 
 /**
  * Run the watch-tower 👀🐮

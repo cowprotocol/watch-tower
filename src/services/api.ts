@@ -2,11 +2,10 @@ import { Server } from "http";
 import express, { Request, Response, Router } from "express";
 import { Express } from "express-serve-static-core";
 import * as client from "prom-client";
-import { getLogger } from "./logging";
-import { DBService } from "./db";
+import { getLogger } from "../utils/logging";
+import { DBService, ChainContext } from "../services";
 import { Registry } from "../types";
 import { version, name, description } from "../../package.json";
-import { ChainContext } from "../domain";
 
 export class ApiService {
   protected port: number;

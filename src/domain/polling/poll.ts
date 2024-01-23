@@ -5,7 +5,7 @@ import {
   PollParams,
   PollResult,
 } from "@cowprotocol/cow-sdk";
-import { getLogger } from "./logging";
+import { getLogger } from "../../utils/logging";
 
 // Watch-tower will index every block, so we will by default the processing block and not the latest.
 const POLL_FROM_LATEST_BLOCK = false;
