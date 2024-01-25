@@ -4,7 +4,8 @@ import { BytesLike, ethers } from "ethers";
 
 import type { ConditionalOrderCreatedEvent } from "./generated/ComposableCoW";
 import { ConditionalOrderParams, PollResult } from "@cowprotocol/cow-sdk";
-import { DBService, metrics } from "../utils";
+import { DBService } from "../services";
+import { metrics } from "../utils";
 
 // Standardise the storage key
 const LAST_NOTIFIED_ERROR_STORAGE_KEY = "LAST_NOTIFIED_ERROR";

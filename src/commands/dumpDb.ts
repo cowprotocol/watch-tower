@@ -1,5 +1,6 @@
 import { DumpDbOptions, Registry } from "../types";
-import { DBService, getLogger } from "../utils";
+import { DBService } from "../services";
+import { getLogger } from "../utils";
 
 /**
  * Dump the database as JSON to STDOUT for a given chain ID

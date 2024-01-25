@@ -1,5 +1,5 @@
 import { DatabaseOptions, Level } from "level";
-import { getLogger } from "./logging";
+import { getLogger } from "../utils/logging";
 
 const DEFAULT_DB_LOCATION = "./database";
 

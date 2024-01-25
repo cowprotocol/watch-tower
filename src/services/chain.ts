@@ -14,18 +14,18 @@ import {
   OrderBookApi,
   ApiBaseUrls,
 } from "@cowprotocol/cow-sdk";
-import { addContract } from "./addContract";
-import { checkForAndPlaceOrder } from "./checkForAndPlaceOrder";
+import { addContract } from "../domain/events";
+import { checkForAndPlaceOrder } from "../domain/polling";
 import { EventFilter, providers } from "ethers";
 import {
   composableCowContract,
-  DBService,
   getLogger,
   isRunningInKubernetesPod,
   metrics,
 } from "../utils";
+import { DBService } from ".";
 import { hexZeroPad } from "ethers/lib/utils";
-import { FilterPolicy } from "../utils/filterPolicy";
+import { policy } from "../domain/polling/filtering";
 
 const WATCHDOG_FREQUENCY_SECS = 5; // 5 seconds
 const WATCHDOG_TIMEOUT_DEFAULT_SECS = 30;
@@ -86,7 +86,7 @@ export class ChainContext {
   chainId: SupportedChainId;
   registry: Registry;
   orderBook: OrderBookApi;
-  filterPolicy: FilterPolicy | undefined;
+  filterPolicy: policy.FilterPolicy | undefined;
   contract: ComposableCoW;
   multicall: Multicall3;
 
@@ -129,7 +129,7 @@ export class ChainContext {
       },
     });
 
-    this.filterPolicy = new FilterPolicy(filterPolicy);
+    this.filterPolicy = new policy.FilterPolicy(filterPolicy);
     this.contract = composableCowContract(this.provider, this.chainId);
     this.multicall = Multicall3__factory.connect(MULTICALL3, this.provider);
   }

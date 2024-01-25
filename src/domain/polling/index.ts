@@ -8,14 +8,13 @@ import {
 import { ethers } from "ethers";
 import { BytesLike } from "ethers/lib/utils";
 
-import { ConditionalOrder, OrderStatus } from "../types";
+import { ConditionalOrder, OrderStatus } from "../../types";
 import {
   formatStatus,
   getLogger,
-  pollConditionalOrder,
   handleOnChainCustomError,
   metrics,
-} from "../utils";
+} from "../../utils";
 import {
   ConditionalOrder as ConditionalOrderSDK,
   OrderBookApi,
@@ -30,9 +29,9 @@ import {
   SupportedChainId,
   formatEpoch,
 } from "@cowprotocol/cow-sdk";
-import { ChainContext, SDK_BACKOFF_NUM_OF_ATTEMPTS } from "./chainContext";
-import { FilterAction } from "../utils/filterPolicy";
-import { validateOrder } from "../utils/filterOrder";
+import { ChainContext, SDK_BACKOFF_NUM_OF_ATTEMPTS } from "../../services";
+import { badOrder, policy } from "./filtering";
+import { pollConditionalOrder } from "./poll";
 
 const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
 
@@ -125,12 +124,12 @@ export async function checkForAndPlaceOrder(
         });
 
         switch (filterResult) {
-          case FilterAction.DROP:
+          case policy.FilterAction.DROP:
             log.debug("Dropping conditional order. Reason: AcceptPolicy: DROP");
             ordersPendingDelete.push(conditionalOrder);
 
             continue;
-          case FilterAction.SKIP:
+          case policy.FilterAction.SKIP:
             log.debug("Skipping conditional order. Reason: AcceptPolicy: SKIP");
             continue;
         }
@@ -337,7 +336,7 @@ async function _processConditionalOrder(
 
     // We now have the order, so we can validate it. This will throw if the order is invalid
     // and we will catch it below.
-    validateOrder(orderToSubmit);
+    badOrder.check(orderToSubmit);
 
     // calculate the orderUid
     const orderUid = _getOrderUid(chainId, orderToSubmit, owner);
