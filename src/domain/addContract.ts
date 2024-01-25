@@ -3,6 +3,7 @@ import {
   getLogger,
   handleExecutionError,
   isComposableCowCompatible,
+  metrics,
 } from "../utils";
 import { BytesLike, ethers } from "ethers";
 
@@ -20,17 +21,6 @@ import {
 
 import { ChainContext } from "./chainContext";
 import { ConditionalOrderParams } from "@cowprotocol/cow-sdk";
-import {
-  addContractRunsTotal,
-  addContractsErrorsTotal,
-  addContractsRunDurationSeconds,
-  measureTime,
-  merkleRootTotal,
-  ownersTotal,
-  singleOrdersTotal,
-  activeOrdersTotal,
-  activeOwnersTotal,
-} from "../utils/metrics";
 
 /**
  * Listens to these events on the `ComposableCoW` contract:
@@ -44,13 +34,13 @@ export async function addContract(
   event: ConditionalOrderCreatedEvent
 ) {
   const { chainId } = context;
-  await measureTime({
+  await metrics.measureTime({
     action: () => _addContract(context, event),
     labelValues: [chainId.toString()],
-    durationMetric: addContractsRunDurationSeconds,
-    totalRunsMetric: addContractRunsTotal,
+    durationMetric: metrics.addContractsRunDurationSeconds,
+    totalRunsMetric: metrics.addContractRunsTotal,
     errorHandler: handleExecutionError,
-    errorMetric: addContractsErrorsTotal,
+    errorMetric: metrics.addContractsErrorsTotal,
   });
 }
 
@@ -79,7 +69,7 @@ async function _addContract(
     registry
   );
   if (added) {
-    ownersTotal.labels(context.chainId.toString()).inc();
+    metrics.ownersTotal.labels(context.chainId.toString()).inc();
     numContractsAdded++;
   } else {
     log.error(
@@ -110,6 +100,7 @@ export async function _registerNewOrder(
 ): Promise<{ error: boolean; added: boolean }> {
   const log = getLogger("addContract:_registerNewOrder");
   const { transactionHash: tx } = event;
+  const { network } = registry;
   let added = false;
   try {
     // Check if the log is a ConditionalOrderCreated event
@@ -134,7 +125,7 @@ export async function _registerNewOrder(
         registry
       );
       added = true;
-      singleOrdersTotal.labels(registry.network).inc();
+      metrics.singleOrdersTotal.labels(network).inc();
     } else if (
       event.topics[0] == composableCow.getEventTopic("MerkleRootSet")
     ) {
@@ -175,7 +166,7 @@ export async function _registerNewOrder(
             registry
           );
           added = true;
-          merkleRootTotal.labels(registry.network).inc();
+          metrics.merkleRootTotal.labels(network).inc();
         }
       }
     }
@@ -209,8 +200,9 @@ export function add(
 ) {
   const log = getLogger("addContract:add");
   const { handler, salt, staticInput } = params;
-  if (registry.ownerOrders.has(owner)) {
-    const conditionalOrders = registry.ownerOrders.get(owner);
+  const { network, ownerOrders } = registry;
+  if (ownerOrders.has(owner)) {
+    const conditionalOrders = ownerOrders.get(owner);
     log.info(
       `Adding conditional order to already existing owner contract ${owner}`,
       { tx, handler, salt, staticInput }
@@ -234,7 +226,7 @@ export function add(
         orders: new Map(),
         composableCow,
       });
-      activeOrdersTotal.labels(registry.network).inc();
+      metrics.activeOrdersTotal.labels(network).inc();
     }
   } else {
     log.info(`Adding conditional order to new owner contract ${owner}:`, {
@@ -247,8 +239,8 @@ export function add(
       owner,
       new Set([{ tx, params, proof, orders: new Map(), composableCow }])
     );
-    activeOwnersTotal.labels(registry.network).inc();
-    activeOrdersTotal.labels(registry.network).inc();
+    metrics.activeOwnersTotal.labels(network).inc();
+    metrics.activeOrdersTotal.labels(network).inc();
   }
 }
 

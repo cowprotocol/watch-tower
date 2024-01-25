@@ -22,15 +22,8 @@ import {
   DBService,
   getLogger,
   isRunningInKubernetesPod,
+  metrics,
 } from "../utils";
-import {
-  blockHeight,
-  blockProducingRate,
-  eventsProcessedTotal,
-  processBlockDurationSeconds,
-  reorgDepth,
-  reorgsTotal,
-} from "../utils/metrics";
 import { hexZeroPad } from "ethers/lib/utils";
 import { FilterPolicy } from "../utils/filterPolicy";
 
@@ -183,7 +176,9 @@ export class ChainContext {
     const { pageSize } = this;
 
     // Set the block height metric
-    blockHeight.labels(chainId.toString()).set(lastProcessedBlock?.number ?? 0);
+    metrics.blockHeight
+      .labels(chainId.toString())
+      .set(lastProcessedBlock?.number ?? 0);
 
     // Start watching from (not including) the last processed block (if any)
     let fromBlock = lastProcessedBlock
@@ -269,7 +264,9 @@ export class ChainContext {
           await this.registry.write();
 
           // Set the block height metric
-          blockHeight.labels(chainId.toString()).set(Number(blockNumber));
+          metrics.blockHeight
+            .labels(chainId.toString())
+            .set(Number(blockNumber));
         } catch (err) {
           log.error(`Error processing block ${blockNumber}`, err);
         }
@@ -334,16 +331,16 @@ export class ChainContext {
 
         // Set the block time metric
         const _blockTime = block.timestamp - lastBlockReceived.timestamp;
-        blockProducingRate.labels(chainId.toString()).set(_blockTime);
+        metrics.blockProducingRate.labels(chainId.toString()).set(_blockTime);
 
         if (
           blockNumber <= lastBlockReceived.number &&
           block.hash !== lastBlockReceived.hash
         ) {
           // This is a re-org, so process the block again
-          reorgsTotal.labels(chainId.toString()).inc();
+          metrics.reorgsTotal.labels(chainId.toString()).inc();
           log.info(`Re-org detected, re-processing block ${blockNumber}`);
-          reorgDepth
+          metrics.reorgDepth
             .labels(chainId.toString())
             .set(lastBlockReceived.number - blockNumber + 1);
         }
@@ -361,7 +358,7 @@ export class ChainContext {
           // Block height metric
           this.registry.lastProcessedBlock = blockToRegistryBlock(block);
           this.registry.write();
-          blockHeight.labels(chainId.toString()).set(Number(blockNumber));
+          metrics.blockHeight.labels(chainId.toString()).set(blockNumber);
         } catch {
           log.error(`Error processing block ${blockNumber}`);
         }
@@ -457,7 +454,7 @@ async function processBlock(
   blockTimestampOverride?: number
 ) {
   const { provider, chainId } = context;
-  const timer = processBlockDurationSeconds
+  const timer = metrics.processBlockDurationSeconds
     .labels(context.chainId.toString())
     .startTimer();
   const log = getLogger(
@@ -481,7 +478,7 @@ async function processBlock(
           return false;
         });
       log.info(`Result of "addContract": ${_formatResult(result)}`);
-      eventsProcessedTotal.labels(chainId.toString()).inc();
+      metrics.eventsProcessedTotal.labels(chainId.toString()).inc();
     }
   }
 

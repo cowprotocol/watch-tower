@@ -14,6 +14,7 @@ import {
   getLogger,
   pollConditionalOrder,
   handleOnChainCustomError,
+  metrics,
 } from "../utils";
 import {
   ConditionalOrder as ConditionalOrderSDK,
@@ -30,18 +31,6 @@ import {
   formatEpoch,
 } from "@cowprotocol/cow-sdk";
 import { ChainContext, SDK_BACKOFF_NUM_OF_ATTEMPTS } from "./chainContext";
-import {
-  pollingOnChainDurationSeconds,
-  activeOrdersTotal,
-  activeOwnersTotal,
-  orderBookDiscreteOrdersTotal,
-  orderBookErrorsTotal,
-  pollingOnChainChecksTotal,
-  pollingRunsTotal,
-  pollingUnexpectedErrorsTotal,
-  pollingOnChainEthersErrorsTotal,
-  measureTime,
-} from "../utils/metrics";
 import { FilterAction } from "../utils/filterPolicy";
 import { validateOrder } from "../utils/filterOrder";
 
@@ -230,7 +219,7 @@ export async function checkForAndPlaceOrder(
       const action = deleted ? "Stop Watching" : "Failed to stop watching";
 
       log.debug(`${action} conditional order from TX ${conditionalOrder.tx}`);
-      activeOrdersTotal.labels(chainId.toString()).dec();
+      metrics.activeOrdersTotal.labels(chainId.toString()).dec();
     }
   }
 
@@ -239,7 +228,7 @@ export async function checkForAndPlaceOrder(
   for (const [owner, conditionalOrders] of Array.from(ownerOrders.entries())) {
     if (conditionalOrders.size === 0) {
       ownerOrders.delete(owner);
-      activeOwnersTotal.labels(chainId.toString()).dec();
+      metrics.activeOwnersTotal.labels(chainId.toString()).dec();
     }
   }
 
@@ -274,7 +263,7 @@ async function _processConditionalOrder(
   const id = ConditionalOrderSDK.leafToId(conditionalOrder.params);
   const metricLabels = [chainId.toString(), handler, owner, id];
   try {
-    pollingRunsTotal.labels(...metricLabels).inc();
+    metrics.pollingRunsTotal.labels(...metricLabels).inc();
 
     const proof = conditionalOrder.proof
       ? conditionalOrder.proof.path.map((c) => c.toString())
@@ -310,7 +299,7 @@ async function _processConditionalOrder(
       // Unsupported Order Type (unknown handler)
       // For now, fallback to legacy behavior
       // TODO: Decide in the future what to do. Probably, move the error handling to the SDK and kill the poll Legacy
-      pollResult = await measureTime({
+      pollResult = await metrics.measureTime({
         action: () =>
           _pollLegacy(
             context,
@@ -321,8 +310,8 @@ async function _processConditionalOrder(
             orderRef
           ),
         labelValues: metricLabels,
-        durationMetric: pollingOnChainDurationSeconds,
-        totalRunsMetric: pollingOnChainChecksTotal,
+        durationMetric: metrics.pollingOnChainDurationSeconds,
+        totalRunsMetric: metrics.pollingOnChainChecksTotal,
       });
     }
 
@@ -389,7 +378,7 @@ async function _processConditionalOrder(
       signature,
     };
   } catch (e: any) {
-    pollingUnexpectedErrorsTotal.labels(...metricLabels).inc();
+    metrics.pollingUnexpectedErrorsTotal.labels(...metricLabels).inc();
     return {
       result: PollResultCode.UNEXPECTED_ERROR,
       error: e,
@@ -488,7 +477,7 @@ async function _placeOrder(params: {
     log.debug(`Post order details`, postOrder);
     if (!dryRun) {
       const orderUid = await orderBook.sendOrder(postOrder);
-      orderBookDiscreteOrdersTotal.labels(...metricLabels).inc();
+      metrics.orderBookDiscreteOrdersTotal.labels(...metricLabels).inc();
       log.info(`API response`, { orderUid });
     }
   } catch (error: any) {
@@ -544,7 +533,7 @@ function _handleOrderBookError(
   metricLabels: string[]
 ): Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors {
   const apiError = body?.errorType as OrderPostError.errorType;
-  orderBookErrorsTotal
+  metrics.orderBookErrorsTotal
     .labels(...metricLabels, status.toString(), apiError)
     .inc();
   if (status === 400) {
@@ -649,7 +638,7 @@ async function _pollLegacy(
     // We can only get here from some provider / ethers failure. As the contract hasn't had it's say
     // we will defer to try again.
     log.error(`ethers/call Unexpected error`, error);
-    pollingOnChainEthersErrorsTotal.labels(...metricLabels).inc();
+    metrics.pollingOnChainEthersErrorsTotal.labels(...metricLabels).inc();
     return {
       result: PollResultCode.TRY_NEXT_BLOCK,
       reason:
