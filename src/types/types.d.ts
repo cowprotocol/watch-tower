@@ -23,6 +23,12 @@ export interface Config {
       handlers?: {
         [k: string]: FilterAction;
       };
+      transactions?: {
+        [k: string]: FilterAction;
+      };
+      conditionalOrderIds?: {
+        [k: string]: FilterAction;
+      };
     };
   }[];
 }

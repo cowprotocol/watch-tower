@@ -119,6 +119,8 @@ export async function checkForAndPlaceOrder(
       // Apply filtering policy
       if (filterPolicy) {
         const filterResult = filterPolicy.preFilter({
+          conditionalOrderId: conditionalOrder.id,
+          transaction: conditionalOrder.tx,
           owner,
           conditionalOrderParams: conditionalOrder.params,
         });

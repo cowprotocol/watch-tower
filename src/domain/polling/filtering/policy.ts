@@ -11,9 +11,13 @@ interface PolicyConfig {
   defaultAction: FilterAction;
   owners: Map<string, FilterAction>;
   handlers: Map<string, FilterAction>;
+  transactions: Map<string, FilterAction>;
+  conditionalOrderIds: Map<string, FilterAction>;
 }
 
 export interface FilterParams {
+  conditionalOrderId: string;
+  transaction: string;
   owner: string;
   conditionalOrderParams: ConditionalOrderParams;
 }
@@ -26,6 +30,8 @@ export class FilterPolicy {
       defaultAction: FilterAction[config.defaultAction],
       owners: this.convertToMap(config.owners),
       handlers: this.convertToMap(config.handlers),
+      transactions: this.convertToMap(config.transactions),
+      conditionalOrderIds: this.convertToMap(config.conditionalOrderIds),
     };
   }
 
@@ -35,15 +41,29 @@ export class FilterPolicy {
    * @param filterParams params required for the pre-filtering, including the conditional order params, chainId and the owner contract
    * @returns The action that should be performed with the conditional order
    */
-  preFilter({ owner, conditionalOrderParams }: FilterParams): FilterAction {
+  preFilter({
+    conditionalOrderId: programmaticOrderId,
+    transaction,
+    owner,
+    conditionalOrderParams,
+  }: FilterParams): FilterAction {
     if (!this.config) {
       return FilterAction.ACCEPT;
     }
 
-    const { owners, handlers } = this.config;
+    const {
+      owners,
+      handlers,
+      conditionalOrderIds: programmaticOrderIds,
+      transactions,
+    } = this.config;
 
+    // Find the first matching rule
     const action =
-      handlers.get(conditionalOrderParams.handler) || owners.get(owner);
+      programmaticOrderIds.get(programmaticOrderId) ||
+      transactions.get(transaction) ||
+      owners.get(owner) ||
+      handlers.get(conditionalOrderParams.handler);
 
     if (action) {
       return action;
