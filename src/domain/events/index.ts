@@ -207,7 +207,7 @@ export function add(
     const conditionalOrders = ownerOrders.get(owner);
     log.info(
       `Adding conditional order to already existing owner contract ${owner}`,
-      { tx, handler, salt, staticInput }
+      { conditionalOrderId, tx, handler, salt, staticInput }
     );
     let exists = false;
     // Iterate over the conditionalOrders to make sure that the params are not already in the registry
@@ -233,6 +233,7 @@ export function add(
     }
   } else {
     log.info(`Adding conditional order to new owner contract ${owner}:`, {
+      conditionalOrderId,
       tx,
       handler,
       salt,
