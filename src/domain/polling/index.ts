@@ -112,7 +112,7 @@ export async function checkForAndPlaceOrder(
         blockNumber.toString(),
         ownerRef
       );
-      const logOrderDetails = `Processing order from TX ${conditionalOrder.tx} with params:`;
+      const logOrderDetails = `Processing order ${conditionalOrder.id} from TX ${conditionalOrder.tx} with params:`;
 
       const { result: lastHint } = conditionalOrder.pollResult || {};
 
@@ -201,12 +201,15 @@ export async function checkForAndPlaceOrder(
         (isError && pollResult.reason ? `. Reason: ${pollResult.reason}` : "");
 
       log[unexpectedError ? "error" : "info"](
-        `Check conditional order result: ${getEmojiByPollResult(
-          pollResult?.result
-        )} ${resultDescription}`
+        `Check conditional order result for ${
+          conditionalOrder.id
+        }: ${getEmojiByPollResult(pollResult?.result)} ${resultDescription}`
       );
       if (unexpectedError) {
-        log.error(`UNEXPECTED_ERROR Details:`, pollResult.error);
+        log.error(
+          `UNEXPECTED_ERROR for order ${conditionalOrder.id}. Details:`,
+          pollResult.error
+        );
       }
 
       hasErrors ||= unexpectedError;
@@ -217,7 +220,9 @@ export async function checkForAndPlaceOrder(
       const deleted = conditionalOrders.delete(conditionalOrder);
       const action = deleted ? "Stop Watching" : "Failed to stop watching";
 
-      log.debug(`${action} conditional order from TX ${conditionalOrder.tx}`);
+      log.debug(
+        `${action} conditional order ${conditionalOrder.id} from TX ${conditionalOrder.tx}`
+      );
       metrics.activeOrdersTotal.labels(chainId.toString()).dec();
     }
   }
@@ -259,8 +264,12 @@ async function _processConditionalOrder(
     "checkForAndPlaceOrder:_processConditionalOrder",
     orderRef
   );
-  const id = ConditionalOrderSDK.leafToId(conditionalOrder.params);
-  const metricLabels = [chainId.toString(), handler, owner, id];
+  const metricLabels = [
+    chainId.toString(),
+    handler,
+    owner,
+    conditionalOrder.id,
+  ];
   try {
     metrics.pollingRunsTotal.labels(...metricLabels).inc();
 
@@ -289,6 +298,7 @@ async function _processConditionalOrder(
       },
     };
     let pollResult = await pollConditionalOrder(
+      conditionalOrder.id,
       pollParams,
       conditionalOrder.params,
       orderRef

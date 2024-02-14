@@ -6,6 +6,7 @@ import type { ConditionalOrderCreatedEvent } from "./generated/ComposableCoW";
 import { ConditionalOrderParams, PollResult } from "@cowprotocol/cow-sdk";
 import { DBService } from "../services";
 import { metrics } from "../utils";
+import { ConditionalOrder as ConditionalOrderSdk } from "@cowprotocol/cow-sdk";
 
 // Standardise the storage key
 const LAST_NOTIFIED_ERROR_STORAGE_KEY = "LAST_NOTIFIED_ERROR";
@@ -13,7 +14,7 @@ const LAST_PROCESSED_BLOCK_STORAGE_KEY = "LAST_PROCESSED_BLOCK";
 const CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY = "CONDITIONAL_ORDER_REGISTRY";
 const CONDITIONAL_ORDER_REGISTRY_VERSION_KEY =
   "CONDITIONAL_ORDER_REGISTRY_VERSION";
-const CONDITIONAL_ORDER_REGISTRY_VERSION = 1;
+const CONDITIONAL_ORDER_REGISTRY_VERSION = 2;
 
 export const getNetworkStorageKey = (key: string, network: string): string => {
   return `${key}_${network}`;
@@ -49,6 +50,13 @@ export enum OrderStatus {
 }
 
 export type ConditionalOrder = {
+  /**
+   * Id of the conditional order (which also happens to be the key used for `ctx` in the ComposableCoW contract).
+   *
+   * This is a `keccak256` hash of the serialized conditional order.
+   */
+  id: string;
+
   /**
    * The transaction hash that created the conditional order (useful for debugging purposes)
    */
@@ -279,15 +287,15 @@ async function loadOwnerOrders(
     getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY, network)
   );
   // Get the persisted registry version
-  const version = await db.get(
-    getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_VERSION_KEY, network)
+
+  const version = Number(
+    await db.get(
+      getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_VERSION_KEY, network)
+    )
   );
 
   // Parse conditional orders registry (for the persisted version, converting it to the last version)
-  const ownerOrders = parseConditionalOrders(
-    !!str ? str : undefined,
-    Number(version)
-  );
+  const ownerOrders = parseConditionalOrders(!!str ? str : undefined, version);
 
   return ownerOrders;
 }
@@ -299,7 +307,24 @@ function parseConditionalOrders(
   if (!serializedConditionalOrders) {
     return createNewOrderMap();
   }
-  return JSON.parse(serializedConditionalOrders, _reviver);
+  const ownerOrders: Map<
+    Owner,
+    Set<Omit<ConditionalOrder, "id"> & { id?: string }>
+  > = JSON.parse(serializedConditionalOrders, _reviver);
+
+  // The conditional order id was added in version 2
+  if (_version && _version < 2) {
+    // Migrate model: Add the missing order Id
+    for (const orders of ownerOrders.values()) {
+      for (const order of orders.values()) {
+        if (!order.id) {
+          order.id = ConditionalOrderSdk.leafToId(order.params);
+        }
+      }
+    }
+  }
+
+  return ownerOrders as Map<Owner, Set<ConditionalOrder>>;
 }
 
 function createNewOrderMap(): Map<Owner, Set<ConditionalOrder>> {

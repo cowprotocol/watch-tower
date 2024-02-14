@@ -15,6 +15,7 @@ const ordersFactory = new ConditionalOrderFactory(
 );
 
 export async function pollConditionalOrder(
+  conditionalOrderId: string,
   pollParams: PollParams,
   conditionalOrderParams: ConditionalOrderParams,
   orderRef: string
@@ -30,7 +31,7 @@ export async function pollConditionalOrder(
     : pollParams;
 
   log.debug(
-    `Polling for ${order.toString()} using block (${
+    `Polling id ${conditionalOrderId}. Order ${order.toString()} using block (${
       actualPollParams.blockInfo === undefined
         ? "latest"
         : actualPollParams.blockInfo.blockNumber

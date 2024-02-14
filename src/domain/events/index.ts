@@ -18,9 +18,9 @@ import {
   Proof,
   Registry,
 } from "../../types";
+import { ConditionalOrder, ConditionalOrderParams } from "@cowprotocol/cow-sdk";
 
 import { ChainContext } from "../../services/chain";
-import { ConditionalOrderParams } from "@cowprotocol/cow-sdk";
 
 /**
  * Listens to these events on the `ComposableCoW` contract:
@@ -201,11 +201,13 @@ export function add(
   const log = getLogger("addContract:add");
   const { handler, salt, staticInput } = params;
   const { network, ownerOrders } = registry;
+
+  const conditionalOrderId = ConditionalOrder.leafToId(params);
   if (ownerOrders.has(owner)) {
     const conditionalOrders = ownerOrders.get(owner);
     log.info(
       `Adding conditional order to already existing owner contract ${owner}`,
-      { tx, handler, salt, staticInput }
+      { conditionalOrderId, tx, handler, salt, staticInput }
     );
     let exists = false;
     // Iterate over the conditionalOrders to make sure that the params are not already in the registry
@@ -220,6 +222,7 @@ export function add(
     // If the params are not in the conditionalOrder, add them
     if (!exists) {
       conditionalOrders?.add({
+        id: conditionalOrderId,
         tx,
         params: { handler, salt, staticInput },
         proof,
@@ -230,6 +233,7 @@ export function add(
     }
   } else {
     log.info(`Adding conditional order to new owner contract ${owner}:`, {
+      conditionalOrderId,
       tx,
       handler,
       salt,
@@ -237,7 +241,16 @@ export function add(
     });
     registry.ownerOrders.set(
       owner,
-      new Set([{ tx, params, proof, orders: new Map(), composableCow }])
+      new Set([
+        {
+          id: conditionalOrderId,
+          tx,
+          params,
+          proof,
+          orders: new Map(),
+          composableCow,
+        },
+      ])
     );
     metrics.activeOwnersTotal.labels(network).inc();
     metrics.activeOrdersTotal.labels(network).inc();
