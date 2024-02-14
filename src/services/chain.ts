@@ -325,8 +325,11 @@ export class ChainContext {
     log.debug(`Watchdog timeout: ${watchdogTimeout} seconds`);
     let lastBlockReceived = lastProcessedBlock;
     provider.on("block", async (blockNumber: number) => {
+      // Intentionally don't guard the getBlock call with a try/catch block
+      // because we want to crash the process if this fails. This will result
+      // in the kubernetes pod restarting and trying to recover.
+      const block = await provider.getBlock(blockNumber);
       try {
-        const block = await provider.getBlock(blockNumber);
         log.debug(`New block ${blockNumber}`);
 
         // Set the block time metric
@@ -352,23 +355,15 @@ export class ChainContext {
           this
         );
 
-        try {
-          await processBlock(this, block, events);
-
-          // Block height metric
-          this.registry.lastProcessedBlock = blockToRegistryBlock(block);
-          this.registry.write();
-          metrics.blockHeight.labels(chainId.toString()).set(blockNumber);
-        } catch {
-          log.error(`Error processing block ${blockNumber}`);
-        }
-
+        await processBlock(this, block, events);
         log.debug(`Block ${blockNumber} has been processed`);
       } catch (error) {
-        log.error(
-          `Error in pollContractForEvents for block ${blockNumber}`,
-          error
-        );
+        log.error(`Error processing block ${blockNumber}`, error);
+      } finally {
+        // Block height metric
+        this.registry.lastProcessedBlock = blockToRegistryBlock(block);
+        await this.registry.write();
+        metrics.blockHeight.labels(chainId.toString()).set(blockNumber);
       }
     });
 
@@ -445,6 +440,7 @@ export class ChainContext {
  * @param events an array of conditional order created events
  * @param blockNumberOverride to override the block number when polling the SDK
  * @param blockTimestampOverride  to override the block timestamp when polling the SDK
+ * @throws if there are any *unexpected errors* in processing the block
  */
 async function processBlock(
   context: ChainContext,
