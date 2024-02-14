@@ -5,7 +5,19 @@
             "rpc": "ws://172.20.0.5:8546",
             "deploymentBlock": 17883049,
             "filterPolicy": {
-                "defaultAction": "ACCEPT"
+                "defaultAction": "ACCEPT",                
+                "conditionalOrderIds": {
+                  "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP",
+                },
+                "transactions": {
+                  "0x33ef06af308d1e4f94dd61fa8df43fe52b67e8a485f4e4fff75235080e663bfa": "DROP",
+                },
+                "handlers": {
+                  "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP",
+                },
+                "owners": {
+                  "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP",
+                }
             }
         }
     ]
