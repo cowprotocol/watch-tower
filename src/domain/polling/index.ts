@@ -119,13 +119,15 @@ export async function checkForAndPlaceOrder(
       // Apply filtering policy
       if (filterPolicy) {
         const filterResult = filterPolicy.preFilter({
+          conditionalOrderId: conditionalOrder.id,
+          transaction: conditionalOrder.tx,
           owner,
           conditionalOrderParams: conditionalOrder.params,
         });
 
         switch (filterResult) {
           case policy.FilterAction.DROP:
-            log.debug("Dropping conditional order. Reason: AcceptPolicy: DROP");
+            log.info("Dropping conditional order. Reason: AcceptPolicy: DROP");
             ordersPendingDelete.push(conditionalOrder);
 
             continue;
