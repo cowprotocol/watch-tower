@@ -112,7 +112,7 @@ export async function checkForAndPlaceOrder(
         blockNumber.toString(),
         ownerRef
       );
-      const logOrderDetails = `Processing order from TX ${conditionalOrder.tx} with params:`;
+      const logOrderDetails = `Processing order ${conditionalOrder.id} from TX ${conditionalOrder.tx} with params:`;
 
       const { result: lastHint } = conditionalOrder.pollResult || {};
 
@@ -259,8 +259,12 @@ async function _processConditionalOrder(
     "checkForAndPlaceOrder:_processConditionalOrder",
     orderRef
   );
-  const id = ConditionalOrderSDK.leafToId(conditionalOrder.params);
-  const metricLabels = [chainId.toString(), handler, owner, id];
+  const metricLabels = [
+    chainId.toString(),
+    handler,
+    owner,
+    conditionalOrder.id,
+  ];
   try {
     metrics.pollingRunsTotal.labels(...metricLabels).inc();
 
@@ -289,6 +293,7 @@ async function _processConditionalOrder(
       },
     };
     let pollResult = await pollConditionalOrder(
+      conditionalOrder.id,
       pollParams,
       conditionalOrder.params,
       orderRef
