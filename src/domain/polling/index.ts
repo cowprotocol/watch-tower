@@ -127,7 +127,7 @@ export async function checkForAndPlaceOrder(
 
         switch (filterResult) {
           case policy.FilterAction.DROP:
-            log.debug("Dropping conditional order. Reason: AcceptPolicy: DROP");
+            log.info("Dropping conditional order. Reason: AcceptPolicy: DROP");
             ordersPendingDelete.push(conditionalOrder);
 
             continue;
