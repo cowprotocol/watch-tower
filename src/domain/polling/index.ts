@@ -42,11 +42,11 @@ const HANDLED_RESULT_CODES = [
   PollResultCode.TRY_NEXT_BLOCK,
   PollResultCode.DONT_TRY_AGAIN,
 ];
-
 const ApiErrors = OrderPostError.errorType;
+type DropApiErrorsArray = Array<OrderPostError.errorType | string>;
 type NextBlockApiErrorsArray = Array<OrderPostError.errorType>;
 type BackOffApiErrorsDelays = {
-  [K in OrderPostError.errorType]?: number;
+  [K in OrderPostError.errorType | string]?: number;
 };
 
 /**
@@ -54,13 +54,42 @@ type BackOffApiErrorsDelays = {
  */
 const API_ERRORS_TRY_NEXT_BLOCK: NextBlockApiErrorsArray = [
   ApiErrors.INSUFFICIENT_FEE,
+  ApiErrors.QUOTE_NOT_FOUND,
+  ApiErrors.INVALID_QUOTE,
+  ApiErrors.INSUFFICIENT_VALID_TO,
+  ApiErrors.INVALID_EIP1271SIGNATURE, // May happen momentarily if the order is placed as a new block hits
 ];
 
+const ONE_MIN = 60;
 const TEN_MINS = 10 * 60;
+const ONE_HOUR = 60 * 60;
 const API_ERRORS_BACKOFF: BackOffApiErrorsDelays = {
   [ApiErrors.INSUFFICIENT_ALLOWANCE]: TEN_MINS,
   [ApiErrors.INSUFFICIENT_BALANCE]: TEN_MINS,
+  TooManyLimitOrders: ONE_HOUR,
+  [ApiErrors.INVALID_APP_DATA]: ONE_MIN, // Give the user some time to upload the correct appData
 };
+
+const API_ERRORS_DROP: DropApiErrorsArray = [
+  ApiErrors.SELL_AMOUNT_OVERFLOW, // Implies a `feeAmount` has been set and `sellAmount` + `feeAmount` > `type(uint256).max`
+  ApiErrors.TRANSFER_SIMULATION_FAILED, // Sell token can't be transferred, drop it
+  ApiErrors.ZERO_AMOUNT, // Any order with zero amount indicates bad logic, drop it
+  "UnsupportedBuyTokenDestination",
+  ApiErrors.UNSUPPORTED_SELL_TOKEN_SOURCE,
+  ApiErrors.UNSUPPORTED_ORDER_TYPE,
+  ApiErrors.EXCESSIVE_VALID_TO, // Order is too far in the future, likely some bad logic, drop it
+  ApiErrors.INVALID_NATIVE_SELL_TOKEN,
+  ApiErrors.SAME_BUY_AND_SELL_TOKEN,
+  ApiErrors.UNSUPPORTED_TOKEN,
+  ApiErrors.APPDATA_FROM_MISMATCH, // AppData doesn't have the expected `from` value, drop it
+];
+
+// Impossible to reach API errors:
+// ApiErrors.MissingFrom - we control this in the watch-tower and is set when the order is created
+// ApiErrors.WrongOwner - this is always the from as it's an EIP-1271 signature
+// ApiErrors.InvalidSignature - only for EOA signatures and we don't use them
+// ApiErrors.IncompatibleSigningScheme - we control this in the watch-tower
+// ApiErrors.AppDataHashMismatch - we never submit full appData
 
 /**
  * Watch for new blocks and check for orders to place
@@ -539,36 +568,77 @@ function _handleOrderBookError(
   metrics.orderBookErrorsTotal
     .labels(...metricLabels, status.toString(), apiError)
     .inc();
-  if (status === 400) {
-    // The order is in the OrderBook, all good :)
-    if (apiError === ApiErrors.DUPLICATED_ORDER) {
-      return {
-        result: PollResultCode.SUCCESS,
-      };
-    }
+  switch (status) {
+    case 400:
+      // The order is in the OrderBook, all good :)
+      if (apiError === ApiErrors.DUPLICATED_ORDER) {
+        return {
+          result: PollResultCode.SUCCESS,
+        };
+      }
 
-    // It's possible that an order has not enough allowance or balance.
-    // Returning DONT_TRY_AGAIN would be to drastic, but we can give the WatchTower a break by scheduling next attempt in a few minutes
-    // This why, we don't so it doesn't try in every block
-    const backOffDelay = API_ERRORS_BACKOFF[apiError];
-    if (backOffDelay) {
-      const nextPollTimestamp = blockTimestamp + backOffDelay;
+      // It's possible that an order has not enough allowance or balance.
+      // Returning DONT_TRY_AGAIN would be to drastic, but we can give the WatchTower a break by scheduling next attempt in a few minutes
+      // This why, we don't so it doesn't try in every block
+      const backOffDelay = API_ERRORS_BACKOFF[apiError];
+      if (backOffDelay) {
+        const nextPollTimestamp = blockTimestamp + backOffDelay;
+        return {
+          result: PollResultCode.TRY_AT_EPOCH,
+          epoch: nextPollTimestamp,
+          reason: `Not enough allowance/balance (${apiError}). Scheduling next polling in ${Math.floor(
+            backOffDelay / 60
+          )} minutes, at ${nextPollTimestamp} ${formatEpoch(
+            nextPollTimestamp
+          )}`,
+        };
+      }
+
+      // Handle some errors, that might be solved in the next block
+      if (API_ERRORS_TRY_NEXT_BLOCK.includes(apiError)) {
+        return {
+          result: PollResultCode.TRY_NEXT_BLOCK,
+          reason: `OrderBook API Known Error: ${apiError}, ${body?.description}`,
+        };
+      }
+
+      // Drop orders that have some element of invalidity
+      if (API_ERRORS_DROP.includes(apiError)) {
+        return {
+          result: PollResultCode.DONT_TRY_AGAIN,
+          reason: `OrderBook API Known Error: ${apiError}, ${body?.description}`,
+        };
+      }
+
+      break;
+    case 403:
+      // The account has been explicitly deny listed by the API, drop the order
+      return {
+        result: PollResultCode.DONT_TRY_AGAIN,
+        reason: `Account has been explicitly deny listed`,
+      };
+    case 404:
+      // No liquidity found when quoting the order - may turn up again at some stage
+      const nextPollTimestamp = blockTimestamp + TEN_MINS;
       return {
         result: PollResultCode.TRY_AT_EPOCH,
         epoch: nextPollTimestamp,
-        reason: `Not enough allowance/balance (${apiError}). Scheduling next polling in ${Math.floor(
-          backOffDelay / 60
+        reason: `No liquidity found when quoting order. Scheduling next polling in ${Math.floor(
+          TEN_MINS / 60
         )} minutes, at ${nextPollTimestamp} ${formatEpoch(nextPollTimestamp)}`,
       };
-    }
-
-    // Handle some errors, that might be solved in the next block
-    if (API_ERRORS_TRY_NEXT_BLOCK.includes(apiError)) {
+    case 429:
+      // Too many orders placed, back off for a while
+      const nextPollTimestamp429 = blockTimestamp + TEN_MINS;
       return {
-        result: PollResultCode.TRY_NEXT_BLOCK,
-        reason: `OrderBook API Known Error: ${apiError}, ${body?.description}`,
+        result: PollResultCode.TRY_AT_EPOCH,
+        epoch: nextPollTimestamp429,
+        reason: `Too many orders placed. Scheduling next polling in ${Math.floor(
+          TEN_MINS / 60
+        )} minutes, at ${nextPollTimestamp429} ${formatEpoch(
+          nextPollTimestamp429
+        )}`,
       };
-    }
   }
 
   return {
