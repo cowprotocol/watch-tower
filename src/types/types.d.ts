@@ -17,16 +17,16 @@ export interface Config {
     pageSize?: number;
     filterPolicy: {
       defaultAction: FilterAction;
-      owners?: {
-        [k: string]: FilterAction;
-      };
-      handlers?: {
+      conditionalOrderIds?: {
         [k: string]: FilterAction;
       };
       transactions?: {
         [k: string]: FilterAction;
       };
-      conditionalOrderIds?: {
+      owners?: {
+        [k: string]: FilterAction;
+      };
+      handlers?: {
         [k: string]: FilterAction;
       };
     };
