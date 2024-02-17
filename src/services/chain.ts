@@ -78,14 +78,13 @@ export class ChainContext {
   readonly dryRun: boolean;
   readonly watchdogTimeout: number;
   readonly addresses?: string[];
-  readonly orderBookApiBaseUrls?: ApiBaseUrls;
   private sync: ChainSync = ChainSync.SYNCING;
   static chains: Chains = {};
 
   provider: providers.Provider;
   chainId: SupportedChainId;
   registry: Registry;
-  orderBook: OrderBookApi;
+  orderBookApi: OrderBookApi;
   filterPolicy: policy.FilterPolicy | undefined;
   contract: ComposableCoW;
   multicall: Multicall3;
@@ -102,7 +101,7 @@ export class ChainContext {
       dryRun,
       watchdogTimeout,
       owners,
-      orderBookApi,
+      orderBookApi: orderBookApiUrl,
       filterPolicy,
     } = options;
     this.deploymentBlock = deploymentBlock;
@@ -115,15 +114,15 @@ export class ChainContext {
     this.chainId = chainId;
     this.registry = registry;
 
-    this.orderBookApiBaseUrls = orderBookApi
+    const baseUrls = orderBookApiUrl
       ? ({
-          [this.chainId]: orderBookApi,
+          [this.chainId]: orderBookApiUrl,
         } as ApiBaseUrls) // FIXME: do not do this casting once this is fixed https://github.com/cowprotocol/cow-sdk/issues/176
       : undefined;
 
-    this.orderBook = new OrderBookApi({
+    this.orderBookApi = new OrderBookApi({
       chainId,
-      baseUrls: this.orderBookApiBaseUrls,
+      baseUrls,
       backoffOpts: {
         numOfAttempts: SDK_BACKOFF_NUM_OF_ATTEMPTS,
       },

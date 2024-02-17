@@ -29,7 +29,7 @@ import {
   SupportedChainId,
   formatEpoch,
 } from "@cowprotocol/cow-sdk";
-import { ChainContext, SDK_BACKOFF_NUM_OF_ATTEMPTS } from "../../services";
+import { ChainContext } from "../../services";
 import { badOrder, policy } from "./filtering";
 import { pollConditionalOrder } from "./poll";
 
@@ -259,8 +259,7 @@ async function _processConditionalOrder(
   context: ChainContext,
   orderRef: string
 ): Promise<PollResult> {
-  const { provider, orderBook, dryRun, chainId, orderBookApiBaseUrls } =
-    context;
+  const { provider, orderBookApi, dryRun, chainId } = context;
   const { handler } = conditionalOrder.params;
   const log = getLogger(
     "checkForAndPlaceOrder:_processConditionalOrder",
@@ -290,14 +289,7 @@ async function _processConditionalOrder(
         blockNumber,
       },
       provider,
-      // TODO: This should be DRY'ed. Upstream should take just an `orderBook` object that
-      //       is already configured.
-      orderbookApiConfig: {
-        baseUrls: orderBookApiBaseUrls,
-        backoffOpts: {
-          numOfAttempts: SDK_BACKOFF_NUM_OF_ATTEMPTS,
-        },
-      },
+      orderBookApi,
     };
     let pollResult = await pollConditionalOrder(
       conditionalOrder.id,
@@ -359,7 +351,7 @@ async function _processConditionalOrder(
       const placeOrderResult = await _placeOrder({
         orderUid,
         order: { ...orderToSubmit, from: owner, signature },
-        orderBook,
+        orderBookApi,
         blockTimestamp,
         orderRef,
         dryRun,
@@ -447,7 +439,7 @@ export const _printUnfilledOrders = (orders: Map<BytesLike, OrderStatus>) => {
 async function _placeOrder(params: {
   orderUid: string;
   order: any;
-  orderBook: OrderBookApi;
+  orderBookApi: OrderBookApi;
   orderRef: string;
   blockTimestamp: number;
   dryRun: boolean;
@@ -456,14 +448,14 @@ async function _placeOrder(params: {
   const {
     orderUid,
     order,
-    orderBook,
+    orderBookApi,
     orderRef,
     blockTimestamp,
     dryRun,
     metricLabels,
   } = params;
   const log = getLogger("checkForAndPlaceOrder:_placeOrder", orderRef);
-  const { chainId } = orderBook.context;
+  const { chainId } = orderBookApi.context;
   try {
     const postOrder: OrderCreation = {
       kind: order.kind,
@@ -487,7 +479,7 @@ async function _placeOrder(params: {
     log.info(`Post order ${orderUid} to OrderBook on chain ${chainId}`);
     log.debug(`Post order details`, postOrder);
     if (!dryRun) {
-      const orderUid = await orderBook.sendOrder(postOrder);
+      const orderUid = await orderBookApi.sendOrder(postOrder);
       metrics.orderBookDiscreteOrdersTotal.labels(...metricLabels).inc();
       log.info(`API response`, { orderUid });
     }
