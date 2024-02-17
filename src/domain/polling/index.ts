@@ -369,7 +369,14 @@ async function _processConditionalOrder(
 
     // We now have the order, so we can validate it. This will throw if the order is invalid
     // and we will catch it below.
-    badOrder.check(orderToSubmit);
+    try {
+      badOrder.check(orderToSubmit);
+    } catch (e: any) {
+      return {
+        result: PollResultCode.DONT_TRY_AGAIN,
+        reason: `Invalid order: ${e.message}`,
+      };
+    }
 
     // calculate the orderUid
     const orderUid = _getOrderUid(chainId, orderToSubmit, owner);
