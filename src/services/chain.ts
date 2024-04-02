@@ -146,7 +146,7 @@ export class ChainContext {
   ): Promise<ChainContext> {
     const { rpc, deploymentBlock } = options;
 
-    const provider = new providers.WebSocketProvider(rpc);
+    const provider = getProvider(rpc.toLowerCase());
     const chainId = (await provider.getNetwork()).chainId;
 
     const registry = await Registry.load(
@@ -526,6 +526,16 @@ function pollContractForEvents(
 
 function _formatResult(result: boolean) {
   return result ? "✅" : "❌";
+}
+
+function getProvider(rpcUrl: string): providers.Provider {
+  // if the rpcUrl is a websocket url, use the WebSocketProvider
+  if (rpcUrl.startsWith("ws")) {
+    return new providers.WebSocketProvider(rpcUrl);
+  }
+
+  // otherwise, use the JsonRpcProvider
+  return new providers.JsonRpcProvider(rpcUrl);
 }
 
 async function asyncSleep(ms: number) {
