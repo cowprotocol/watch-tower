@@ -53,7 +53,6 @@ type BackOffApiErrorsDelays = {
  * Handle error that will return `TRY_NEXT_BLOCK`, so it doesn't throw but is re-attempted on next block
  */
 const API_ERRORS_TRY_NEXT_BLOCK: NextBlockApiErrorsArray = [
-  ApiErrors.INSUFFICIENT_FEE,
   ApiErrors.QUOTE_NOT_FOUND,
   ApiErrors.INVALID_QUOTE,
   ApiErrors.INSUFFICIENT_VALID_TO,
@@ -66,7 +65,7 @@ const ONE_HOUR = 60 * 60;
 const API_ERRORS_BACKOFF: BackOffApiErrorsDelays = {
   [ApiErrors.INSUFFICIENT_ALLOWANCE]: TEN_MINS,
   [ApiErrors.INSUFFICIENT_BALANCE]: TEN_MINS,
-  TooManyLimitOrders: ONE_HOUR,
+  [ApiErrors.TOO_MANY_LIMIT_ORDERS]: ONE_HOUR,
   [ApiErrors.INVALID_APP_DATA]: ONE_MIN, // Give the user some time to upload the correct appData
 };
 
@@ -74,7 +73,8 @@ const API_ERRORS_DROP: DropApiErrorsArray = [
   ApiErrors.SELL_AMOUNT_OVERFLOW, // Implies a `feeAmount` has been set and `sellAmount` + `feeAmount` > `type(uint256).max`
   ApiErrors.TRANSFER_SIMULATION_FAILED, // Sell token can't be transferred, drop it
   ApiErrors.ZERO_AMOUNT, // Any order with zero amount indicates bad logic, drop it
-  "UnsupportedBuyTokenDestination",
+  ApiErrors.UNSUPPORTED_BUY_TOKEN_DESTINATION,
+  ApiErrors.TOO_MUCH_GAS, // Order is too large, likely some bad logic, drop it
   ApiErrors.UNSUPPORTED_SELL_TOKEN_SOURCE,
   ApiErrors.UNSUPPORTED_ORDER_TYPE,
   ApiErrors.EXCESSIVE_VALID_TO, // Order is too far in the future, likely some bad logic, drop it
