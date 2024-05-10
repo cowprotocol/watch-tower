@@ -510,7 +510,7 @@ async function pollContractForEvents(
   toBlock: number | "latest",
   context: ChainContext
 ): Promise<ConditionalOrderCreatedEvent[]> {
-  const { provider, chainId } = context;
+  const { provider, chainId, addresses } = context;
   const composableCow = composableCowContract(provider, chainId);
   const eventName = "ConditionalOrderCreated(address,(address,bytes32,bytes))";
   const topic = ethers.utils.id(eventName);
@@ -538,7 +538,10 @@ async function pollContractForEvents(
         return null;
       }
     })
-    .filter((e): e is ConditionalOrderCreatedEvent => e !== null);
+    .filter((e): e is ConditionalOrderCreatedEvent => e !== null)
+    .filter((e): e is ConditionalOrderCreatedEvent => {
+      return addresses ? addresses.includes(e.args.owner) : true;
+    });
 }
 
 function _formatResult(result: boolean) {
