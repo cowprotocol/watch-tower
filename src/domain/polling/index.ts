@@ -665,11 +665,11 @@ async function _pollLegacy(
 ): Promise<PollResult> {
   const { contract, multicall, chainId } = context;
   const log = getLogger("checkForAndPlaceOrder:_pollLegacy", orderRef);
+  const { composableCow: target } = conditionalOrder;
   const { handler } = conditionalOrder.params;
   // as we going to use multicall, with `aggregate3Value`, there is no need to do any simulation as the
   // calls are guaranteed to pass, and will return the results, or the reversion within the ABI-encoded data.
   // By not using `populateTransaction`, we avoid an `eth_estimateGas` RPC call.
-  const target = contract.address;
   const callData = contract.interface.encodeFunctionData(
     "getTradeableOrderWithSignature",
     [owner, conditionalOrder.params, offchainInput, proof]
