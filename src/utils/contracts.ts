@@ -10,12 +10,6 @@ import {
 import { getLogger } from "./logging";
 import { metrics } from ".";
 
-// Selectors that are required to be part of the contract's bytecode in order to be considered compatible
-const REQUIRED_SELECTORS = [
-  "cabinet(address,bytes32)",
-  "getTradeableOrderWithSignature(address,(address,bytes32,bytes),bytes,bytes32[])",
-];
-
 // Define an enum for the custom error revert hints that can be returned by the ComposableCoW's interfaces.
 export enum CustomErrorSelectors {
   /**
@@ -115,30 +109,6 @@ const CUSTOM_ERROR_SELECTOR_MAP = generateCustomErrorSelectorMap();
 
 export function abiToSelector(abi: string) {
   return ethers.utils.id(abi).slice(0, 10);
-}
-
-/**
- * Attempts to verify that the contract at the given address implements the interface of the `ComposableCoW`
- * contract. This is done by checking that the contract contains the selectors of the functions that are
- * required to be implemented by the interface.
- *
- * @remarks This is not a foolproof way of verifying that the contract implements the interface, but it is
- * a good enough heuristic to filter out most of the contracts that do not implement the interface.
- *
- * @dev The selectors are:
- * - `cabinet(address,bytes32)`: `1c7662c8`
- * - `getTradeableOrderWithSignature(address,(address,bytes32,bytes),bytes,bytes32[])`: `26e0a196`
- *
- * @param code the contract's deployed bytecode as a hex string
- * @returns A boolean indicating if the contract likely implements the interface
- */
-export function isComposableCowCompatible(code: string): boolean {
-  const composableCow = ComposableCoW__factory.createInterface();
-
-  return REQUIRED_SELECTORS.every((signature) => {
-    const sighash = composableCow.getSighash(signature);
-    return code.includes(sighash.slice(2));
-  });
 }
 
 export function composableCowContract(

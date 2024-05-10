@@ -690,16 +690,27 @@ async function _pollLegacy(
     const [{ success, returnData }] = lowLevelCall;
 
     if (success) {
-      // Decode the returnData to get the order and signature tuple
-      const { order, signature } = contract.interface.decodeFunctionResult(
-        "getTradeableOrderWithSignature",
-        returnData
-      );
-      return {
-        result: PollResultCode.SUCCESS,
-        order,
-        signature,
-      };
+      try {
+        // Decode the returnData to get the order and signature tuple
+        const { order, signature } = contract.interface.decodeFunctionResult(
+          "getTradeableOrderWithSignature",
+          returnData
+        );
+        return {
+          result: PollResultCode.SUCCESS,
+          order,
+          signature,
+        };
+      } catch (error: any) {
+        log.error(`ethers/decodeFunctionResult Unexpected error`, error);
+        metrics.pollingOnChainEthersErrorsTotal.labels(...metricLabels).inc();
+        return {
+          result: PollResultCode.DONT_TRY_AGAIN,
+          reason:
+            "UnexpectedErrorName: Unexpected error" +
+            (error.message ? `: ${error.message}` : ""),
+        };
+      }
     }
 
     // If the low-level call failed, per the `ComposableCoW` interface, the contract is attempting to
