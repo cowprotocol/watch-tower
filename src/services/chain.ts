@@ -16,7 +16,7 @@ import {
 } from "@cowprotocol/cow-sdk";
 import { addContract } from "../domain/events";
 import { checkForAndPlaceOrder } from "../domain/polling";
-import { EventFilter, providers } from "ethers";
+import { ethers, providers } from "ethers";
 import {
   composableCowContract,
   getLogger,
@@ -24,7 +24,6 @@ import {
   metrics,
 } from "../utils";
 import { DBService } from ".";
-import { hexZeroPad } from "ethers/lib/utils";
 import { policy } from "../domain/polling/filtering";
 
 const WATCHDOG_FREQUENCY_SECS = 5; // 5 seconds
@@ -506,22 +505,37 @@ async function processBlock(
   }
 }
 
-function pollContractForEvents(
+async function pollContractForEvents(
   fromBlock: number,
   toBlock: number | "latest",
   context: ChainContext
 ): Promise<ConditionalOrderCreatedEvent[]> {
-  const { provider, chainId, addresses } = context;
+  const { provider, chainId } = context;
   const composableCow = composableCowContract(provider, chainId);
-  const filter = composableCow.filters.ConditionalOrderCreated() as EventFilter;
+  const eventName = "ConditionalOrderCreated(address,(address,bytes32,bytes))";
+  const topic = ethers.utils.id(eventName);
 
-  if (addresses) {
-    filter.topics?.push(
-      addresses.map((address) => hexZeroPad(address.toLowerCase(), 32))
-    );
-  }
+  const logs = await provider.getLogs({
+    fromBlock,
+    toBlock,
+    topics: [topic],
+  });
 
-  return composableCow.queryFilter(filter, fromBlock, toBlock);
+  const returnLogs = logs
+    .map((e) => {
+      try {
+        return composableCow.interface.decodeEventLog(
+          topic,
+          e.data,
+          e.topics
+        ) as unknown as ConditionalOrderCreatedEvent;
+      } catch {
+        return null;
+      }
+    })
+    .filter((e): e is ConditionalOrderCreatedEvent => e !== null);
+
+  return returnLogs;
 }
 
 function _formatResult(result: boolean) {
