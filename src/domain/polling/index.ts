@@ -707,7 +707,7 @@ async function _pollLegacy(
         return {
           result: PollResultCode.DONT_TRY_AGAIN,
           reason:
-            "UnexpectedErrorName: Unexpected error" +
+            "UnexpectedErrorName: Data decoding failure" +
             (error.message ? `: ${error.message}` : ""),
         };
       }
