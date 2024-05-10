@@ -2,7 +2,6 @@ import {
   toConditionalOrderParams,
   getLogger,
   handleExecutionError,
-  isComposableCowCompatible,
   metrics,
 } from "../../utils";
 import { BytesLike, ethers } from "ethers";
@@ -50,19 +49,13 @@ async function _addContract(
 ) {
   const log = getLogger("addContract:_addContract");
   const composableCow = ComposableCoW__factory.createInterface();
-  const { provider, registry } = context;
+  const { registry } = context;
   const { transactionHash: tx, blockNumber } = event;
 
   // Process the logs
   let hasErrors = false;
   let numContractsAdded = 0;
 
-  // Do not process logs that are not from a `ComposableCoW`-compatible contract
-  // This is a *normal* case, if the contract is not `ComposableCoW`-compatible
-  // then we do not need to do anything, and therefore don't flag as an error.
-  if (!isComposableCowCompatible(await provider.getCode(event.address))) {
-    return;
-  }
   const { error, added } = await _registerNewOrder(
     event,
     composableCow,
