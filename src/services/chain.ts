@@ -521,21 +521,24 @@ async function pollContractForEvents(
     topics: [topic],
   });
 
-  const returnLogs = logs
-    .map((e) => {
+  return logs
+    .map((event) => {
       try {
-        return composableCow.interface.decodeEventLog(
+        const decoded = composableCow.interface.decodeEventLog(
           topic,
-          e.data,
-          e.topics
+          event.data,
+          event.topics
         ) as unknown as ConditionalOrderCreatedEvent;
+
+        return {
+          ...decoded,
+          ...event,
+        };
       } catch {
         return null;
       }
     })
     .filter((e): e is ConditionalOrderCreatedEvent => e !== null);
-
-  return returnLogs;
 }
 
 function _formatResult(result: boolean) {
