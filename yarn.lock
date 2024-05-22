@@ -476,12 +476,17 @@
   resolved "https://registry.yarnpkg.com/@cowprotocol/contracts/-/contracts-1.4.0.tgz#e93e5f25aac76feeaa348fa57231903274676247"
   integrity sha512-XLs3SlPmXD4lbiWIO7mxxuCn1eE5isuO6EUlE1cj17HqN/wukDAN0xXYPx6umOH/XdjGS33miMiPHELEyY9siw==
 
-"@cowprotocol/cow-sdk@^5.2.0":
-  version "5.2.0"
-  resolved "https://registry.yarnpkg.com/@cowprotocol/cow-sdk/-/cow-sdk-5.2.0.tgz#f3ec621b579b4a9bf2e6fd3d695786f7c7978e56"
-  integrity sha512-7AWWEM4uyKDHyBoivAEkgULpI+mVZ4thMQXRM/CB8hW5MrnGxq6ONJECrq2k7uAiHrn9i2kdPjCwSPxKayVY8Q==
+"@cowprotocol/contracts@^1.6.0":
+  version "1.6.0"
+  resolved "https://registry.yarnpkg.com/@cowprotocol/contracts/-/contracts-1.6.0.tgz#d0fc83ed8c624b968d1a68bb5c74712c11ec81e0"
+  integrity sha512-+UKhYRzkvnqqviBru5D3btTLYc743n0O5YTG+wpYwGl4fb7VNKBkFHe28C5Mf1DF/kOfmqfu+0IAvX9Vuq5Dqw==
+
+"@cowprotocol/cow-sdk@^5.3.0":
+  version "5.3.0"
+  resolved "https://registry.yarnpkg.com/@cowprotocol/cow-sdk/-/cow-sdk-5.3.0.tgz#3330a43134d6a15453afb22dd1f490738089e591"
+  integrity sha512-gH53emDVsHkO9sGb8rxqx5RLNBmH1ABrum4bSxRorT3eXWviJy5kYUlucCSUIk5uMCbcJnyvsnHBZptGiMCVAA==
   dependencies:
-    "@cowprotocol/contracts" "^1.4.0"
+    "@cowprotocol/contracts" "^1.6.0"
     "@ethersproject/abstract-signer" "^5.7.0"
     "@openzeppelin/merkle-tree" "^1.0.5"
     cross-fetch "^3.1.5"

@@ -8,7 +8,7 @@ The [programmatic order](https://docs.cow.fi/cow-protocol/concepts/order-types/p
 
 If running your own watch-tower instance, you will need the following:
 
-- An RPC node connected to the Ethereum mainnet, Gnosis Chain, or Goerli.
+- An RPC node connected to the Ethereum mainnet, Arbitrum One, Gnosis Chain, or Sepolia.
 - Internet access to the [CoW Protocol `OrderBook` API](https://docs.cow.fi/cow-protocol/reference/apis/orderbook).
 
 **CAUTION**: Conditional order types may consume considerable RPC calls.
