@@ -254,25 +254,33 @@ export class ChainContext {
           });
         }
 
+        // Persist the last processed block (we are in sync up until toBlock)
+        persistLastProcessedBlock({
+          context: this,
+          block: await provider.getBlock(toBlock),
+          log,
+        });
+
         // only possible string value for toBlock is 'latest'
         if (typeof toBlock === "number") {
           fromBlock = toBlock + 1;
         }
       } while (toBlock !== "latest" && toBlock !== currentBlock.number);
 
-      // Set the last processed block to the current block number
-      this.registry.lastProcessedBlock = blockToRegistryBlock(currentBlock);
+      const lastProcessedBlock = this.registry.lastProcessedBlock?.number || 0;
+      // // Set the last processed block to the current block number
+      // this.registry.lastProcessedBlock = blockToRegistryBlock(currentBlock);
 
       // It may have taken some time to process the blocks, so refresh the current block number
       // and check if we are in sync
       currentBlock = await provider.getBlock("latest");
 
       // If we are in sync, let it be known
-      if (currentBlock.number === this.registry.lastProcessedBlock.number) {
+      if (currentBlock.number === lastProcessedBlock) {
         this.sync = ChainSync.IN_SYNC;
       } else {
         // Otherwise, we need to keep processing blocks
-        fromBlock = this.registry.lastProcessedBlock.number + 1;
+        fromBlock = lastProcessedBlock + 1;
       }
     } while (this.sync === ChainSync.SYNCING);
 
@@ -281,9 +289,7 @@ export class ChainContext {
         oneShot ? "Chain watcher is in sync" : "Chain watcher is warmed up"
       }`
     );
-    log.debug(
-      `Last processed block: ${this.registry.lastProcessedBlock.number}`
-    );
+    log.debug(`Last processed block: ${lastProcessedBlock}`);
 
     // If one-shot, return
     if (oneShot) {
@@ -485,6 +491,21 @@ async function processBlock(
   }
 }
 
+async function persistLastProcessedBlock(params: {
+  context: ChainContext;
+  block: ethers.providers.Block;
+  log: LoggerWithMethods;
+}) {
+  const { context, block, log } = params;
+
+  // Set the last processed block to the current block number
+  context.registry.lastProcessedBlock = blockToRegistryBlock(block);
+
+  // Save the registry
+  await context.registry.write();
+  log.debug(`Block ${block.number} has been processed`);
+}
+
 async function processBlockAndPersist(params: {
   context: ChainContext;
   blockNumber: number;
@@ -514,12 +535,7 @@ async function processBlockAndPersist(params: {
     log.error(`Error processing block ${block.number}`, err);
   }
 
-  // Set the last processed block to the current block number
-  context.registry.lastProcessedBlock = blockToRegistryBlock(block);
-
-  // Save the registry
-  await context.registry.write();
-  log.debug(`Block ${blockNumber} has been processed`);
+  persistLastProcessedBlock({ context, block, log });
 }
 
 async function pollContractForEvents(
