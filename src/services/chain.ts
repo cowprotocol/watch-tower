@@ -170,7 +170,7 @@ export class ChainContext {
   public async warmUp(oneShot?: boolean) {
     const { provider, chainId } = this;
     const log = getLogger("chainContext:warmUp", chainId.toString());
-    const { lastProcessedBlock } = this.registry;
+    let { lastProcessedBlock } = this.registry;
     const { pageSize } = this;
 
     // Set the block height metric
@@ -244,7 +244,7 @@ export class ChainContext {
         // Process blocks in order
         for (const blockNumberKey of Object.keys(eventsByBlock).sort()) {
           const blockNumber = Number(blockNumberKey);
-          await processBlockAndPersist({
+          lastProcessedBlock = await processBlockAndPersist({
             context: this,
             blockNumber,
             events: eventsByBlock[blockNumber],
@@ -254,8 +254,8 @@ export class ChainContext {
           });
         }
 
-        // Persist the last processed block (we are in sync up until toBlock)
-        persistLastProcessedBlock({
+        // Persist "toBlock" as the last block (even if there's no events, we are caught up until this block)
+        lastProcessedBlock = await persistLastProcessedBlock({
           context: this,
           block: await provider.getBlock(toBlock),
           log,
@@ -267,20 +267,17 @@ export class ChainContext {
         }
       } while (toBlock !== "latest" && toBlock !== currentBlock.number);
 
-      const lastProcessedBlock = this.registry.lastProcessedBlock?.number || 0;
-      // // Set the last processed block to the current block number
-      // this.registry.lastProcessedBlock = blockToRegistryBlock(currentBlock);
-
       // It may have taken some time to process the blocks, so refresh the current block number
       // and check if we are in sync
       currentBlock = await provider.getBlock("latest");
 
       // If we are in sync, let it be known
-      if (currentBlock.number === lastProcessedBlock) {
+      const lastProcessedBlockNumber = lastProcessedBlock?.number || 0;
+      if (currentBlock.number === lastProcessedBlockNumber) {
         this.sync = ChainSync.IN_SYNC;
       } else {
         // Otherwise, we need to keep processing blocks
-        fromBlock = lastProcessedBlock + 1;
+        fromBlock = lastProcessedBlockNumber + 1;
       }
     } while (this.sync === ChainSync.SYNCING);
 
@@ -497,13 +494,19 @@ async function persistLastProcessedBlock(params: {
   log: LoggerWithMethods;
 }) {
   const { context, block, log } = params;
+  const blockNumber = block.number;
 
   // Set the last processed block to the current block number
   context.registry.lastProcessedBlock = blockToRegistryBlock(block);
 
   // Save the registry
   await context.registry.write();
-  log.debug(`Block ${block.number} has been processed`);
+  log.debug(`Block ${blockNumber} has been processed`);
+
+  // Set the block height metric
+  metrics.blockHeight.labels(context.toString()).set(blockNumber);
+
+  return context.registry.lastProcessedBlock;
 }
 
 async function processBlockAndPersist(params: {
@@ -524,18 +527,11 @@ async function processBlockAndPersist(params: {
       currentBlock?.number,
       currentBlock?.timestamp
     );
-
-    // Set the last processed block to this iteration's block number
-    context.registry.lastProcessedBlock = blockToRegistryBlock(block);
-    await context.registry.write();
-
-    // Set the block height metric
-    metrics.blockHeight.labels(context.toString()).set(blockNumber);
   } catch (err) {
     log.error(`Error processing block ${block.number}`, err);
+  } finally {
+    return persistLastProcessedBlock({ context, block, log });
   }
-
-  persistLastProcessedBlock({ context, block, log });
 }
 
 async function pollContractForEvents(
