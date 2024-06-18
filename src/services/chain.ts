@@ -1,6 +1,5 @@
 import {
   Registry,
-  ReplayPlan,
   ConditionalOrderCreatedEvent,
   Multicall3,
   ComposableCoW,
@@ -18,6 +17,7 @@ import { addContract } from "../domain/events";
 import { checkForAndPlaceOrder } from "../domain/polling";
 import { ethers, providers } from "ethers";
 import {
+  LoggerWithMethods,
   composableCowContract,
   getLogger,
   isRunningInKubernetesPod,
@@ -185,7 +185,6 @@ export class ChainContext {
     let currentBlock = await provider.getBlock("latest");
 
     let printSyncInfo = true; // Print sync info only once
-    let plan: ReplayPlan = {};
     let toBlock: "latest" | number = 0;
     do {
       do {
@@ -228,13 +227,31 @@ export class ChainContext {
           log.debug(`Found ${events.length} events`);
         }
 
-        // process the events
-        for (const event of events) {
-          if (plan[event.blockNumber] === undefined) {
-            plan[event.blockNumber] = new Set();
+        // Get relevant block numbers to process (the ones with relevant events)
+        const eventsByBlock = events.reduce<
+          Record<number, ConditionalOrderCreatedEvent[]>
+        >((acc, event) => {
+          const events = acc[event.blockNumber];
+          if (events) {
+            events.push(event);
+          } else {
+            acc[event.blockNumber] = [event];
           }
 
-          plan[event.blockNumber].add(event);
+          return acc;
+        }, {});
+
+        // Process blocks in order
+        for (const blockNumberKey of Object.keys(eventsByBlock).sort()) {
+          const blockNumber = Number(blockNumberKey);
+          await processBlockAndPersist({
+            context: this,
+            blockNumber,
+            events: eventsByBlock[blockNumber],
+            currentBlock,
+            log,
+            provider,
+          });
         }
 
         // only possible string value for toBlock is 'latest'
@@ -243,40 +260,8 @@ export class ChainContext {
         }
       } while (toBlock !== "latest" && toBlock !== currentBlock.number);
 
-      // Replay only the blocks that had some events.
-      for (const [blockNumber, events] of Object.entries(plan)) {
-        log.debug(`Processing block ${blockNumber}`);
-        const historicalBlock = await provider.getBlock(Number(blockNumber));
-        try {
-          await processBlock(
-            this,
-            historicalBlock,
-            events,
-            currentBlock.number,
-            currentBlock.timestamp
-          );
-
-          // Set the last processed block to this iteration's block number
-          this.registry.lastProcessedBlock =
-            blockToRegistryBlock(historicalBlock);
-          await this.registry.write();
-
-          // Set the block height metric
-          metrics.blockHeight
-            .labels(chainId.toString())
-            .set(Number(blockNumber));
-        } catch (err) {
-          log.error(`Error processing block ${blockNumber}`, err);
-        }
-
-        log.debug(`Block ${blockNumber} has been processed`);
-      }
-
       // Set the last processed block to the current block number
       this.registry.lastProcessedBlock = blockToRegistryBlock(currentBlock);
-
-      // Save the registry
-      await this.registry.write();
 
       // It may have taken some time to process the blocks, so refresh the current block number
       // and check if we are in sync
@@ -288,7 +273,6 @@ export class ChainContext {
       } else {
         // Otherwise, we need to keep processing blocks
         fromBlock = this.registry.lastProcessedBlock.number + 1;
-        plan = {};
       }
     } while (this.sync === ChainSync.SYNCING);
 
@@ -325,6 +309,7 @@ export class ChainContext {
     provider.on("block", async (blockNumber: number) => {
       try {
         const block = await provider.getBlock(blockNumber);
+
         log.debug(`New block ${blockNumber}`);
 
         // Set the block time metric
@@ -350,18 +335,13 @@ export class ChainContext {
           this
         );
 
-        try {
-          await processBlock(this, block, events);
-
-          // Block height metric
-          this.registry.lastProcessedBlock = blockToRegistryBlock(block);
-          this.registry.write();
-          metrics.blockHeight.labels(chainId.toString()).set(blockNumber);
-        } catch {
-          log.error(`Error processing block ${blockNumber}`);
-        }
-
-        log.debug(`Block ${blockNumber} has been processed`);
+        await processBlockAndPersist({
+          context: this,
+          blockNumber,
+          events,
+          log,
+          provider,
+        });
       } catch (error) {
         log.error(
           `Error in pollContractForEvents for block ${blockNumber}`,
@@ -503,6 +483,43 @@ async function processBlock(
   if (hasErrors) {
     throw new Error("Errors found in processing block");
   }
+}
+
+async function processBlockAndPersist(params: {
+  context: ChainContext;
+  blockNumber: number;
+  events: ConditionalOrderCreatedEvent[];
+  currentBlock?: providers.Block;
+  log: LoggerWithMethods;
+  provider: ethers.providers.Provider;
+}) {
+  const { context, blockNumber, events, currentBlock, log, provider } = params;
+  const block = await provider.getBlock(blockNumber);
+  try {
+    await processBlock(
+      context,
+      block,
+      events,
+      currentBlock?.number,
+      currentBlock?.timestamp
+    );
+
+    // Set the last processed block to this iteration's block number
+    context.registry.lastProcessedBlock = blockToRegistryBlock(block);
+    await context.registry.write();
+
+    // Set the block height metric
+    metrics.blockHeight.labels(context.toString()).set(blockNumber);
+  } catch (err) {
+    log.error(`Error processing block ${block.number}`, err);
+  }
+
+  // Set the last processed block to the current block number
+  context.registry.lastProcessedBlock = blockToRegistryBlock(block);
+
+  // Save the registry
+  await context.registry.write();
+  log.debug(`Block ${blockNumber} has been processed`);
 }
 
 async function pollContractForEvents(
