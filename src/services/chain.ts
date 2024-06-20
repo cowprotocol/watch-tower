@@ -244,7 +244,7 @@ export class ChainContext {
         // Process blocks in order
         for (const blockNumberKey of Object.keys(eventsByBlock).sort()) {
           const blockNumber = Number(blockNumberKey);
-          lastProcessedBlock = await processBlockAndPersist({
+          await processBlockAndPersist({
             context: this,
             blockNumber,
             events: eventsByBlock[blockNumber],
