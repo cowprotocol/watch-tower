@@ -2,7 +2,6 @@ import Slack = require("node-slack");
 
 import { BytesLike, ethers } from "ethers";
 
-import type { ConditionalOrderCreatedEvent } from "./generated/ComposableCoW";
 import { ConditionalOrderParams, PollResult } from "@cowprotocol/cow-sdk";
 import { DBService } from "../services";
 import { metrics } from "../utils";
@@ -25,11 +24,6 @@ export interface ExecutionContext {
   notificationsEnabled: boolean;
   slack?: Slack;
   storage: DBService;
-}
-
-// Todo: This should also encompass `MerkleRootSet`
-export interface ReplayPlan {
-  [key: number]: Set<ConditionalOrderCreatedEvent>;
 }
 
 /**
