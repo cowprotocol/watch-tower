@@ -504,7 +504,7 @@ async function persistLastProcessedBlock(params: {
   log.debug(`Block ${blockNumber} has been processed`);
 
   // Set the block height metric
-  metrics.blockHeight.labels(context.toString()).set(blockNumber);
+  metrics.blockHeight.labels(context.chainId.toString()).set(blockNumber);
 
   return context.registry.lastProcessedBlock;
 }
