@@ -35,7 +35,7 @@ export async function pollConditionalOrder(
       actualPollParams.blockInfo === undefined
         ? "latest"
         : actualPollParams.blockInfo.blockNumber
-    })....`
+    })`
   );
   return order.poll(actualPollParams);
 }
