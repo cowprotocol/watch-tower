@@ -20,6 +20,12 @@
           "watchdogTimeout": {
             "type": "integer"
           },
+          "processEveryNumBlocks": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Throttle block processing to only process blocks every N blocks. Set to 1 to process every block, 2 to process every other block, etc.",
+            "default": 1
+          },
           "orderBookApi": {
             "type": "string",
             "format": "uri"
