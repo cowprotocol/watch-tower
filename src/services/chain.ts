@@ -77,6 +77,8 @@ export class ChainContext {
   readonly dryRun: boolean;
   readonly watchdogTimeout: number;
   readonly addresses?: string[];
+  readonly processEveryNumBlocks: number;
+
   private sync: ChainSync = ChainSync.SYNCING;
   static chains: Chains = {};
 
@@ -106,6 +108,7 @@ export class ChainContext {
     this.deploymentBlock = deploymentBlock;
     this.pageSize = pageSize ?? PAGE_SIZE_DEFAULT;
     this.dryRun = dryRun;
+    this.processEveryNumBlocks = options.processEveryNumBlocks ?? 1;
     this.watchdogTimeout = watchdogTimeout ?? WATCHDOG_TIMEOUT_DEFAULT_SECS;
     this.addresses = owners;
 
@@ -311,9 +314,8 @@ export class ChainContext {
     let lastBlockReceived = lastProcessedBlock;
     provider.on("block", async (blockNumber: number) => {
       try {
-        const block = await provider.getBlock(blockNumber);
-
         log.debug(`New block ${blockNumber}`);
+        const block = await provider.getBlock(blockNumber);
 
         // Set the block time metric
         const _blockTime = block.timestamp - lastBlockReceived.timestamp;
@@ -434,7 +436,7 @@ async function processBlock(
   blockNumberOverride?: number,
   blockTimestampOverride?: number
 ) {
-  const { provider, chainId } = context;
+  const { provider, chainId, processEveryNumBlocks } = context;
   const timer = metrics.processBlockDurationSeconds
     .labels(context.chainId.toString())
     .startTimer();
@@ -463,24 +465,29 @@ async function processBlock(
     }
   }
 
-  // run action
-  const result = await checkForAndPlaceOrder(
-    context,
-    block,
-    blockNumberOverride,
-    blockTimestampOverride
-  )
-    .then(() => true)
-    .catch(() => {
-      hasErrors = true;
-      log.error(`Error running "checkForAndPlaceOrder" action`);
-      return false;
-    });
-  log.debug(
-    `Result of "checkForAndPlaceOrder" action for block ${
-      block.number
-    }: ${_formatResult(result)}`
-  );
+  // Decide if we should process this block
+  const shouldProcessBlock = block.number % processEveryNumBlocks === 0;
+
+  // Check programmatic  orders and place orders if necessary
+  if (shouldProcessBlock) {
+    const result = await checkForAndPlaceOrder(
+      context,
+      block,
+      blockNumberOverride,
+      blockTimestampOverride
+    )
+      .then(() => true)
+      .catch(() => {
+        hasErrors = true;
+        log.error(`Error running "checkForAndPlaceOrder" action`);
+        return false;
+      });
+    log.debug(
+      `Result of "checkForAndPlaceOrder" action for block ${
+        block.number
+      }: ${_formatResult(result)}`
+    );
+  }
 
   timer();
   if (hasErrors) {
