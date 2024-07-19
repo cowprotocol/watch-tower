@@ -171,7 +171,7 @@ export class ChainContext {
    * @returns the run promises for what needs to be watched
    */
   public async warmUp(oneShot?: boolean) {
-    const { provider, chainId } = this;
+    const { provider, chainId, processEveryNumBlocks } = this;
     const log = getLogger("chainContext:warmUp", chainId.toString());
     let { lastProcessedBlock } = this.registry;
     const { pageSize } = this;
@@ -216,7 +216,13 @@ export class ChainContext {
           log.info(
             `🔄 Start sync with from block ${fromBlock} to ${toBlock}. Pending ${
               toBlock - fromBlock
-            } blocks (~${Math.ceil((toBlock - fromBlock) / pageSize)} pages)`
+            } blocks (~${Math.ceil(
+              (toBlock - fromBlock) / pageSize
+            )} pages, processing every ${
+              processEveryNumBlocks > 1
+                ? processEveryNumBlocks + " blocks"
+                : "block"
+            })`
           );
         }
 
