@@ -8,13 +8,6 @@ import {
 import { ethers } from "ethers";
 import { BytesLike } from "ethers/lib/utils";
 
-import { ConditionalOrder, OrderStatus } from "../../types";
-import {
-  formatStatus,
-  getLogger,
-  handleOnChainCustomError,
-  metrics,
-} from "../../utils";
 import {
   ConditionalOrder as ConditionalOrderSDK,
   OrderBookApi,
@@ -30,6 +23,13 @@ import {
   formatEpoch,
 } from "@cowprotocol/cow-sdk";
 import { ChainContext } from "../../services";
+import { ConditionalOrder, OrderStatus } from "../../types";
+import {
+  formatStatus,
+  getLogger,
+  handleOnChainCustomError,
+  metrics,
+} from "../../utils";
 import { badOrder, policy } from "./filtering";
 import { pollConditionalOrder } from "./poll";
 
