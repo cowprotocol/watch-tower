@@ -513,7 +513,7 @@ async function _placeOrder(params: {
 
     // If the operation is a dry run, don't post to the API
     log.info(`Post order ${orderUid} to OrderBook on chain ${chainId}`);
-    log.debug(`Post order details`, postOrder);
+    log.debug(`Post order ${orderUid} details`, postOrder);
     if (!dryRun) {
       const orderUid = await orderBookApi.sendOrder(postOrder);
       metrics.orderBookDiscreteOrdersTotal.labels(...metricLabels).inc();

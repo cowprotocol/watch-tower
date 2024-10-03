@@ -2,10 +2,13 @@ import Slack = require("node-slack");
 
 import { BytesLike, ethers } from "ethers";
 
-import { ConditionalOrderParams, PollResult } from "@cowprotocol/cow-sdk";
+import {
+  ConditionalOrderParams,
+  ConditionalOrder as ConditionalOrderSdk,
+  PollResult,
+} from "@cowprotocol/cow-sdk";
 import { DBService } from "../services";
-import { metrics } from "../utils";
-import { ConditionalOrder as ConditionalOrderSdk } from "@cowprotocol/cow-sdk";
+import { getLogger, metrics } from "../utils";
 
 // Standardise the storage key
 const LAST_NOTIFIED_ERROR_STORAGE_KEY = "LAST_NOTIFIED_ERROR";
@@ -237,6 +240,14 @@ export class Registry {
 
     // Write all atomically
     await batch.write();
+
+    const log = getLogger(
+      `Registry:write:${this.version}:${this.network}:${
+        this.lastProcessedBlock?.number
+      }:${this.lastNotifiedError || ""}`
+    );
+
+    log.debug("batch written 📝");
   }
 
   public stringifyOrders(): string {

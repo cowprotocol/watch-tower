@@ -28,6 +28,8 @@ export class DBService {
   }
 
   public async open() {
+    const log = getLogger("dbService:open");
+    log.info("Opening database...");
     await this.db.open();
   }
 

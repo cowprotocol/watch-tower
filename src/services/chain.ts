@@ -295,7 +295,7 @@ export class ChainContext {
         oneShot ? "Chain watcher is in sync" : "Chain watcher is warmed up"
       }`
     );
-    log.debug(`Last processed block: ${lastProcessedBlock}`);
+    log.debug(`Last processed block: ${JSON.stringify(lastProcessedBlock)}`);
 
     // If one-shot, return
     if (oneShot) {
@@ -591,10 +591,14 @@ function _formatResult(result: boolean) {
 }
 
 function getProvider(rpcUrl: string): providers.Provider {
+  const log = getLogger("getProvider", rpcUrl);
   // if the rpcUrl is a websocket url, use the WebSocketProvider
   if (rpcUrl.startsWith("ws")) {
+    log.debug("Instantiating WS");
     return new providers.WebSocketProvider(rpcUrl);
   }
+
+  log.debug("Instantiating HTTP");
 
   // otherwise, use the JsonRpcProvider
   return new providers.JsonRpcProvider(rpcUrl);
