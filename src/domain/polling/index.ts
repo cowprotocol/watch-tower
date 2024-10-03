@@ -153,13 +153,7 @@ export async function checkForAndPlaceOrder(
       }
 
       const ownerRef = `${ownerCounter}.${orderCounter}`;
-      const orderRef = `${chainId}:${ownerRef}@${blockNumber}`;
-      const log = getLogger(
-        "checkForAndPlaceOrder:checkForAndPlaceOrder",
-        chainId.toString(),
-        blockNumber.toString(),
-        ownerRef
-      );
+      const orderRef = `${chainId}:${blockNumber}:${ownerRef}`;
       const logOrderDetails = `Processing order ${conditionalOrder.id} from TX ${conditionalOrder.tx} with params:`;
 
       const { result: lastHint } = conditionalOrder.pollResult || {};
