@@ -293,6 +293,8 @@ function _deleteOrders(
   log: LoggerWithMethods,
   chainId: SupportedChainId
 ) {
+  log.debug(`${ordersPendingDelete.length} to delete`);
+
   for (const conditionalOrder of ordersPendingDelete) {
     const deleted = conditionalOrders.delete(conditionalOrder);
     const action = deleted ? "Stop Watching" : "Failed to stop watching";
