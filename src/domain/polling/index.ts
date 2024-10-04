@@ -92,7 +92,7 @@ const API_ERRORS_DROP: DropApiErrorsArray = [
 // ApiErrors.IncompatibleSigningScheme - we control this in the watch-tower
 // ApiErrors.AppDataHashMismatch - we never submit full appData
 
-const CHUNK_SIZE = 20; // How many orders to process before saving
+const CHUNK_SIZE = 50; // How many orders to process before saving
 
 /**
  * Watch for new blocks and check for orders to place
@@ -115,6 +115,7 @@ export async function checkForAndPlaceOrder(
   let hasErrors = false;
   let ownerCounter = 0;
   let orderCounter = 0;
+  let updatedCount = 0;
 
   const log = getLogger(
     "checkForAndPlaceOrder:checkForAndPlaceOrder",
@@ -140,13 +141,13 @@ export async function checkForAndPlaceOrder(
       orderCounter++;
 
       // Check if we reached the chunk size
-      if (orderCounter % CHUNK_SIZE === 1 && orderCounter > 1) {
+      if (updatedCount % CHUNK_SIZE === 1 && updatedCount > 1) {
         // Delete orders pending delete, if any
         _deleteOrders(ordersPendingDelete, conditionalOrders, log, chainId);
         // Reset tracker
         ordersPendingDelete = [];
 
-        log.debug(`Processed ${orderCounter}, saving registry`);
+        log.debug(`Processed ${updatedCount}, saving registry`);
 
         // Save the registry after processing each chunk
         await registry.write();
@@ -231,6 +232,8 @@ export async function checkForAndPlaceOrder(
         blockNumber: blockNumber,
         result: pollResult,
       };
+      // Order needs saving!
+      updatedCount++;
 
       // Log the result
       const unexpectedError =
@@ -290,6 +293,8 @@ function _deleteOrders(
   log: LoggerWithMethods,
   chainId: SupportedChainId
 ) {
+  log.debug(`${ordersPendingDelete.length} to delete`);
+
   for (const conditionalOrder of ordersPendingDelete) {
     const deleted = conditionalOrders.delete(conditionalOrder);
     const action = deleted ? "Stop Watching" : "Failed to stop watching";
