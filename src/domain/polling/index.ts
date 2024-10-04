@@ -150,7 +150,7 @@ export async function checkForAndPlaceOrder(
         log.debug(`Processed ${updatedCount}, saving registry`);
 
         // Save the registry after processing each chunk
-        // await registry.write(); // TODO: temporarily disabling save on chunk
+        await registry.write();
       }
 
       const ownerRef = `${ownerCounter}.${orderCounter}`;
