@@ -92,7 +92,7 @@ const API_ERRORS_DROP: DropApiErrorsArray = [
 // ApiErrors.IncompatibleSigningScheme - we control this in the watch-tower
 // ApiErrors.AppDataHashMismatch - we never submit full appData
 
-const CHUNK_SIZE = 20; // How many orders to process before saving
+const CHUNK_SIZE = 100; // How many orders to process before saving
 
 /**
  * Watch for new blocks and check for orders to place
@@ -149,7 +149,7 @@ export async function checkForAndPlaceOrder(
         log.debug(`Processed ${orderCounter}, saving registry`);
 
         // Save the registry after processing each chunk
-        await registry.write();
+        // await registry.write(); // TODO: temporarily disabling save on chunk
       }
 
       const ownerRef = `${ownerCounter}.${orderCounter}`;
