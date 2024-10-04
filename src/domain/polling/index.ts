@@ -8,13 +8,6 @@ import {
 import { ethers } from "ethers";
 import { BytesLike } from "ethers/lib/utils";
 
-import { ConditionalOrder, OrderStatus } from "../../types";
-import {
-  formatStatus,
-  getLogger,
-  handleOnChainCustomError,
-  metrics,
-} from "../../utils";
 import {
   ConditionalOrder as ConditionalOrderSDK,
   OrderBookApi,
@@ -30,6 +23,14 @@ import {
   formatEpoch,
 } from "@cowprotocol/cow-sdk";
 import { ChainContext } from "../../services";
+import { ConditionalOrder, OrderStatus } from "../../types";
+import {
+  LoggerWithMethods,
+  formatStatus,
+  getLogger,
+  handleOnChainCustomError,
+  metrics,
+} from "../../utils";
 import { badOrder, policy } from "./filtering";
 import { pollConditionalOrder } from "./poll";
 
@@ -91,6 +92,8 @@ const API_ERRORS_DROP: DropApiErrorsArray = [
 // ApiErrors.IncompatibleSigningScheme - we control this in the watch-tower
 // ApiErrors.AppDataHashMismatch - we never submit full appData
 
+const CHUNK_SIZE = 20; // How many orders to process before saving
+
 /**
  * Watch for new blocks and check for orders to place
  *
@@ -128,19 +131,29 @@ export async function checkForAndPlaceOrder(
       blockNumber.toString(),
       ownerCounter.toString()
     );
-    const ordersPendingDelete = [];
-    // enumerate all the `ConditionalOrder`s for a given owner
+
+    let ordersPendingDelete = [];
+
     log.debug(`Process owner ${owner} (${conditionalOrders.size} orders)`);
+
     for (const conditionalOrder of conditionalOrders) {
       orderCounter++;
+
+      // Check if we reached the chunk size
+      if (orderCounter % CHUNK_SIZE === 1 && orderCounter > 1) {
+        // Delete orders pending delete, if any
+        _deleteOrders(ordersPendingDelete, conditionalOrders, log, chainId);
+        // Reset tracker
+        ordersPendingDelete = [];
+
+        log.debug(`Processed ${orderCounter}, saving registry`);
+
+        // Save the registry after processing each chunk
+        await registry.write();
+      }
+
       const ownerRef = `${ownerCounter}.${orderCounter}`;
-      const orderRef = `${chainId}:${ownerRef}@${blockNumber}`;
-      const log = getLogger(
-        "checkForAndPlaceOrder:checkForAndPlaceOrder",
-        chainId.toString(),
-        blockNumber.toString(),
-        ownerRef
-      );
+      const orderRef = `${chainId}:${blockNumber}:${ownerRef}`;
       const logOrderDetails = `Processing order ${conditionalOrder.id} from TX ${conditionalOrder.tx} with params:`;
 
       const { result: lastHint } = conditionalOrder.pollResult || {};
@@ -158,7 +171,6 @@ export async function checkForAndPlaceOrder(
           case policy.FilterAction.DROP:
             log.info("Dropping conditional order. Reason: AcceptPolicy: DROP");
             ordersPendingDelete.push(conditionalOrder);
-
             continue;
           case policy.FilterAction.SKIP:
             log.debug("Skipping conditional order. Reason: AcceptPolicy: SKIP");
@@ -217,7 +229,6 @@ export async function checkForAndPlaceOrder(
       conditionalOrder.pollResult = {
         lastExecutionTimestamp: blockTimestamp,
         blockNumber: blockNumber,
-
         result: pollResult,
       };
 
@@ -247,15 +258,7 @@ export async function checkForAndPlaceOrder(
     }
 
     // Delete orders we don't want to keep watching
-    for (const conditionalOrder of ordersPendingDelete) {
-      const deleted = conditionalOrders.delete(conditionalOrder);
-      const action = deleted ? "Stop Watching" : "Failed to stop watching";
-
-      log.debug(
-        `${action} conditional order ${conditionalOrder.id} from TX ${conditionalOrder.tx}`
-      );
-      metrics.activeOrdersTotal.labels(chainId.toString()).dec();
-    }
+    _deleteOrders(ordersPendingDelete, conditionalOrders, log, chainId);
   }
 
   // It may be handy in other versions of the watch tower implemented in other languages
@@ -280,6 +283,24 @@ export async function checkForAndPlaceOrder(
     throw Error(`At least one unexpected error processing conditional orders`);
   }
 }
+
+function _deleteOrders(
+  ordersPendingDelete: ConditionalOrder[],
+  conditionalOrders: Set<ConditionalOrder>,
+  log: LoggerWithMethods,
+  chainId: SupportedChainId
+) {
+  for (const conditionalOrder of ordersPendingDelete) {
+    const deleted = conditionalOrders.delete(conditionalOrder);
+    const action = deleted ? "Stop Watching" : "Failed to stop watching";
+
+    log.debug(
+      `${action} conditional order ${conditionalOrder.id} from TX ${conditionalOrder.tx}`
+    );
+    metrics.activeOrdersTotal.labels(chainId.toString()).dec();
+  }
+}
+
 async function _processConditionalOrder(
   owner: string,
   conditionalOrder: ConditionalOrder,
@@ -513,7 +534,7 @@ async function _placeOrder(params: {
 
     // If the operation is a dry run, don't post to the API
     log.info(`Post order ${orderUid} to OrderBook on chain ${chainId}`);
-    log.debug(`Post order details`, postOrder);
+    log.debug(`Post order ${orderUid} details`, postOrder);
     if (!dryRun) {
       const orderUid = await orderBookApi.sendOrder(postOrder);
       metrics.orderBookDiscreteOrdersTotal.labels(...metricLabels).inc();

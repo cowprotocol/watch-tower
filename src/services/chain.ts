@@ -1,21 +1,23 @@
 import {
-  Registry,
-  ConditionalOrderCreatedEvent,
-  Multicall3,
-  ComposableCoW,
-  Multicall3__factory,
-  RegistryBlock,
-  blockToRegistryBlock,
-  ContextOptions,
-} from "../types";
-import {
-  SupportedChainId,
-  OrderBookApi,
   ApiBaseUrls,
+  OrderBookApi,
+  SupportedChainId,
 } from "@cowprotocol/cow-sdk";
+import { ethers, providers } from "ethers";
+import { DBService } from ".";
 import { addContract } from "../domain/events";
 import { checkForAndPlaceOrder } from "../domain/polling";
-import { ethers, providers } from "ethers";
+import { policy } from "../domain/polling/filtering";
+import {
+  ComposableCoW,
+  ConditionalOrderCreatedEvent,
+  ContextOptions,
+  Multicall3,
+  Multicall3__factory,
+  Registry,
+  RegistryBlock,
+  blockToRegistryBlock,
+} from "../types";
 import {
   LoggerWithMethods,
   composableCowContract,
@@ -23,8 +25,6 @@ import {
   isRunningInKubernetesPod,
   metrics,
 } from "../utils";
-import { DBService } from ".";
-import { policy } from "../domain/polling/filtering";
 
 const WATCHDOG_FREQUENCY_SECS = 5; // 5 seconds
 const WATCHDOG_TIMEOUT_DEFAULT_SECS = 30;
@@ -295,7 +295,7 @@ export class ChainContext {
         oneShot ? "Chain watcher is in sync" : "Chain watcher is warmed up"
       }`
     );
-    log.debug(`Last processed block: ${lastProcessedBlock}`);
+    log.debug(`Last processed block: ${JSON.stringify(lastProcessedBlock)}`);
 
     // If one-shot, return
     if (oneShot) {
@@ -591,10 +591,14 @@ function _formatResult(result: boolean) {
 }
 
 function getProvider(rpcUrl: string): providers.Provider {
+  const log = getLogger("getProvider", rpcUrl);
   // if the rpcUrl is a websocket url, use the WebSocketProvider
   if (rpcUrl.startsWith("ws")) {
+    log.debug("Instantiating WS");
     return new providers.WebSocketProvider(rpcUrl);
   }
+
+  log.debug("Instantiating HTTP");
 
   // otherwise, use the JsonRpcProvider
   return new providers.JsonRpcProvider(rpcUrl);

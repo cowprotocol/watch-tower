@@ -14,7 +14,7 @@ export interface Config {
     deploymentBlock: number;
     watchdogTimeout?: number;
     /**
-     * Throttle block processing to only process blocks every N blocks. Set to 1 to process every block, 2 to process every other block, etc.
+     * Throttle block processing to only process blocks every N blocks. Set to 1 to process every block (default), 2 to process every other block, etc.
      */
     processEveryNumBlocks?: number;
     orderBookApi?: string;
