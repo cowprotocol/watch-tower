@@ -189,7 +189,11 @@ export class Registry {
   }
 
   get numOrders(): number {
-    return Array.from(this.ownerOrders.values()).flatMap((o) => o).length;
+    let count = 0;
+    for (const orders of this.ownerOrders.values()) {
+      count += orders.size; // Count each set's size directly
+    }
+    return count;
   }
 
   /**
