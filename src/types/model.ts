@@ -304,9 +304,7 @@ async function loadOwnerOrders(
   );
 
   // Parse conditional orders registry (for the persisted version, converting it to the last version)
-  const ownerOrders = parseConditionalOrders(!!str ? str : undefined, version);
-
-  return ownerOrders;
+  return parseConditionalOrders(!!str ? str : undefined, version);
 }
 
 function parseConditionalOrders(
