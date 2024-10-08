@@ -106,6 +106,7 @@ export class Registry {
   network: string;
   lastNotifiedError: Date | null;
   lastProcessedBlock: RegistryBlock | null;
+  readonly logger = getLogger("Registry");
 
   /**
    * Instantiates a registry.
@@ -245,13 +246,12 @@ export class Registry {
     // Write all atomically
     await batch.write();
 
-    const log = getLogger(
-      `Registry:write:${this.version}:${this.network}:${
+    this.logger.debug(
+      `write:${this.version}:${this.network}:${
         this.lastProcessedBlock?.number
-      }:${this.lastNotifiedError || ""}`
+      }:${this.lastNotifiedError || ""}`,
+      "batch written 📝"
     );
-
-    log.debug("batch written 📝");
   }
 
   public stringifyOrders(): string {
