@@ -583,7 +583,7 @@ async function pollContractForEvents(
         event.topics
       ) as unknown as ConditionalOrderCreatedEvent;
 
-      if (addresses ? addresses.includes(decoded.args.owner) : true) {
+      if (!addresses || addresses.includes(decoded.args.owner)) {
         acc.push({
           ...decoded,
           ...event,
