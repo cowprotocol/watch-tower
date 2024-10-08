@@ -266,7 +266,7 @@ export async function checkForAndPlaceOrder(
 
   // It may be handy in other versions of the watch tower implemented in other languages
   // to not delete owners, so we can keep track of them.
-  for (const [owner, conditionalOrders] of Array.from(ownerOrders.entries())) {
+  for (const [owner, conditionalOrders] of ownerOrders) {
     if (conditionalOrders.size === 0) {
       ownerOrders.delete(owner);
       metrics.activeOwnersTotal.labels(chainId.toString()).dec();
