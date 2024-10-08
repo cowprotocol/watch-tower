@@ -320,7 +320,17 @@ export class ChainContext {
     let lastBlockReceived = lastProcessedBlock;
     provider.on("block", async (blockNumber: number) => {
       try {
+        // Decide if we should process this block before polling for events
+        const shouldProcessBlock =
+          blockNumber % this.processEveryNumBlocks === 0;
+
+        if (!shouldProcessBlock) {
+          log.debug(`Skipping block ${blockNumber}`);
+          return;
+        }
+
         log.debug(`New block ${blockNumber}`);
+
         const block = await provider.getBlock(blockNumber);
 
         // Set the block time metric
@@ -442,7 +452,7 @@ async function processBlock(
   blockNumberOverride?: number,
   blockTimestampOverride?: number
 ) {
-  const { provider, chainId, processEveryNumBlocks } = context;
+  const { provider, chainId } = context;
   const timer = metrics.processBlockDurationSeconds
     .labels(context.chainId.toString())
     .startTimer();
@@ -471,31 +481,27 @@ async function processBlock(
     }
   }
 
-  // Decide if we should process this block
-  const shouldProcessBlock = block.number % processEveryNumBlocks === 0;
-
   // Check programmatic  orders and place orders if necessary
-  if (shouldProcessBlock) {
-    const result = await checkForAndPlaceOrder(
-      context,
-      block,
-      blockNumberOverride,
-      blockTimestampOverride
-    )
-      .then(() => true)
-      .catch(() => {
-        hasErrors = true;
-        log.error(`Error running "checkForAndPlaceOrder" action`);
-        return false;
-      });
-    log.debug(
-      `Result of "checkForAndPlaceOrder" action for block ${
-        block.number
-      }: ${_formatResult(result)}`
-    );
-  }
+  const result = await checkForAndPlaceOrder(
+    context,
+    block,
+    blockNumberOverride,
+    blockTimestampOverride
+  )
+    .then(() => true)
+    .catch(() => {
+      hasErrors = true;
+      log.error(`Error running "checkForAndPlaceOrder" action`);
+      return false;
+    });
+  log.debug(
+    `Result of "checkForAndPlaceOrder" action for block ${
+      block.number
+    }: ${_formatResult(result)}`
+  );
 
   timer();
+
   if (hasErrors) {
     throw new Error("Errors found in processing block");
   }
