@@ -358,6 +358,7 @@ export class ChainContext {
 
         await processBlockAndPersist({
           context: this,
+          block,
           blockNumber,
           events,
           log,
@@ -530,26 +531,31 @@ async function persistLastProcessedBlock(params: {
 
 async function processBlockAndPersist(params: {
   context: ChainContext;
+  block?: providers.Block;
   blockNumber: number;
   events: ConditionalOrderCreatedEvent[];
   currentBlock?: providers.Block;
   log: LoggerWithMethods;
   provider: ethers.providers.Provider;
 }) {
-  const { context, blockNumber, events, currentBlock, log, provider } = params;
-  const block = await provider.getBlock(blockNumber);
+  const { context, block, blockNumber, events, currentBlock, log, provider } =
+    params;
+
+  // Accept optional block object, in case it was already fetched
+  const _block = block || (await provider.getBlock(blockNumber));
+
   try {
     await processBlock(
       context,
-      block,
+      _block,
       events,
       currentBlock?.number,
       currentBlock?.timestamp
     );
   } catch (err) {
-    log.error(`Error processing block ${block.number}`, err);
+    log.error(`Error processing block ${_block.number}`, err);
   } finally {
-    return persistLastProcessedBlock({ context, block, log });
+    return persistLastProcessedBlock({ context, block: _block, log });
   }
 }
 
