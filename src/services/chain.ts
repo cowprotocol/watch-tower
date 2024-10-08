@@ -575,27 +575,25 @@ async function pollContractForEvents(
     topics: [topic],
   });
 
-  return logs
-    .map((event) => {
-      try {
-        const decoded = composableCow.interface.decodeEventLog(
-          topic,
-          event.data,
-          event.topics
-        ) as unknown as ConditionalOrderCreatedEvent;
+  return logs.reduce<ConditionalOrderCreatedEvent[]>((acc, event) => {
+    try {
+      const decoded = composableCow.interface.decodeEventLog(
+        topic,
+        event.data,
+        event.topics
+      ) as unknown as ConditionalOrderCreatedEvent;
 
-        return {
+      if (addresses ? addresses.includes(decoded.args.owner) : true) {
+        acc.push({
           ...decoded,
           ...event,
-        };
-      } catch {
-        return null;
+        });
       }
-    })
-    .filter((e): e is ConditionalOrderCreatedEvent => e !== null)
-    .filter((e): e is ConditionalOrderCreatedEvent => {
-      return addresses ? addresses.includes(e.args.owner) : true;
-    });
+    } catch {
+      // Ignore errors and do not add to the accumulator
+    }
+    return acc;
+  }, []);
 }
 
 function _formatResult(result: boolean) {
