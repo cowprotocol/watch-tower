@@ -106,6 +106,7 @@ export class Registry {
   network: string;
   lastNotifiedError: Date | null;
   lastProcessedBlock: RegistryBlock | null;
+  readonly logger = getLogger("Registry");
 
   /**
    * Instantiates a registry.
@@ -189,7 +190,11 @@ export class Registry {
   }
 
   get numOrders(): number {
-    return Array.from(this.ownerOrders.values()).flatMap((o) => o).length;
+    let count = 0;
+    for (const orders of this.ownerOrders.values()) {
+      count += orders.size; // Count each set's size directly
+    }
+    return count;
   }
 
   /**
@@ -241,13 +246,12 @@ export class Registry {
     // Write all atomically
     await batch.write();
 
-    const log = getLogger(
-      `Registry:write:${this.version}:${this.network}:${
+    this.logger.debug(
+      `write:${this.version}:${this.network}:${
         this.lastProcessedBlock?.number
-      }:${this.lastNotifiedError || ""}`
+      }:${this.lastNotifiedError || ""}`,
+      "batch written 📝"
     );
-
-    log.debug("batch written 📝");
   }
 
   public stringifyOrders(): string {
@@ -300,9 +304,7 @@ async function loadOwnerOrders(
   );
 
   // Parse conditional orders registry (for the persisted version, converting it to the last version)
-  const ownerOrders = parseConditionalOrders(!!str ? str : undefined, version);
-
-  return ownerOrders;
+  return parseConditionalOrders(!!str ? str : undefined, version);
 }
 
 function parseConditionalOrders(

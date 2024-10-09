@@ -320,7 +320,17 @@ export class ChainContext {
     let lastBlockReceived = lastProcessedBlock;
     provider.on("block", async (blockNumber: number) => {
       try {
+        // Decide if we should process this block before polling for events
+        const shouldProcessBlock =
+          blockNumber % this.processEveryNumBlocks === 0;
+
+        if (!shouldProcessBlock) {
+          log.debug(`Skipping block ${blockNumber}`);
+          return;
+        }
+
         log.debug(`New block ${blockNumber}`);
+
         const block = await provider.getBlock(blockNumber);
 
         // Set the block time metric
@@ -348,6 +358,7 @@ export class ChainContext {
 
         await processBlockAndPersist({
           context: this,
+          block,
           blockNumber,
           events,
           log,
@@ -442,7 +453,7 @@ async function processBlock(
   blockNumberOverride?: number,
   blockTimestampOverride?: number
 ) {
-  const { provider, chainId, processEveryNumBlocks } = context;
+  const { provider, chainId } = context;
   const timer = metrics.processBlockDurationSeconds
     .labels(context.chainId.toString())
     .startTimer();
@@ -471,31 +482,27 @@ async function processBlock(
     }
   }
 
-  // Decide if we should process this block
-  const shouldProcessBlock = block.number % processEveryNumBlocks === 0;
-
   // Check programmatic  orders and place orders if necessary
-  if (shouldProcessBlock) {
-    const result = await checkForAndPlaceOrder(
-      context,
-      block,
-      blockNumberOverride,
-      blockTimestampOverride
-    )
-      .then(() => true)
-      .catch(() => {
-        hasErrors = true;
-        log.error(`Error running "checkForAndPlaceOrder" action`);
-        return false;
-      });
-    log.debug(
-      `Result of "checkForAndPlaceOrder" action for block ${
-        block.number
-      }: ${_formatResult(result)}`
-    );
-  }
+  const result = await checkForAndPlaceOrder(
+    context,
+    block,
+    blockNumberOverride,
+    blockTimestampOverride
+  )
+    .then(() => true)
+    .catch(() => {
+      hasErrors = true;
+      log.error(`Error running "checkForAndPlaceOrder" action`);
+      return false;
+    });
+  log.debug(
+    `Result of "checkForAndPlaceOrder" action for block ${
+      block.number
+    }: ${_formatResult(result)}`
+  );
 
   timer();
+
   if (hasErrors) {
     throw new Error("Errors found in processing block");
   }
@@ -524,26 +531,31 @@ async function persistLastProcessedBlock(params: {
 
 async function processBlockAndPersist(params: {
   context: ChainContext;
+  block?: providers.Block;
   blockNumber: number;
   events: ConditionalOrderCreatedEvent[];
   currentBlock?: providers.Block;
   log: LoggerWithMethods;
   provider: ethers.providers.Provider;
 }) {
-  const { context, blockNumber, events, currentBlock, log, provider } = params;
-  const block = await provider.getBlock(blockNumber);
+  const { context, block, blockNumber, events, currentBlock, log, provider } =
+    params;
+
+  // Accept optional block object, in case it was already fetched
+  const _block = block || (await provider.getBlock(blockNumber));
+
   try {
     await processBlock(
       context,
-      block,
+      _block,
       events,
       currentBlock?.number,
       currentBlock?.timestamp
     );
   } catch (err) {
-    log.error(`Error processing block ${block.number}`, err);
+    log.error(`Error processing block ${_block.number}`, err);
   } finally {
-    return persistLastProcessedBlock({ context, block, log });
+    return persistLastProcessedBlock({ context, block: _block, log });
   }
 }
 
@@ -563,27 +575,25 @@ async function pollContractForEvents(
     topics: [topic],
   });
 
-  return logs
-    .map((event) => {
-      try {
-        const decoded = composableCow.interface.decodeEventLog(
-          topic,
-          event.data,
-          event.topics
-        ) as unknown as ConditionalOrderCreatedEvent;
+  return logs.reduce<ConditionalOrderCreatedEvent[]>((acc, event) => {
+    try {
+      const decoded = composableCow.interface.decodeEventLog(
+        topic,
+        event.data,
+        event.topics
+      ) as unknown as ConditionalOrderCreatedEvent;
 
-        return {
+      if (!addresses || addresses.includes(decoded.args.owner)) {
+        acc.push({
           ...decoded,
           ...event,
-        };
-      } catch {
-        return null;
+        });
       }
-    })
-    .filter((e): e is ConditionalOrderCreatedEvent => e !== null)
-    .filter((e): e is ConditionalOrderCreatedEvent => {
-      return addresses ? addresses.includes(e.args.owner) : true;
-    });
+    } catch {
+      // Ignore errors and do not add to the accumulator
+    }
+    return acc;
+  }, []);
 }
 
 function _formatResult(result: boolean) {
