@@ -8,7 +8,7 @@ The [programmatic order](https://docs.cow.fi/cow-protocol/concepts/order-types/p
 
 If running your own watch-tower instance, you will need the following:
 
-- An RPC node connected to the Ethereum mainnet, Arbitrum One, Gnosis Chain, or Sepolia.
+- An RPC node connected to the Ethereum mainnet, Arbitrum One, Gnosis Chain, Base, or Sepolia.
 - Internet access to the [CoW Protocol `OrderBook` API](https://docs.cow.fi/cow-protocol/reference/apis/orderbook).
 
 **CAUTION**: Conditional order types may consume considerable RPC calls.
@@ -16,7 +16,6 @@ If running your own watch-tower instance, you will need the following:
 **NOTE**: `deployment-block` refers to the block number at which the **`ComposableCoW`** contract was deployed to the respective chain. This is used to optimise the watch-tower by only fetching events from the blockchain after this block number. Refer to [Deployed Contracts](https://github.com/cowprotocol/composable-cow#deployed-contracts) for the respective chains.
 
 **NOTE**: The `pageSize` option is used to specify the number of blocks to fetch from the blockchain when querying historical events (`eth_getLogs`). The default is `5000`, which is the maximum number of blocks that can be fetched in a single request from Infura. If you are running the watch-tower against your own RPC, you may want to set this to `0` to fetch all blocks in one request, as opposed to paging requests.
-
 
 ### Docker
 
