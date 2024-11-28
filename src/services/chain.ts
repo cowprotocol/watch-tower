@@ -320,15 +320,6 @@ export class ChainContext {
     let lastBlockReceived = lastProcessedBlock;
     provider.on("block", async (blockNumber: number) => {
       try {
-        // Decide if we should process this block before polling for events
-        const shouldProcessBlock =
-          blockNumber % this.processEveryNumBlocks === 0;
-
-        if (!shouldProcessBlock) {
-          log.debug(`Skipping block ${blockNumber}`);
-          return;
-        }
-
         log.debug(`New block ${blockNumber}`);
 
         const block = await provider.getBlock(blockNumber);
@@ -453,10 +444,11 @@ async function processBlock(
   blockNumberOverride?: number,
   blockTimestampOverride?: number
 ) {
-  const { provider, chainId } = context;
+  const { provider, chainId, processEveryNumBlocks } = context;
   const timer = metrics.processBlockDurationSeconds
     .labels(context.chainId.toString())
     .startTimer();
+
   const log = getLogger(
     "chainContext:processBlock",
     chainId.toString(),
@@ -482,24 +474,29 @@ async function processBlock(
     }
   }
 
+  // Decide if we should process this block
+  const shouldProcessBlock = block.number % processEveryNumBlocks === 0;
+
   // Check programmatic  orders and place orders if necessary
-  const result = await checkForAndPlaceOrder(
-    context,
-    block,
-    blockNumberOverride,
-    blockTimestampOverride
-  )
-    .then(() => true)
-    .catch(() => {
-      hasErrors = true;
-      log.error(`Error running "checkForAndPlaceOrder" action`);
-      return false;
-    });
-  log.debug(
-    `Result of "checkForAndPlaceOrder" action for block ${
-      block.number
-    }: ${_formatResult(result)}`
-  );
+  if (shouldProcessBlock) {
+    const result = await checkForAndPlaceOrder(
+      context,
+      block,
+      blockNumberOverride,
+      blockTimestampOverride
+    )
+      .then(() => true)
+      .catch(() => {
+        hasErrors = true;
+        log.error(`Error running "checkForAndPlaceOrder" action`);
+        return false;
+      });
+    log.debug(
+      `Result of "checkForAndPlaceOrder" action for block ${
+        block.number
+      }: ${_formatResult(result)}`
+    );
+  }
 
   timer();
 
