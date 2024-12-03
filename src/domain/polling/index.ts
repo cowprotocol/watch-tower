@@ -317,6 +317,7 @@ async function _processConditionalOrder(
 ): Promise<PollResult> {
   const { provider, orderBookApi, dryRun, chainId } = context;
   const { handler } = conditionalOrder.params;
+
   const log = getLogger(
     "checkForAndPlaceOrder:_processConditionalOrder",
     orderRef
@@ -412,6 +413,7 @@ async function _processConditionalOrder(
     if (!conditionalOrder.orders.has(orderUid)) {
       // Place order
       const placeOrderResult = await _placeOrder({
+        conditionalOrder,
         orderUid,
         order: { ...orderToSubmit, from: owner, signature },
         orderBookApi,
@@ -500,6 +502,7 @@ export const _printUnfilledOrders = (orders: Map<BytesLike, OrderStatus>) => {
  * @param apiUrl rest api url
  */
 async function _placeOrder(params: {
+  conditionalOrder: ConditionalOrder;
   orderUid: string;
   order: any;
   orderBookApi: OrderBookApi;
@@ -509,6 +512,7 @@ async function _placeOrder(params: {
   metricLabels: string[];
 }): Promise<Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors> {
   const {
+    conditionalOrder,
     orderUid,
     order,
     orderBookApi,
@@ -518,7 +522,6 @@ async function _placeOrder(params: {
     metricLabels,
   } = params;
   const log = getLogger("checkForAndPlaceOrder:_placeOrder", orderRef);
-  const { chainId } = orderBookApi.context;
   try {
     const postOrder: OrderCreation = {
       kind: order.kind,
@@ -539,7 +542,9 @@ async function _placeOrder(params: {
     };
 
     // If the operation is a dry run, don't post to the API
-    log.info(`Post order ${orderUid} to OrderBook on chain ${chainId}`);
+    log.info(
+      `Post order ${orderUid} (ID=${conditionalOrder.id}, TX=${conditionalOrder.tx})`
+    );
     log.debug(`Post order ${orderUid} details`, postOrder);
     if (!dryRun) {
       const orderUid = await orderBookApi.sendOrder(postOrder);
