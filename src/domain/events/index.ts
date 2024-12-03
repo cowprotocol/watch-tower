@@ -216,6 +216,7 @@ function add(
         const areConditionalOrderParamsEqual =
           getAreConditionalOrderParamsEqual(conditionalOrder.params, params);
 
+        // TODO: delete this log after testing
         if (
           areConditionalOrderParamsEqual &&
           conditionalOrder.params !== params
