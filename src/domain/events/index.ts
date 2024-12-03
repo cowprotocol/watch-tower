@@ -10,7 +10,6 @@ import { BytesLike, ethers } from "ethers";
 import {
   ComposableCoW,
   ComposableCoW__factory,
-  ComposableCoWInterface,
   ConditionalOrderCreatedEvent,
   IConditionalOrder,
   MerkleRootSetEvent,
@@ -21,6 +20,8 @@ import {
 import { ConditionalOrder, ConditionalOrderParams } from "@cowprotocol/cow-sdk";
 
 import { ChainContext } from "../../services/chain";
+
+const composableCow = ComposableCoW__factory.createInterface();
 
 /**
  * Listens to these events on the `ComposableCoW` contract:
@@ -48,7 +49,6 @@ async function _addContract(
   context: ChainContext,
   event: ConditionalOrderCreatedEvent
 ) {
-  const composableCow = ComposableCoW__factory.createInterface();
   const log = getLogger("addContract:_addContract");
   const { registry } = context;
   const { transactionHash: tx, blockNumber } = event;
@@ -57,11 +57,7 @@ async function _addContract(
   let hasErrors = false;
   let numContractsAdded = 0;
 
-  const { error, added } = await registerNewOrder(
-    event,
-    composableCow,
-    registry
-  );
+  const { error, added } = await registerNewOrder(event, registry);
 
   if (added) {
     metrics.ownersTotal.labels(context.chainId.toString()).inc();
@@ -91,7 +87,6 @@ async function _addContract(
 
 async function registerNewOrder(
   event: ConditionalOrderCreatedEvent | MerkleRootSetEvent,
-  composableCow: ComposableCoWInterface,
   registry: Registry
 ): Promise<{ error: boolean; added: boolean }> {
   const log = getLogger("addContract:registerNewOrder");
