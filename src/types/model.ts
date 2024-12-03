@@ -8,7 +8,8 @@ import {
   PollResult,
 } from "@cowprotocol/cow-sdk";
 import { DBService } from "../services";
-import { getLogger, metrics } from "../utils";
+import * as metrics from "../utils/metrics";
+import { getLogger } from "../utils/logging";
 
 // Standardise the storage key
 const LAST_NOTIFIED_ERROR_STORAGE_KEY = "LAST_NOTIFIED_ERROR";
