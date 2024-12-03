@@ -288,8 +288,6 @@ function replacer(_key: any, value: any) {
   }
 }
 
-const loadOwnerOrdersLogger = getLogger("loadOwnerOrders");
-
 async function loadOwnerOrders(
   storage: DBService,
   network: string
@@ -313,7 +311,8 @@ async function loadOwnerOrders(
     version
   );
 
-  loadOwnerOrdersLogger.info(
+  const log = getLogger("loadOwnerOrders");
+  log.info(
     `Data size: ${str?.length}`,
     `Owners: ${ordersPerOwner.size}`,
     `Total orders: ${getOrdersCountFromOrdersPerOwner(ordersPerOwner)}`,
