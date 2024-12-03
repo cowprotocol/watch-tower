@@ -270,6 +270,7 @@ function add(
       ])
     );
 
+    // One increment owners and one orders
     metrics.activeOwnersTotal.labels(network).inc(2);
   }
 }
