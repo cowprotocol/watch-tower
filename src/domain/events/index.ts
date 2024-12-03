@@ -269,9 +269,8 @@ function add(
         },
       ])
     );
-    // TODO: why twice?
-    metrics.activeOwnersTotal.labels(network).inc();
-    metrics.activeOrdersTotal.labels(network).inc();
+
+    metrics.activeOwnersTotal.labels(network).inc(2);
   }
 }
 
