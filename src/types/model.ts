@@ -1,10 +1,10 @@
 import Slack = require("node-slack");
 
-import { BytesLike, ethers } from "ethers";
+import { BytesLike } from "ethers";
 
 import {
-  ConditionalOrderParams,
   ConditionalOrder as ConditionalOrderSdk,
+  ConditionalOrderParams,
   PollResult,
 } from "@cowprotocol/cow-sdk";
 import { DBService } from "../services";
@@ -41,6 +41,7 @@ export type Proof = {
 
 export type OrderUid = BytesLike;
 export type Owner = string;
+
 export enum OrderStatus {
   SUBMITTED = 1,
   FILLED = 2,
@@ -95,27 +96,30 @@ export interface RegistryBlock {
   hash: string;
 }
 
+type OrdersPerOwner = Map<Owner, Set<ConditionalOrder>>;
+
 /**
  * Models the state between executions.
  * Contains a map of owners to conditional orders and the last time we sent an error.
  */
 export class Registry {
   version = CONDITIONAL_ORDER_REGISTRY_VERSION;
-  ownerOrders: Map<Owner, Set<ConditionalOrder>>;
+  ownerOrders: OrdersPerOwner;
   storage: DBService;
   network: string;
   lastNotifiedError: Date | null;
   lastProcessedBlock: RegistryBlock | null;
   readonly logger = getLogger("Registry");
-
   /**
    * Instantiates a registry.
    * @param ownerOrders What map to populate the registry with
    * @param storage storage service to use
    * @param network Which network the registry is for
+   * @param lastNotifiedError The last time we sent an error
+   * @param lastProcessedBlock The last block we processed
    */
   constructor(
-    ownerOrders: Map<Owner, Set<ConditionalOrder>>,
+    ownerOrders: OrdersPerOwner,
     storage: DBService,
     network: string,
     lastNotifiedError: Date | null,
@@ -144,8 +148,9 @@ export class Registry {
 
   /**
    * Load the registry from storage.
-   * @param context from which to load the registry
+   * @param storage to load the registry from
    * @param network that the registry is for
+   * @param genesisBlockNumber the block number of the genesis block
    * @returns a registry instance
    */
   public static async load(
@@ -157,6 +162,7 @@ export class Registry {
     const ownerOrders = await loadOwnerOrders(storage, network).catch(() =>
       createNewOrderMap()
     );
+
     const lastNotifiedError = await db
       .get(getNetworkStorageKey(LAST_NOTIFIED_ERROR_STORAGE_KEY, network))
       .then((isoDate: string | number | Date) =>
@@ -190,11 +196,7 @@ export class Registry {
   }
 
   get numOrders(): number {
-    let count = 0;
-    for (const orders of this.ownerOrders.values()) {
-      count += orders.size; // Count each set's size directly
-    }
-    return count;
+    return getOrdersCountFromOrdersPerOwner(this.ownerOrders);
   }
 
   /**
@@ -259,7 +261,7 @@ export class Registry {
   }
 }
 
-export function _reviver(_key: any, value: any) {
+function reviver(_key: any, value: any) {
   if (typeof value === "object" && value !== null) {
     if (value.dataType === "Map") {
       return new Map(value.value);
@@ -270,7 +272,7 @@ export function _reviver(_key: any, value: any) {
   return value;
 }
 
-export function replacer(_key: any, value: any) {
+function replacer(_key: any, value: any) {
   if (value instanceof Map) {
     return {
       dataType: "Map",
@@ -286,10 +288,12 @@ export function replacer(_key: any, value: any) {
   }
 }
 
+const loadOwnerOrdersLogger = getLogger("loadOwnerOrders");
+
 async function loadOwnerOrders(
   storage: DBService,
   network: string
-): Promise<Map<string, Set<ConditionalOrder>>> {
+): Promise<OrdersPerOwner> {
   // Get the owner orders
   const db = storage.getDB();
   const str = await db.get(
@@ -304,20 +308,33 @@ async function loadOwnerOrders(
   );
 
   // Parse conditional orders registry (for the persisted version, converting it to the last version)
-  return parseConditionalOrders(!!str ? str : undefined, version);
+  const ordersPerOwner = parseConditionalOrders(
+    !!str ? str : undefined,
+    version
+  );
+
+  loadOwnerOrdersLogger.info(
+    `Data size: ${str?.length}`,
+    `Owners: ${ordersPerOwner.size}`,
+    `Total orders: ${getOrdersCountFromOrdersPerOwner(ordersPerOwner)}`,
+    `Network: ${network}`
+  );
+
+  return ordersPerOwner;
 }
 
 function parseConditionalOrders(
   serializedConditionalOrders: string | undefined,
   _version: number | undefined
-): Map<Owner, Set<ConditionalOrder>> {
+): OrdersPerOwner {
   if (!serializedConditionalOrders) {
     return createNewOrderMap();
   }
+
   const ownerOrders: Map<
     Owner,
     Set<Omit<ConditionalOrder, "id"> & { id?: string }>
-  > = JSON.parse(serializedConditionalOrders, _reviver);
+  > = JSON.parse(serializedConditionalOrders, reviver);
 
   // The conditional order id was added in version 2
   if (_version && _version < 2) {
@@ -331,19 +348,21 @@ function parseConditionalOrders(
     }
   }
 
-  return ownerOrders as Map<Owner, Set<ConditionalOrder>>;
+  return ownerOrders as OrdersPerOwner;
 }
 
-function createNewOrderMap(): Map<Owner, Set<ConditionalOrder>> {
+function createNewOrderMap(): OrdersPerOwner {
   return new Map<Owner, Set<ConditionalOrder>>();
 }
 
-export function blockToRegistryBlock(
-  block: ethers.providers.Block
-): RegistryBlock {
-  return {
-    number: block.number,
-    timestamp: block.timestamp,
-    hash: block.hash,
-  };
+function getOrdersCountFromOrdersPerOwner(
+  ordersPerOwner: OrdersPerOwner
+): number {
+  let ordersCount = 0;
+
+  for (const orders of ordersPerOwner.values()) {
+    ordersCount += orders.size;
+  }
+
+  return ordersCount;
 }

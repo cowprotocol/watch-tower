@@ -31,3 +31,14 @@ export function toConditionalOrderParams({
     staticInput: staticInput.toString(),
   };
 }
+
+export function getAreConditionalOrderParamsEqual(
+  a: ConditionalOrderParams,
+  b: ConditionalOrderParams
+): boolean {
+  return (
+    a.handler.toLowerCase() === b.handler.toLowerCase() &&
+    a.salt.toLowerCase() === b.salt.toLowerCase() &&
+    a.staticInput.toLowerCase() === b.staticInput.toLowerCase()
+  );
+}

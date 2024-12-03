@@ -1,18 +1,18 @@
 import {
-  toConditionalOrderParams,
+  getAreConditionalOrderParamsEqual,
   getLogger,
   handleExecutionError,
   metrics,
+  toConditionalOrderParams,
 } from "../../utils";
 import { BytesLike, ethers } from "ethers";
 
 import {
   ComposableCoW,
-  ComposableCoWInterface,
+  ComposableCoW__factory,
   ConditionalOrderCreatedEvent,
   IConditionalOrder,
   MerkleRootSetEvent,
-  ComposableCoW__factory,
   Owner,
   Proof,
   Registry,
@@ -20,6 +20,8 @@ import {
 import { ConditionalOrder, ConditionalOrderParams } from "@cowprotocol/cow-sdk";
 
 import { ChainContext } from "../../services/chain";
+
+const composableCow = ComposableCoW__factory.createInterface();
 
 /**
  * Listens to these events on the `ComposableCoW` contract:
@@ -48,7 +50,6 @@ async function _addContract(
   event: ConditionalOrderCreatedEvent
 ) {
   const log = getLogger("addContract:_addContract");
-  const composableCow = ComposableCoW__factory.createInterface();
   const { registry } = context;
   const { transactionHash: tx, blockNumber } = event;
 
@@ -56,11 +57,8 @@ async function _addContract(
   let hasErrors = false;
   let numContractsAdded = 0;
 
-  const { error, added } = await _registerNewOrder(
-    event,
-    composableCow,
-    registry
-  );
+  const { error, added } = await registerNewOrder(event, registry);
+
   if (added) {
     metrics.ownersTotal.labels(context.chainId.toString()).inc();
     numContractsAdded++;
@@ -69,6 +67,7 @@ async function _addContract(
       `Failed to register Smart Order from tx ${tx} on block ${blockNumber}. Error: ${error}`
     );
   }
+
   hasErrors ||= error;
 
   if (numContractsAdded > 0) {
@@ -86,15 +85,15 @@ async function _addContract(
   }
 }
 
-export async function _registerNewOrder(
+async function registerNewOrder(
   event: ConditionalOrderCreatedEvent | MerkleRootSetEvent,
-  composableCow: ComposableCoWInterface,
   registry: Registry
 ): Promise<{ error: boolean; added: boolean }> {
-  const log = getLogger("addContract:_registerNewOrder");
+  const log = getLogger("addContract:registerNewOrder");
   const { transactionHash: tx } = event;
   const { network } = registry;
   let added = false;
+
   try {
     // Check if the log is a ConditionalOrderCreated event
     if (
@@ -177,13 +176,14 @@ export async function _registerNewOrder(
 /**
  * Attempt to add an owner's conditional order to the registry
  *
+ * @param tx transaction that created the conditional order
  * @param owner to add the conditional order to
  * @param params for the conditional order
  * @param proof for the conditional order (if it is part of a merkle root)
  * @param composableCow address of the contract that emitted the event
  * @param registry of all conditional orders
  */
-export function add(
+function add(
   tx: string,
   owner: Owner,
   params: ConditionalOrderParams,
@@ -206,6 +206,24 @@ export function add(
     // Iterate over the conditionalOrders to make sure that the params are not already in the registry
     for (const conditionalOrder of conditionalOrders?.values() ?? []) {
       // Check if the params are in the conditionalOrder
+      if (conditionalOrder) {
+        const areConditionalOrderParamsEqual =
+          getAreConditionalOrderParamsEqual(conditionalOrder.params, params);
+
+        // TODO: delete this log after testing
+        if (
+          areConditionalOrderParamsEqual &&
+          conditionalOrder.params !== params
+        ) {
+          log.error(
+            "Conditional order params are equal but not the same",
+            conditionalOrder.id,
+            JSON.stringify(params)
+          );
+        }
+      }
+
+      // TODO: this is a shallow comparison, should we do a deep comparison?
       if (conditionalOrder.params === params) {
         exists = true;
         break;
@@ -245,6 +263,7 @@ export function add(
         },
       ])
     );
+
     metrics.activeOwnersTotal.labels(network).inc();
     metrics.activeOrdersTotal.labels(network).inc();
   }
@@ -256,19 +275,20 @@ export function add(
  * @param root the merkle root to check against
  * @param registry of all conditional orders
  */
-export function flush(owner: Owner, root: BytesLike, registry: Registry) {
-  if (registry.ownerOrders.has(owner)) {
-    const conditionalOrders = registry.ownerOrders.get(owner);
-    if (conditionalOrders !== undefined) {
-      for (const conditionalOrder of conditionalOrders.values()) {
-        if (
-          conditionalOrder.proof !== null &&
-          conditionalOrder.proof.merkleRoot !== root
-        ) {
-          // Delete the conditional order
-          conditionalOrders.delete(conditionalOrder);
-        }
-      }
+function flush(owner: Owner, root: BytesLike, registry: Registry) {
+  if (!registry.ownerOrders.has(owner)) return;
+
+  const conditionalOrders = registry.ownerOrders.get(owner);
+
+  if (conditionalOrders === undefined) return;
+
+  for (const conditionalOrder of conditionalOrders.values()) {
+    if (
+      conditionalOrder.proof !== null &&
+      conditionalOrder.proof.merkleRoot !== root
+    ) {
+      // Delete the conditional order
+      conditionalOrders.delete(conditionalOrder);
     }
   }
 }

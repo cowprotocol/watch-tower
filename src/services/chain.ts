@@ -16,7 +16,6 @@ import {
   Multicall3__factory,
   Registry,
   RegistryBlock,
-  blockToRegistryBlock,
 } from "../types";
 import {
   LoggerWithMethods,
@@ -32,7 +31,7 @@ const WATCHDOG_TIMEOUT_DEFAULT_SECS = 30;
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const PAGE_SIZE_DEFAULT = 5000;
 
-export const SDK_BACKOFF_NUM_OF_ATTEMPTS = 5;
+const SDK_BACKOFF_NUM_OF_ATTEMPTS = 5;
 
 enum ChainSync {
   /** The chain is currently in the warm-up phase, synchronising from contract genesis or lastBlockProcessed */
@@ -459,6 +458,7 @@ async function processBlock(
   let hasErrors = false;
   for (const event of events) {
     const receipt = await provider.getTransactionReceipt(event.transactionHash);
+
     if (receipt) {
       // run action
       log.debug(`Running "addContract" action for TX ${event.transactionHash}`);
@@ -613,4 +613,12 @@ function getProvider(rpcUrl: string): providers.Provider {
 
 async function asyncSleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function blockToRegistryBlock(block: ethers.providers.Block): RegistryBlock {
+  return {
+    number: block.number,
+    timestamp: block.timestamp,
+    hash: block.hash,
+  };
 }
