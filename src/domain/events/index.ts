@@ -264,8 +264,8 @@ function add(
       ])
     );
 
-    // One increment owners and one orders
-    metrics.activeOwnersTotal.labels(network).inc(2);
+    metrics.activeOwnersTotal.labels(network).inc();
+    metrics.activeOrdersTotal.labels(network).inc();
   }
 }
 
