@@ -37,8 +37,8 @@ export function getAreConditionalOrderParamsEqual(
   b: ConditionalOrderParams
 ): boolean {
   return (
-    a.handler === b.handler &&
-    a.salt === b.salt &&
-    a.staticInput === b.staticInput
+    a.handler.toLowerCase() === b.handler.toLowerCase() &&
+    a.salt.toLowerCase() === b.salt.toLowerCase() &&
+    a.staticInput.toLowerCase() === b.staticInput.toLowerCase()
   );
 }
