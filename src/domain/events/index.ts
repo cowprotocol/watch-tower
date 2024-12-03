@@ -206,25 +206,11 @@ function add(
     // Iterate over the conditionalOrders to make sure that the params are not already in the registry
     for (const conditionalOrder of conditionalOrders?.values() ?? []) {
       // Check if the params are in the conditionalOrder
-      if (conditionalOrder) {
-        const areConditionalOrderParamsEqual =
-          getAreConditionalOrderParamsEqual(conditionalOrder.params, params);
+      const areConditionalOrderParamsEqual =
+        !!conditionalOrder &&
+        getAreConditionalOrderParamsEqual(conditionalOrder.params, params);
 
-        // TODO: delete this log after testing
-        if (
-          areConditionalOrderParamsEqual &&
-          conditionalOrder.params !== params
-        ) {
-          log.error(
-            "Conditional order params are equal but not the same",
-            conditionalOrder.id,
-            JSON.stringify(params)
-          );
-        }
-      }
-
-      // TODO: this is a shallow comparison, should we do a deep comparison?
-      if (conditionalOrder.params === params) {
+      if (areConditionalOrderParamsEqual) {
         exists = true;
         break;
       }
