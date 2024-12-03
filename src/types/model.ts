@@ -289,12 +289,11 @@ function replacer(_key: any, value: any) {
   }
 }
 
-const loadOwnerOrdersLogger = getLogger("loadOwnerOrders");
-
 async function loadOwnerOrders(
   storage: DBService,
   network: string
 ): Promise<OrdersPerOwner> {
+  const loadOwnerOrdersLogger = getLogger("loadOwnerOrders");
   // Get the owner orders
   const db = storage.getDB();
   const str = await db.get(
