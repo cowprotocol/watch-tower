@@ -98,8 +98,6 @@ export interface RegistryBlock {
 
 type OrdersPerOwner = Map<Owner, Set<ConditionalOrder>>;
 
-const logger = getLogger("Registry");
-
 /**
  * Models the state between executions.
  * Contains a map of owners to conditional orders and the last time we sent an error.
@@ -111,7 +109,7 @@ export class Registry {
   network: string;
   lastNotifiedError: Date | null;
   lastProcessedBlock: RegistryBlock | null;
-
+  readonly logger = getLogger("Registry");
   /**
    * Instantiates a registry.
    * @param ownerOrders What map to populate the registry with
@@ -161,12 +159,8 @@ export class Registry {
     genesisBlockNumber: number
   ): Promise<Registry> {
     const db = storage.getDB();
-    const ownerOrders = await loadOwnerOrders(storage, network).catch(
-      (error) => {
-        logger.error("Error loading owner orders", error);
-
-        return createNewOrderMap();
-      }
+    const ownerOrders = await loadOwnerOrders(storage, network).catch(() =>
+      createNewOrderMap()
     );
 
     const lastNotifiedError = await db
@@ -254,7 +248,7 @@ export class Registry {
     // Write all atomically
     await batch.write();
 
-    logger.debug(
+    this.logger.debug(
       `write:${this.version}:${this.network}:${
         this.lastProcessedBlock?.number
       }:${this.lastNotifiedError || ""}`,
@@ -294,6 +288,8 @@ function replacer(_key: any, value: any) {
   }
 }
 
+const loadOwnerOrdersLogger = getLogger("loadOwnerOrders");
+
 async function loadOwnerOrders(
   storage: DBService,
   network: string
@@ -317,8 +313,7 @@ async function loadOwnerOrders(
     version
   );
 
-  logger.info(
-    "[loadOwnerOrders]",
+  loadOwnerOrdersLogger.info(
     `Data size: ${str?.length}`,
     `Owners: ${ordersPerOwner.size}`,
     `Total orders: ${getOrdersCountFromOrdersPerOwner(ordersPerOwner)}`,
