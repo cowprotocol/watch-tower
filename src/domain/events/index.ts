@@ -22,9 +22,6 @@ import { ConditionalOrder, ConditionalOrderParams } from "@cowprotocol/cow-sdk";
 
 import { ChainContext } from "../../services/chain";
 
-const composableCow = ComposableCoW__factory.createInterface();
-const log = getLogger("addContract:_addContract");
-
 /**
  * Listens to these events on the `ComposableCoW` contract:
  * - `ConditionalOrderCreated`
@@ -51,6 +48,8 @@ async function _addContract(
   context: ChainContext,
   event: ConditionalOrderCreatedEvent
 ) {
+  const composableCow = ComposableCoW__factory.createInterface();
+  const log = getLogger("addContract:_addContract");
   const { registry } = context;
   const { transactionHash: tx, blockNumber } = event;
 
