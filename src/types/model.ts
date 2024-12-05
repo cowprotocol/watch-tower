@@ -110,7 +110,7 @@ export class Registry {
   network: string;
   lastNotifiedError: Date | null;
   lastProcessedBlock: RegistryBlock | null;
-  readonly logger = getLogger("Registry");
+  readonly logger = getLogger({ name: "Registry" });
   /**
    * Instantiates a registry.
    * @param ownerOrders What map to populate the registry with
@@ -200,6 +200,10 @@ export class Registry {
     return getOrdersCountFromOrdersPerOwner(this.ownerOrders);
   }
 
+  get numOwners(): number {
+    return this.ownerOrders.size;
+  }
+
   /**
    * Write the registry to storage.
    */
@@ -250,10 +254,9 @@ export class Registry {
     await batch.write();
 
     this.logger.debug(
-      `write:${this.version}:${this.network}:${
-        this.lastProcessedBlock?.number
-      }:${this.lastNotifiedError || ""}`,
-      "batch written 📝"
+      `${this.network}@${this.lastProcessedBlock?.number}:v${this.version}${
+        this.lastNotifiedError ? ":lastError_" + this.lastNotifiedError : ""
+      } DB persisted`
     );
   }
 
@@ -293,7 +296,7 @@ async function loadOwnerOrders(
   storage: DBService,
   network: string
 ): Promise<OrdersPerOwner> {
-  const loadOwnerOrdersLogger = getLogger("loadOwnerOrders");
+  const loadOwnerOrdersLogger = getLogger({ name: "loadOwnerOrders" });
   // Get the owner orders
   const db = storage.getDB();
   const str = await db.get(

@@ -5,7 +5,7 @@ import {
 } from "@cowprotocol/cow-sdk";
 import { ethers, providers } from "ethers";
 import { DBService } from ".";
-import { addContract } from "../domain/events";
+import { processNewOrderEvent } from "../domain/events";
 import { checkForAndPlaceOrder } from "../domain/polling";
 import { policy } from "../domain/polling/filtering";
 import {
@@ -171,7 +171,7 @@ export class ChainContext {
    */
   public async warmUp(oneShot?: boolean) {
     const { provider, chainId, processEveryNumBlocks } = this;
-    const log = getLogger("chainContext:warmUp", chainId.toString());
+    const log = getLogger({ name: "warmUp", chainId });
     let { lastProcessedBlock } = this.registry;
     const { pageSize } = this;
 
@@ -290,7 +290,7 @@ export class ChainContext {
     } while (this.sync === ChainSync.SYNCING);
 
     log.info(
-      `💚 ${
+      `☀️ ${
         oneShot ? "Chain watcher is in sync" : "Chain watcher is warmed up"
       }`
     );
@@ -302,7 +302,7 @@ export class ChainContext {
     }
 
     // Otherwise, run the block watcher
-    return await this.runBlockWatcher(currentBlock);
+    return await this.subscribeToNewBlocks(currentBlock);
   }
 
   /**
@@ -310,16 +310,22 @@ export class ChainContext {
    * 1. Check if there are any `ConditionalOrderCreated` events, and index these.
    * 2. Check if any orders want to create discrete orders.
    */
-  private async runBlockWatcher(lastProcessedBlock: providers.Block) {
+  private async subscribeToNewBlocks(lastProcessedBlock: providers.Block) {
     const { provider, registry, chainId, watchdogTimeout } = this;
-    const log = getLogger("chainContext:runBlockWatcher", chainId.toString());
+    const loggerName = "subscribeToNewBlocks";
+    let log = getLogger({ name: loggerName, chainId });
     // Watch for new blocks
     log.info(`👀 Start block watcher`);
     log.debug(`Watchdog timeout: ${watchdogTimeout} seconds`);
     let lastBlockReceived = lastProcessedBlock;
     provider.on("block", async (blockNumber: number) => {
       try {
-        log.debug(`New block ${blockNumber}`);
+        log = getLogger({
+          name: loggerName,
+          chainId,
+          blockNumber,
+        });
+        log.debug("New block received");
 
         const block = await provider.getBlock(blockNumber);
 
@@ -436,7 +442,7 @@ export class ChainContext {
  * @param blockNumberOverride to override the block number when polling the SDK
  * @param blockTimestampOverride  to override the block timestamp when polling the SDK
  */
-async function processBlock(
+async function processBlockEvent(
   context: ChainContext,
   block: providers.Block,
   events: ConditionalOrderCreatedEvent[],
@@ -448,11 +454,11 @@ async function processBlock(
     .labels(context.chainId.toString())
     .startTimer();
 
-  const log = getLogger(
-    "chainContext:processBlock",
-    chainId.toString(),
-    block.number.toString()
-  );
+  const log = getLogger({
+    name: "processBlockEvent",
+    chainId,
+    blockNumber: block.number,
+  });
 
   // Transaction watcher for adding new contracts
   let hasErrors = false;
@@ -461,15 +467,22 @@ async function processBlock(
 
     if (receipt) {
       // run action
-      log.debug(`Running "addContract" action for TX ${event.transactionHash}`);
-      const result = await addContract(context, event)
+      log.debug(`Process new order event of TX ${event.transactionHash}`);
+      const result = await processNewOrderEvent(context, event)
         .then(() => true)
         .catch((e) => {
           hasErrors = true;
-          log.error(`Error running "addContract" action for TX:`, e);
+          log.error(
+            `Error processing new order event of TX ${event.transactionHash}:`,
+            e
+          );
           return false;
         });
-      log.info(`Result of "addContract": ${_formatResult(result)}`);
+      log.info(
+        `Result of processing new order event of TX ${
+          event.transactionHash
+        }: ${_formatResult(result)}`
+      );
       metrics.eventsProcessedTotal.labels(chainId.toString()).inc();
     }
   }
@@ -518,7 +531,7 @@ async function persistLastProcessedBlock(params: {
 
   // Save the registry
   await context.registry.write();
-  log.debug(`Block ${blockNumber} has been processed`);
+  log.debug(`Block has been processed`);
 
   // Set the block height metric
   metrics.blockHeight.labels(context.chainId.toString()).set(blockNumber);
@@ -542,7 +555,7 @@ async function processBlockAndPersist(params: {
   const _block = block || (await provider.getBlock(blockNumber));
 
   try {
-    await processBlock(
+    await processBlockEvent(
       context,
       _block,
       events,
@@ -598,7 +611,8 @@ function _formatResult(result: boolean) {
 }
 
 function getProvider(rpcUrl: string): providers.Provider {
-  const log = getLogger("getProvider", rpcUrl);
+  const log = getLogger({ name: "getProvider", args: [rpcUrl] });
+
   // if the rpcUrl is a websocket url, use the WebSocketProvider
   if (rpcUrl.startsWith("ws")) {
     log.debug("Instantiating WS");

@@ -7,7 +7,7 @@ import { DBService, ApiService, ChainContext } from "../services";
  * @param options Specified by the CLI / environment for running the watch-tower
  */
 export async function run(options: RunOptions) {
-  const log = getLogger("commands:run");
+  const log = getLogger({ name: "commands:run" });
   const { oneShot, disableApi, apiPort, databasePath, networks } = options;
 
   // Open the database
@@ -66,7 +66,7 @@ export async function run(options: RunOptions) {
  * @param exitCode Exit code to return to the shell
  */
 async function stop(exitCode?: number) {
-  const log = getLogger("commands:stop");
+  const log = getLogger({ name: "commands:stop" });
   const stopServices = [
     ApiService.getInstance().stop(),
     DBService.getInstance().close(),

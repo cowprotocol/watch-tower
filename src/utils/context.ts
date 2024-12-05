@@ -59,7 +59,7 @@ function _getSlack(options: ContextOptions): Slack | undefined {
 }
 
 export async function handleExecutionError(e: any) {
-  const log = getLogger("context:handleExecutionError");
+  const log = getLogger({ name: "context:handleExecutionError" });
   try {
     const errorMessage = e?.message || "Unknown error";
     const notified = sendSlack(
@@ -80,7 +80,7 @@ export async function handleExecutionError(e: any) {
 }
 
 export function sendSlack(message: string): boolean {
-  const log = getLogger("context:sendSlack");
+  const log = getLogger({ name: "context:sendSlack" });
   if (!executionContext) {
     log.warn("Slack not initialized, ignoring message", message);
     return false;

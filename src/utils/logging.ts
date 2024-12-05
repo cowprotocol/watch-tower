@@ -6,6 +6,7 @@ import {
 import rootLogger from "loglevel";
 import prefix from "loglevel-plugin-prefix";
 import chalk, { Chalk } from "chalk";
+import { SupportedChainId } from "@cowprotocol/cow-sdk";
 
 const DEFAULT_LOG_LEVEL = "INFO";
 const LEVELS = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "SILENT"];
@@ -54,36 +55,60 @@ export interface LoggerWithMethods {
   error: (...msg: any[]) => void;
 }
 
-export function getLogger(
-  loggerName: string,
-  ...args: string[]
-): LoggerWithMethods {
+interface GetLoggerParams {
+  name: string;
+  chainId?: SupportedChainId;
+  blockNumber?: number;
+  ownerNumber?: number;
+  orderNumber?: number;
+  args?: string[];
+}
+
+/**
+ * Get the log prefix for a given logger. This is used to add context to the log messages.
+ */
+function getLogPrefix({
+  chainId,
+  blockNumber,
+  ownerNumber,
+  orderNumber,
+  args = [],
+}: GetLoggerParams) {
+  const chainString = chainId ? `${chainId}` : "";
+  const blockString = blockNumber ? `@${blockNumber}` : "";
+  const ownerString = ownerNumber ? `#${ownerNumber}` : "";
+  const orderString = orderNumber ? `.${orderNumber}` : "";
+  const argsString = args.length > 0 ? " " + args.join(":") : "";
+
+  return chainString + blockString + ownerString + orderString + argsString;
+}
+
+export function getLogger(params: GetLoggerParams): LoggerWithMethods {
   if (!logLevelOverrides) {
     throw new Error("Logging hasn't been initialized");
   }
-  const logger = getLoggerLogLevel(loggerName);
+  const { name } = params;
+  const logger = getLoggerLogLevel(name);
+  const prefix = getLogPrefix(params);
 
   const logLevelOverride = logLevelOverrides.find((override) =>
-    override.regex.test(loggerName)
+    override.regex.test(name)
   );
 
   if (logLevelOverride) {
     logger.setLevel(logLevelOverride.level);
   }
 
-  const fmtLogMessage = (args: string[], ...msg: any[]) => {
-    if (args.length) {
-      return [`${args.join(":")}: `, ...msg];
-    }
-    return msg;
-  };
+  const fmtLogMessage = (msg: any[]) => (prefix ? [prefix, ...msg] : msg);
+
   const customLogger: LoggerWithMethods = {
-    trace: (...msg: any[]) => logger.trace(...fmtLogMessage(args, ...msg)),
-    debug: (...msg: any[]) => logger.debug(...fmtLogMessage(args, ...msg)),
-    info: (...msg: any[]) => logger.info(...fmtLogMessage(args, ...msg)),
-    warn: (...msg: any[]) => logger.warn(...fmtLogMessage(args, ...msg)),
-    error: (...msg: any[]) => logger.error(...fmtLogMessage(args, ...msg)),
+    trace: (...msg: any[]) => logger.trace(...fmtLogMessage(msg)),
+    debug: (...msg: any[]) => logger.debug(...fmtLogMessage(msg)),
+    info: (...msg: any[]) => logger.info(...fmtLogMessage(msg)),
+    warn: (...msg: any[]) => logger.warn(...fmtLogMessage(msg)),
+    error: (...msg: any[]) => logger.error(...fmtLogMessage(msg)),
   };
+
   return customLogger;
 }
 
