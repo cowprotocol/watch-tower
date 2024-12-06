@@ -65,6 +65,9 @@ describe("handle on-chain custom errors", () => {
       CUSTOM_ERROR_ABI_MAP[CustomErrorSelectors.SINGLE_ORDER_NOT_AUTHED]
     ),
     metricLabels: ["chain_id", "handler", "owner", "id"],
+    blockNumber: 123456,
+    ownerNumber: 2,
+    orderNumber: 3,
   };
 
   it("should pass a known selector correctly", () => {

@@ -7,7 +7,7 @@ import { getLogger } from "../utils";
  * @param options A dict, but essentially just the chainId
  */
 export async function dumpDb(options: DumpDbOptions) {
-  const log = getLogger("commands:dumpDb");
+  const log = getLogger({ name: "commands:dumpDb" });
   const { chainId, databasePath } = options;
 
   Registry.dump(DBService.getInstance(databasePath), chainId.toString())

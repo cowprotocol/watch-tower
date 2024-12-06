@@ -50,7 +50,7 @@ export class ApiService {
   async start(): Promise<Server> {
     return await new Promise((resolve, reject) => {
       try {
-        const log = getLogger("api:start");
+        const log = getLogger({ name: "api:start" });
         if (this.server?.listening) {
           throw new Error("Server is already running");
         }
@@ -74,7 +74,7 @@ export class ApiService {
           throw new Error("Server is not running");
         }
 
-        const log = getLogger("api:stop");
+        const log = getLogger({ name: "api:stop" });
         log.info("Stopping Rest API server...");
 
         this.server.once("close", resolve);

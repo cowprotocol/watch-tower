@@ -17,26 +17,76 @@ import {
   Proof,
   Registry,
 } from "../../types";
-import { ConditionalOrder, ConditionalOrderParams } from "@cowprotocol/cow-sdk";
+import {
+  ConditionalOrder,
+  ConditionalOrderParams,
+  SupportedChainId,
+} from "@cowprotocol/cow-sdk";
 
 import { ChainContext } from "../../services/chain";
 
 const composableCow = ComposableCoW__factory.createInterface();
 
 /**
- * Listens to these events on the `ComposableCoW` contract:
+ * Process a new order event for `ComposableCoW` contract:
  * - `ConditionalOrderCreated`
  * - `MerkleRootSet`
+ *
  * @param context chain context
  * @param event transaction event
  */
-export async function addContract(
+export async function processNewOrderEvent(
   context: ChainContext,
   event: ConditionalOrderCreatedEvent
 ) {
   const { chainId } = context;
+
+  const action = async () => {
+    const { registry, chainId } = context;
+    const { transactionHash: tx, blockNumber } = event;
+
+    const log = getLogger({
+      name: "processNewOrderEvent",
+      chainId,
+      blockNumber: event.blockNumber,
+    });
+
+    // Process the logs
+    let hasErrors = false;
+    let numContractsAdded = 0;
+
+    const { error, added } = await decodeAndAddOrder(event, registry, chainId);
+
+    if (added) {
+      metrics.ownersTotal.labels(context.chainId.toString()).inc();
+      numContractsAdded++;
+    } else {
+      log.error(
+        `Failed to register Smart Order from tx ${tx} on block ${blockNumber}. Error: ${error}`
+      );
+    }
+
+    hasErrors ||= error;
+
+    if (numContractsAdded > 0) {
+      log.debug(`Added ${numContractsAdded} conditional orders`);
+
+      // Write the registry to disk. Don't catch errors, let them bubble up
+      await registry.write();
+
+      // Throw execution error if there was at least one error
+      if (hasErrors) {
+        throw Error("Error adding conditional order. Event: " + event);
+      }
+    } else {
+      log.info(
+        `No conditional order added for tx ${tx} on block ${blockNumber}`
+      );
+    }
+  };
+
   await metrics.measureTime({
-    action: () => _addContract(context, event),
+    action,
     labelValues: [chainId.toString()],
     durationMetric: metrics.addContractsRunDurationSeconds,
     totalRunsMetric: metrics.addContractRunsTotal,
@@ -45,51 +95,16 @@ export async function addContract(
   });
 }
 
-async function _addContract(
-  context: ChainContext,
-  event: ConditionalOrderCreatedEvent
-) {
-  const log = getLogger("addContract:_addContract");
-  const { registry } = context;
-  const { transactionHash: tx, blockNumber } = event;
-
-  // Process the logs
-  let hasErrors = false;
-  let numContractsAdded = 0;
-
-  const { error, added } = await registerNewOrder(event, registry);
-
-  if (added) {
-    metrics.ownersTotal.labels(context.chainId.toString()).inc();
-    numContractsAdded++;
-  } else {
-    log.error(
-      `Failed to register Smart Order from tx ${tx} on block ${blockNumber}. Error: ${error}`
-    );
-  }
-
-  hasErrors ||= error;
-
-  if (numContractsAdded > 0) {
-    log.debug(`Added ${numContractsAdded} contracts`);
-
-    // Write the registry to disk. Don't catch errors, let them bubble up
-    await registry.write();
-
-    // Throw execution error if there was at least one error
-    if (hasErrors) {
-      throw Error("Error adding conditional order. Event: " + event);
-    }
-  } else {
-    log.info(`No contracts added for tx ${tx} on block ${blockNumber}`);
-  }
-}
-
-async function registerNewOrder(
+async function decodeAndAddOrder(
   event: ConditionalOrderCreatedEvent | MerkleRootSetEvent,
-  registry: Registry
+  registry: Registry,
+  chainId: SupportedChainId
 ): Promise<{ error: boolean; added: boolean }> {
-  const log = getLogger("addContract:registerNewOrder");
+  const log = getLogger({
+    name: "decodeAndAddOrder",
+    chainId,
+    blockNumber: event.blockNumber,
+  });
   const { transactionHash: tx } = event;
   const { network } = registry;
   let added = false;
@@ -108,13 +123,15 @@ async function registerNewOrder(
       ) as [string, IConditionalOrder.ConditionalOrderParamsStruct];
 
       // Attempt to add the conditional order to the registry
-      add(
+      addOrder(
         eventLog.transactionHash,
         owner,
         toConditionalOrderParams(params),
         null,
         eventLog.address,
-        registry
+        registry,
+        chainId,
+        event.blockNumber
       );
       added = true;
       metrics.singleOrdersTotal.labels(network).inc();
@@ -149,13 +166,15 @@ async function registerNewOrder(
             order as BytesLike
           );
           // Attempt to add the conditional order to the registry
-          add(
+          addOrder(
             event.transactionHash,
             owner,
             toConditionalOrderParams(decodedOrder[1]),
             { merkleRoot: root, path: decodedOrder[0] },
             eventLog.address,
-            registry
+            registry,
+            chainId,
+            event.blockNumber
           );
           added = true;
           metrics.merkleRootTotal.labels(network).inc();
@@ -174,7 +193,7 @@ async function registerNewOrder(
 }
 
 /**
- * Attempt to add an owner's conditional order to the registry
+ * Attempt to add a conditional order to the registry
  *
  * @param tx transaction that created the conditional order
  * @param owner to add the conditional order to
@@ -183,25 +202,30 @@ async function registerNewOrder(
  * @param composableCow address of the contract that emitted the event
  * @param registry of all conditional orders
  */
-function add(
+function addOrder(
   tx: string,
   owner: Owner,
   params: ConditionalOrderParams,
   proof: Proof | null,
   composableCow: string,
-  registry: Registry
+  registry: Registry,
+  chainId: SupportedChainId,
+  blockNumber: number
 ) {
-  const log = getLogger("addContract:add");
+  const log = getLogger({ name: "addOrder", chainId, blockNumber });
   const { handler, salt, staticInput } = params;
   const { network, ownerOrders } = registry;
 
   const conditionalOrderId = ConditionalOrder.leafToId(params);
   if (ownerOrders.has(owner)) {
     const conditionalOrders = ownerOrders.get(owner);
-    log.info(
-      `Adding conditional order to already existing owner contract ${owner}`,
-      { conditionalOrderId, tx, handler, salt, staticInput }
-    );
+    log.info(`Adding conditional order to already existing owner ${owner}`, {
+      conditionalOrderId,
+      tx,
+      handler,
+      salt,
+      staticInput,
+    });
     let exists = false;
     // Iterate over the conditionalOrders to make sure that the params are not already in the registry
     for (const conditionalOrder of conditionalOrders?.values() ?? []) {
@@ -229,7 +253,7 @@ function add(
       metrics.activeOrdersTotal.labels(network).inc();
     }
   } else {
-    log.info(`Adding conditional order to new owner contract ${owner}:`, {
+    log.info(`Adding conditional order to new owner ${owner}:`, {
       conditionalOrderId,
       tx,
       handler,

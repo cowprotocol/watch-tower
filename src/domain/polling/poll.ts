@@ -4,6 +4,7 @@ import {
   DEFAULT_CONDITIONAL_ORDER_REGISTRY,
   PollParams,
   PollResult,
+  SupportedChainId,
 } from "@cowprotocol/cow-sdk";
 import { getLogger } from "../../utils/logging";
 
@@ -18,9 +19,19 @@ export async function pollConditionalOrder(
   conditionalOrderId: string,
   pollParams: PollParams,
   conditionalOrderParams: ConditionalOrderParams,
-  orderRef: string
+  chainId: SupportedChainId,
+  blockNumber: number,
+  ownerNumber: number,
+  orderNumber: number
 ): Promise<PollResult | undefined> {
-  const log = getLogger("pollConditionalOrder:pollConditionalOrder", orderRef);
+  const log = getLogger({
+    name: "pollConditionalOrder",
+    chainId,
+    blockNumber,
+    ownerNumber,
+    orderNumber,
+  });
+
   const order = ordersFactory.fromParams(conditionalOrderParams);
 
   if (!order) {

@@ -107,7 +107,7 @@ export async function checkForAndPlaceOrder(
   blockTimestampOverride?: number
 ) {
   const { chainId, registry, filterPolicy } = context;
-  const { ownerOrders, numOrders } = registry;
+  const { ownerOrders, numOrders, numOwners } = registry;
 
   const blockNumber = blockNumberOverride || block.number;
   const blockTimestamp = blockTimestampOverride || block.timestamp;
@@ -117,33 +117,41 @@ export async function checkForAndPlaceOrder(
   let orderCounter = 0;
   let updatedCount = 0;
 
-  const log = getLogger(
-    "checkForAndPlaceOrder:checkForAndPlaceOrder",
-    chainId.toString(),
-    blockNumber.toString()
-  );
-  log.debug(`Total number of orders: ${numOrders}`);
+  const loggerParams = {
+    name: "checkForAndPlaceOrder",
+    chainId,
+    blockNumber,
+  };
+  const log = getLogger(loggerParams);
+  log.debug(`The registry has ${numOwners} owners and ${numOrders} orders`);
 
   for (const [owner, conditionalOrders] of ownerOrders.entries()) {
     ownerCounter++;
-    const log = getLogger(
-      "checkForAndPlaceOrder:checkForAndPlaceOrder",
-      chainId.toString(),
-      blockNumber.toString(),
-      ownerCounter.toString()
-    );
+    const log = getLogger({
+      ...loggerParams,
+      ownerNumber: ownerCounter,
+    });
 
     let ordersPendingDelete = [];
 
-    log.debug(`Process owner ${owner} (${conditionalOrders.size} orders)`);
+    log.debug(
+      `Process owner ${ownerCounter}/${numOwners}. Owner=${owner}. Orders=${conditionalOrders.size}`
+    );
 
     for (const conditionalOrder of conditionalOrders) {
       orderCounter++;
 
+      const log = getLogger({
+        ...loggerParams,
+        blockNumber,
+        ownerNumber: ownerCounter,
+        orderNumber: orderCounter,
+      });
+
       // Check if we reached the chunk size
       if (updatedCount % CHUNK_SIZE === 1 && updatedCount > 1) {
         // Delete orders pending delete, if any
-        _deleteOrders(ordersPendingDelete, conditionalOrders, log, chainId);
+        deleteOrders(ordersPendingDelete, conditionalOrders, log, chainId);
         // Reset tracker
         ordersPendingDelete = [];
 
@@ -153,9 +161,7 @@ export async function checkForAndPlaceOrder(
         await registry.write();
       }
 
-      const ownerRef = `${ownerCounter}.${orderCounter}`;
-      const orderRef = `${chainId}:${blockNumber}:${ownerRef}`;
-      const logOrderDetails = `Processing order ${conditionalOrder.id} from TX ${conditionalOrder.tx} with params:`;
+      const logOrderDetails = `Processing order ${orderCounter}/${numOrders} with ID ${conditionalOrder.id} from TX ${conditionalOrder.tx} with params:`;
 
       const { result: lastHint } = conditionalOrder.pollResult || {};
 
@@ -212,13 +218,14 @@ export async function checkForAndPlaceOrder(
       // Proceed with the normal check
       log.info(`${logOrderDetails}`, conditionalOrder.params);
 
-      const pollResult = await _processConditionalOrder(
+      const pollResult = await processConditionalOrder(
         owner,
         conditionalOrder,
         blockTimestamp,
         blockNumber,
         context,
-        orderRef
+        ownerCounter,
+        orderCounter
       );
 
       // Don't try again the same order, in case that's the poll result
@@ -246,7 +253,7 @@ export async function checkForAndPlaceOrder(
         (isError && pollResult.reason ? `. Reason: ${pollResult.reason}` : "");
 
       log[unexpectedError ? "error" : "info"](
-        `Check conditional order result for ${
+        `Check conditional order result for order ${
           conditionalOrder.id
         }: ${getEmojiByPollResult(pollResult?.result)} ${resultDescription}`
       );
@@ -261,7 +268,7 @@ export async function checkForAndPlaceOrder(
     }
 
     // Delete orders we don't want to keep watching
-    _deleteOrders(ordersPendingDelete, conditionalOrders, log, chainId);
+    deleteOrders(ordersPendingDelete, conditionalOrders, log, chainId);
   }
 
   // It may be handy in other versions of the watch tower implemented in other languages
@@ -278,7 +285,7 @@ export async function checkForAndPlaceOrder(
   await registry.write();
 
   log.debug(
-    `Total orders after processing all conditional orders: ${registry.numOrders}`
+    `After processing orders. Owners=${registry.numOwners}, Orders=${registry.numOrders}`
   );
 
   // Throw execution error if there was at least one error
@@ -287,14 +294,18 @@ export async function checkForAndPlaceOrder(
   }
 }
 
-function _deleteOrders(
+function deleteOrders(
   ordersPendingDelete: ConditionalOrder[],
   conditionalOrders: Set<ConditionalOrder>,
   log: LoggerWithMethods,
   chainId: SupportedChainId
 ) {
   ordersPendingDelete.length &&
-    log.debug(`${ordersPendingDelete.length} to delete`);
+    log.debug(
+      `Delete ${ordersPendingDelete.length} orders: ${ordersPendingDelete.join(
+        ", "
+      )}`
+    );
 
   for (const conditionalOrder of ordersPendingDelete) {
     const deleted = conditionalOrders.delete(conditionalOrder);
@@ -307,21 +318,25 @@ function _deleteOrders(
   }
 }
 
-async function _processConditionalOrder(
+async function processConditionalOrder(
   owner: string,
   conditionalOrder: ConditionalOrder,
   blockTimestamp: number,
   blockNumber: number,
   context: ChainContext,
-  orderRef: string
+  ownerNumber: number,
+  orderNumber: number
 ): Promise<PollResult> {
   const { provider, orderBookApi, dryRun, chainId } = context;
   const { handler } = conditionalOrder.params;
 
-  const log = getLogger(
-    "checkForAndPlaceOrder:_processConditionalOrder",
-    orderRef
-  );
+  const log = getLogger({
+    name: "processConditionalOrder",
+    chainId,
+    blockNumber,
+    ownerNumber,
+    orderNumber,
+  });
   const metricLabels = [
     chainId.toString(),
     handler,
@@ -348,11 +363,15 @@ async function _processConditionalOrder(
       provider,
       orderBookApi,
     };
+
     let pollResult = await pollConditionalOrder(
       conditionalOrder.id,
       pollParams,
       conditionalOrder.params,
-      orderRef
+      chainId,
+      blockNumber,
+      ownerNumber,
+      orderNumber
     );
 
     if (!pollResult) {
@@ -361,13 +380,15 @@ async function _processConditionalOrder(
       // TODO: Decide in the future what to do. Probably, move the error handling to the SDK and kill the poll Legacy
       pollResult = await metrics.measureTime({
         action: () =>
-          _pollLegacy(
+          pollLegacy(
             context,
             owner,
             conditionalOrder,
             proof,
             offchainInput,
-            orderRef
+            blockNumber,
+            ownerNumber,
+            orderNumber
           ),
         labelValues: metricLabels,
         durationMetric: metrics.pollingOnChainDurationSeconds,
@@ -407,20 +428,23 @@ async function _processConditionalOrder(
     }
 
     // calculate the orderUid
-    const orderUid = _getOrderUid(chainId, orderToSubmit, owner);
+    const orderUid = getOrderUid(chainId, orderToSubmit, owner);
 
     // Place order, if the orderUid has not been submitted or filled
     if (!conditionalOrder.orders.has(orderUid)) {
       // Place order
-      const placeOrderResult = await _placeOrder({
+      const placeOrderResult = await postDiscreteOrder({
         conditionalOrder,
         orderUid,
         order: { ...orderToSubmit, from: owner, signature },
         orderBookApi,
         blockTimestamp,
-        orderRef,
         dryRun,
         metricLabels,
+        chainId,
+        blockNumber,
+        ownerNumber,
+        orderNumber,
       });
 
       // In case of error, return early
@@ -457,7 +481,7 @@ async function _processConditionalOrder(
   }
 }
 
-function _getOrderUid(
+function getOrderUid(
   chainId: SupportedChainId,
   orderToSubmit: Order,
   owner: string
@@ -501,27 +525,40 @@ export const _printUnfilledOrders = (orders: Map<BytesLike, OrderStatus>) => {
  * @param order to be placed on the cow protocol api
  * @param apiUrl rest api url
  */
-async function _placeOrder(params: {
+async function postDiscreteOrder(params: {
   conditionalOrder: ConditionalOrder;
   orderUid: string;
   order: any;
   orderBookApi: OrderBookApi;
-  orderRef: string;
   blockTimestamp: number;
   dryRun: boolean;
   metricLabels: string[];
+  chainId: SupportedChainId;
+  blockNumber: number;
+  ownerNumber: number;
+  orderNumber: number;
 }): Promise<Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors> {
   const {
     conditionalOrder,
     orderUid,
     order,
     orderBookApi,
-    orderRef,
     blockTimestamp,
     dryRun,
     metricLabels,
+    chainId,
+    blockNumber,
+    ownerNumber,
+    orderNumber,
   } = params;
-  const log = getLogger("checkForAndPlaceOrder:_placeOrder", orderRef);
+  const log = getLogger({
+    name: "postDiscreteOrder",
+    chainId,
+    blockNumber,
+    ownerNumber,
+    orderNumber,
+  });
+
   try {
     const postOrder: OrderCreation = {
       kind: order.kind,
@@ -557,7 +594,7 @@ async function _placeOrder(params: {
       const { status } = error.response;
       const { body } = error;
 
-      const handleErrorResult = _handleOrderBookError(
+      const handleErrorResult = handleOrderBookError(
         status,
         body,
         error,
@@ -596,7 +633,7 @@ async function _placeOrder(params: {
   return { result: PollResultCode.SUCCESS };
 }
 
-function _handleOrderBookError(
+function handleOrderBookError(
   status: any,
   body: any,
   error: any,
@@ -687,16 +724,24 @@ function _handleOrderBookError(
   };
 }
 
-async function _pollLegacy(
+async function pollLegacy(
   context: ChainContext,
   owner: string,
   conditionalOrder: ConditionalOrder,
   proof: string[],
   offchainInput: string,
-  orderRef: string
+  blockNumber: number,
+  ownerNumber: number,
+  orderNumber: number
 ): Promise<PollResult> {
   const { contract, multicall, chainId } = context;
-  const log = getLogger("checkForAndPlaceOrder:_pollLegacy", orderRef);
+  const log = getLogger({
+    name: "pollLegacy",
+    chainId,
+    blockNumber,
+    ownerNumber,
+    orderNumber,
+  });
   const { composableCow: target } = conditionalOrder;
   const { handler } = conditionalOrder.params;
   // as we going to use multicall, with `aggregate3Value`, there is no need to do any simulation as the
@@ -750,12 +795,14 @@ async function _pollLegacy(
     // order types created that are _not_ adhering to the interface (and are therefore invalid).
     return handleOnChainCustomError({
       owner,
-      orderRef,
       chainId,
       target,
       callData,
       revertData: returnData,
       metricLabels,
+      blockNumber,
+      ownerNumber,
+      orderNumber,
     });
   } catch (error: any) {
     // We can only get here from some provider / ethers failure. As the contract hasn't had it's say

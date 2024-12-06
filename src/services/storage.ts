@@ -28,13 +28,13 @@ export class DBService {
   }
 
   public async open() {
-    const log = getLogger("dbService:open");
+    const log = getLogger({ name: "dbService:open" });
     log.info("Opening database...");
     await this.db.open();
   }
 
   public async close() {
-    const log = getLogger("dbService:close");
+    const log = getLogger({ name: "dbService:close" });
     log.info("Closing database...");
     await this.db.close();
   }
