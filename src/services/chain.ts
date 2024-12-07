@@ -189,7 +189,11 @@ export class ChainContext {
     let fromBlock = lastProcessedBlock
       ? lastProcessedBlock.number + 1
       : this.deploymentBlock;
+
     let currentBlock = await provider.getBlock("latest");
+    metrics.blockHeightLatest
+      .labels(chainId.toString())
+      .set(currentBlock.number);
 
     let printSyncInfo = true; // Print sync info only once
     let toBlock: "latest" | number = 0;
@@ -199,6 +203,9 @@ export class ChainContext {
         if (typeof toBlock === "number" && toBlock > currentBlock.number) {
           // refresh the current block
           currentBlock = await provider.getBlock("latest");
+          metrics.blockHeightLatest
+            .labels(chainId.toString())
+            .set(currentBlock.number);
           toBlock =
             toBlock > currentBlock.number ? currentBlock.number : toBlock;
 
@@ -283,6 +290,9 @@ export class ChainContext {
       // It may have taken some time to process the blocks, so refresh the current block number
       // and check if we are in sync
       currentBlock = await provider.getBlock("latest");
+      metrics.blockHeightLatest
+        .labels(chainId.toString())
+        .set(currentBlock.number);
 
       // If we are in sync, let it be known
       const lastProcessedBlockNumber = lastProcessedBlock?.number || 0;
