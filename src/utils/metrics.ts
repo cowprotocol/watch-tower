@@ -39,9 +39,21 @@ export function measureTime<T, U>({
   return result;
 }
 
+export const syncStatus = new client.Gauge({
+  name: "watch_tower_sync_status",
+  help: "Sync status of watch rower. 1 if in sync, 0 otherwise",
+  labelNames: ["chain_id"],
+});
+
+export const blockTimestamp = new client.Gauge({
+  name: "watch_tower_block_timestamp",
+  help: "Block timestamp of the last processed block",
+  labelNames: ["chain_id"],
+});
+
 export const blockHeight = new client.Gauge({
   name: "watch_tower_block_height",
-  help: "Block height of the block watcher",
+  help: "Block height of the last processed block",
   labelNames: ["chain_id"],
 });
 

@@ -78,7 +78,7 @@ export class ChainContext {
   readonly addresses?: string[];
   readonly processEveryNumBlocks: number;
 
-  private sync: ChainSync = ChainSync.SYNCING;
+  private sync: ChainSync;
   static chains: Chains = {};
 
   provider: providers.Provider;
@@ -104,6 +104,8 @@ export class ChainContext {
       orderBookApi: orderBookApiUrl,
       filterPolicy,
     } = options;
+
+    this.sync = ChainSync.SYNCING;
     this.deploymentBlock = deploymentBlock;
     this.pageSize = pageSize ?? PAGE_SIZE_DEFAULT;
     this.dryRun = dryRun;
@@ -174,6 +176,9 @@ export class ChainContext {
     const log = getLogger({ name: "warmUp", chainId });
     let { lastProcessedBlock } = this.registry;
     const { pageSize } = this;
+
+    // Set the sync status metric (Syncing)
+    metrics.syncStatus.labels(chainId.toString()).set(0);
 
     // Set the block height metric
     metrics.blockHeight
@@ -289,6 +294,7 @@ export class ChainContext {
       }
     } while (this.sync === ChainSync.SYNCING);
 
+    metrics.syncStatus.labels(chainId.toString()).set(1);
     log.info(
       `☀️ ${
         oneShot ? "Chain watcher is in sync" : "Chain watcher is warmed up"
@@ -524,7 +530,6 @@ async function persistLastProcessedBlock(params: {
   log: LoggerWithMethods;
 }) {
   const { context, block, log } = params;
-  const blockNumber = block.number;
 
   // Set the last processed block to the current block number
   context.registry.lastProcessedBlock = blockToRegistryBlock(block);
@@ -533,8 +538,10 @@ async function persistLastProcessedBlock(params: {
   await context.registry.write();
   log.debug(`Block has been processed`);
 
-  // Set the block height metric
-  metrics.blockHeight.labels(context.chainId.toString()).set(blockNumber);
+  // Set the block metrics
+  const chain = context.chainId.toString();
+  metrics.blockTimestamp.labels(chain).set(block.timestamp);
+  metrics.blockHeight.labels(chain).set(block.number);
 
   return context.registry.lastProcessedBlock;
 }
