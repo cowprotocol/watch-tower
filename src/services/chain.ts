@@ -335,7 +335,7 @@ export class ChainContext {
     log.debug(`Watchdog timeout: ${watchdogTimeout} seconds`);
     let lastBlockReceived = lastProcessedBlock;
     provider.on("block", async (blockNumber: number) => {
-      metrics.blockHeight.labels(chainId.toString()).set(blockNumber);
+      metrics.blockHeightLatest.labels(chainId.toString()).set(blockNumber);
 
       try {
         log = getLogger({
