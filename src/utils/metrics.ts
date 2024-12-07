@@ -57,6 +57,12 @@ export const blockHeight = new client.Gauge({
   labelNames: ["chain_id"],
 });
 
+export const blockHeightLatest = new client.Gauge({
+  name: "watch_tower_block_height_latest",
+  help: "Block height of the last block (tip of the chain)",
+  labelNames: ["chain_id"],
+});
+
 export const reorgDepth = new client.Gauge({
   name: "watch_tower_latest_reorg_depth",
   help: "Depth of the most recent reorg",
