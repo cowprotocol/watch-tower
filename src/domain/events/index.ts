@@ -17,13 +17,10 @@ import {
   Proof,
   Registry,
 } from "../../types";
-import {
-  ConditionalOrder,
-  ConditionalOrderParams,
-  SupportedChainId,
-} from "@cowprotocol/cow-sdk";
+import { ConditionalOrder, ConditionalOrderParams } from "@cowprotocol/cow-sdk";
 
 import { ChainContext } from "../../services/chain";
+import { policy } from "../polling/filtering";
 
 const composableCow = ComposableCoW__factory.createInterface();
 
@@ -39,10 +36,9 @@ export async function processNewOrderEvent(
   context: ChainContext,
   event: ConditionalOrderCreatedEvent
 ) {
-  const { chainId } = context;
+  const { chainId, registry } = context;
 
   const action = async () => {
-    const { registry, chainId } = context;
     const { transactionHash: tx, blockNumber } = event;
 
     const log = getLogger({
@@ -55,10 +51,12 @@ export async function processNewOrderEvent(
     let hasErrors = false;
     let numContractsAdded = 0;
 
-    const { error, added } = await decodeAndAddOrder(event, registry, chainId);
+    const { error, added } = await decodeAndAddOrder(event, context);
 
     if (added) {
-      metrics.ownersTotal.labels(context.chainId.toString()).inc();
+      const network = context.chainId.toString();
+      metrics.ownersTotal.labels(network).inc();
+      metrics.activeOrdersTotal.labels(network).inc();
       numContractsAdded++;
     } else {
       log.error(
@@ -97,9 +95,9 @@ export async function processNewOrderEvent(
 
 async function decodeAndAddOrder(
   event: ConditionalOrderCreatedEvent | MerkleRootSetEvent,
-  registry: Registry,
-  chainId: SupportedChainId
+  context: ChainContext
 ): Promise<{ error: boolean; added: boolean }> {
+  const { chainId, registry } = context;
   const log = getLogger({
     name: "decodeAndAddOrder",
     chainId,
@@ -123,18 +121,18 @@ async function decodeAndAddOrder(
       ) as [string, IConditionalOrder.ConditionalOrderParamsStruct];
 
       // Attempt to add the conditional order to the registry
-      addOrder(
+      added = addOrder(
         eventLog.transactionHash,
         owner,
         toConditionalOrderParams(params),
         null,
         eventLog.address,
-        registry,
-        chainId,
-        event.blockNumber
+        event.blockNumber,
+        context
       );
-      added = true;
-      metrics.singleOrdersTotal.labels(network).inc();
+      if (added) {
+        metrics.singleOrdersTotal.labels(network).inc();
+      }
     } else if (
       event.topics[0] == composableCow.getEventTopic("MerkleRootSet")
     ) {
@@ -166,18 +164,19 @@ async function decodeAndAddOrder(
             order as BytesLike
           );
           // Attempt to add the conditional order to the registry
-          addOrder(
+
+          added = addOrder(
             event.transactionHash,
             owner,
             toConditionalOrderParams(decodedOrder[1]),
             { merkleRoot: root, path: decodedOrder[0] },
             eventLog.address,
-            registry,
-            chainId,
-            event.blockNumber
+            event.blockNumber,
+            context
           );
-          added = true;
-          metrics.merkleRootTotal.labels(network).inc();
+          if (added) {
+            metrics.merkleRootTotal.labels(network).inc();
+          }
         }
       }
     }
@@ -208,15 +207,33 @@ function addOrder(
   params: ConditionalOrderParams,
   proof: Proof | null,
   composableCow: string,
-  registry: Registry,
-  chainId: SupportedChainId,
-  blockNumber: number
-) {
+  blockNumber: number,
+  context: ChainContext
+): boolean {
+  const { chainId, registry, filterPolicy } = context;
   const log = getLogger({ name: "addOrder", chainId, blockNumber });
   const { handler, salt, staticInput } = params;
   const { network, ownerOrders } = registry;
 
+  const conditionalOrderParams = toConditionalOrderParams(params);
   const conditionalOrderId = ConditionalOrder.leafToId(params);
+
+  // Apply the filter policy, in case this order should be dropped
+  if (filterPolicy) {
+    const filterResult = filterPolicy.preFilter({
+      conditionalOrderId,
+      transaction: tx,
+      owner,
+      conditionalOrderParams,
+    });
+
+    if (filterResult === policy.FilterAction.DROP) {
+      // Drop the order
+      log.info("Not adding the conditional order. Reason: AcceptPolicy: DROP");
+      return false;
+    }
+  }
+
   if (ownerOrders.has(owner)) {
     const conditionalOrders = ownerOrders.get(owner);
     log.info(`Adding conditional order to already existing owner ${owner}`, {
@@ -240,8 +257,9 @@ function addOrder(
       }
     }
 
-    // If the params are not in the conditionalOrder, add them
+    // If the params are not in the conditionalOrder
     if (!exists) {
+      // Add the order for existing owner
       conditionalOrders?.add({
         id: conditionalOrderId,
         tx,
@@ -250,9 +268,10 @@ function addOrder(
         orders: new Map(),
         composableCow,
       });
-      metrics.activeOrdersTotal.labels(network).inc();
+      return true;
     }
   } else {
+    // Add the order for new owner
     log.info(`Adding conditional order to new owner ${owner}:`, {
       conditionalOrderId,
       tx,
@@ -275,8 +294,10 @@ function addOrder(
     );
 
     metrics.activeOwnersTotal.labels(network).inc();
-    metrics.activeOrdersTotal.labels(network).inc();
+    return true;
   }
+
+  return false;
 }
 
 /**
