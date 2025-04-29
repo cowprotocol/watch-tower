@@ -12,6 +12,8 @@ export class ApiService {
   protected app: Express;
   protected server: Server | null = null;
 
+  protected chainContexts: ChainContext[] = [];
+
   private static _instance: ApiService | undefined;
 
   protected constructor(port?: number) {
@@ -36,6 +38,32 @@ export class ApiService {
     this.app.get("/health", async (_req: Request, res: Response) => {
       const health = ChainContext.health;
       res.status(health.overallHealth ? 200 : 503).send(health);
+    });
+    this.app.use("/config", (_req: Request, res: Response) => {
+      res.setHeader("Content-Type", "application/json");
+      res.status(200).send(
+        this.chainContexts.map(
+          ({
+            chainId,
+            contract,
+            deploymentBlock,
+            dryRun,
+            filterPolicy,
+            pageSize,
+            processEveryNumBlocks,
+            addresses,
+          }) => ({
+            chainId,
+            contract: contract.address,
+            deploymentBlock,
+            dryRun,
+            filterPolicy: filterPolicy?.toJSON(),
+            pageSize,
+            processEveryNumBlocks,
+            addresses,
+          })
+        )
+      );
     });
     this.app.use("/api", router);
   }
@@ -83,6 +111,14 @@ export class ApiService {
         reject(err);
       }
     });
+  }
+
+  setChainContexts(chainContexts: ChainContext[]) {
+    this.chainContexts = chainContexts;
+  }
+
+  getChainContexts() {
+    return this.chainContexts;
   }
 }
 
