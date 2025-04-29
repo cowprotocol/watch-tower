@@ -155,6 +155,7 @@ The server exposes automatically:
 
 - An API, with:
   - Version info: [http://localhost:8080/api/version](http://localhost:8080/api/version)
+  - Config: [http://localhost:8080/api/config](http://localhost:8080/api/config)
   - Dump Database: `http://localhost:8080/api/dump/:chainId` e.g. [http://localhost:8080/api/dump/1](http://localhost:8080/api/dump/1)
 - Prometheus Metrics: [http://localhost:8080/metrics](http://localhost:8080/metrics)
 

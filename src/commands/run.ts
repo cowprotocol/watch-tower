@@ -14,9 +14,10 @@ export async function run(options: RunOptions) {
   const storage = DBService.getInstance(databasePath);
 
   // Start the API server if it's not disabled
+  let api: ApiService | undefined;
   if (!disableApi) {
     log.info("Starting Rest API server...");
-    const api = ApiService.getInstance(apiPort);
+    api = ApiService.getInstance(apiPort);
     await api.start();
   }
 
@@ -45,6 +46,9 @@ export async function run(options: RunOptions) {
         );
       })
     );
+
+    // Set the chain contexts on the API server
+    api?.setChainContexts(chainContexts);
 
     // Run the block watcher after warm up for each chain
     const runPromises = chainContexts.map(async (context) => {
