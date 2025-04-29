@@ -7,13 +7,17 @@ export enum FilterAction {
   ACCEPT = "ACCEPT",
 }
 
-interface PolicyConfig {
+export interface PolicyConfig {
   defaultAction: FilterAction;
   owners: Map<string, FilterAction>;
   handlers: Map<string, FilterAction>;
   transactions: Map<string, FilterAction>;
   conditionalOrderIds: Map<string, FilterAction>;
 }
+
+export type ActionsObject = {
+  [k: string]: FilterAction;
+};
 
 export interface FilterParams {
   conditionalOrderId: string;
@@ -84,4 +88,24 @@ export class FilterPolicy {
         )
       : new Map<string, FilterAction>();
   }
+
+  toJSON() {
+    const {
+      defaultAction,
+      owners,
+      handlers,
+      transactions,
+      conditionalOrderIds,
+    } = this.config || {};
+    return {
+      defaultAction,
+      owners: convertMapToObject(owners),
+      handlers: convertMapToObject(handlers),
+      transactions: convertMapToObject(transactions),
+      conditionalOrderIds: convertMapToObject(conditionalOrderIds),
+    };
+  }
+}
+function convertMapToObject(map?: Map<string, FilterAction>): ActionsObject {
+  return map ? Object.fromEntries(map.entries()) : {};
 }

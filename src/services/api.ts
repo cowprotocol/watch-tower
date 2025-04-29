@@ -57,7 +57,7 @@ export class ApiService {
             contract: contract.address,
             deploymentBlock,
             dryRun,
-            filterPolicy,
+            filterPolicy: filterPolicy?.toJSON(),
             pageSize,
             processEveryNumBlocks,
             addresses,
