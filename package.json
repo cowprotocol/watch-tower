@@ -14,6 +14,7 @@
     "lint:fix": "eslint --fix \"src/**/*.ts\" && prettier --write \"src/**/*.ts\"",
     "test": "yarn build && jest ./dist",
     "typechain": "typechain --target ethers-v5 --out-dir src/types/generated/ \"abi/*.json\"",
+    "tsc": "tsc",
     "configschema": "node ./src/types/build.js",
     "prepare": "husky install && yarn typechain && yarn configschema",
     "cli": "ts-node src/index.ts"
@@ -46,7 +47,7 @@
   "dependencies": {
     "@commander-js/extra-typings": "^11.0.0",
     "@cowprotocol/contracts": "^1.4.0",
-    "@cowprotocol/cow-sdk": "6.0.0-RC.51",
+    "@cowprotocol/cow-sdk": "6.0.0-RC.53",
     "ajv": "^8.12.0",
     "ajv-formats": "^2.1.1",
     "chalk": "^4.1.2",
