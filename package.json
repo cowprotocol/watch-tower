@@ -14,7 +14,6 @@
     "lint:fix": "eslint --fix \"src/**/*.ts\" && prettier --write \"src/**/*.ts\"",
     "test": "yarn build && jest ./dist",
     "typechain": "typechain --target ethers-v5 --out-dir src/types/generated/ \"abi/*.json\"",
-    "tsc": "tsc",
     "configschema": "node ./src/types/build.js",
     "prepare": "husky install && yarn typechain && yarn configschema",
     "cli": "ts-node src/index.ts"
