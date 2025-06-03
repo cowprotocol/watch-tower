@@ -1,24 +1,144 @@
 {
-    "networks": [
-        {
-            "name": "mainnet",
-            "rpc": "ws://172.20.0.5:8546",
-            "deploymentBlock": 17883049,
-            "filterPolicy": {
-                "defaultAction": "ACCEPT",
-                "conditionalOrderIds": {
-                  "0x5b3cdb6ffa3c95507cbfc459162609007865c2e87340312d3cd469c4ffbfae81": "DROP"
-                },
-                "transactions": {
-                  "0x33ef06af308d1e4f94dd61fa8df43fe52b67e8a485f4e4fff75235080e663bfa": "DROP"
-                },
-                "handlers": {
-                  "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP"
-                },
-                "owners": {
-                  "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP"
-                }
-            }
+  "networks": [
+    {
+      "name": "mainnet",
+      "rpc": "ws://172.20.0.5:8546",
+      "deploymentBlock": 17883049,
+      "filterPolicy": {
+        "defaultAction": "ACCEPT",
+        "conditionalOrderIds": {
+          "0x5b3cdb6ffa3c95507cbfc459162609007865c2e87340312d3cd469c4ffbfae81": "DROP"
+        },
+        "transactions": {
+          "0x33ef06af308d1e4f94dd61fa8df43fe52b67e8a485f4e4fff75235080e663bfa": "DROP"
+        },
+        "handlers": {
+          "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP"
+        },
+        "owners": {
+          "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP"
         }
-    ]
+      }
+    },
+    {
+      "name": "sepolia",
+      "rpc": "https://sepolia.drpc.org",
+      "deploymentBlock": 8468184,
+      "filterPolicy": {
+        "defaultAction": "ACCEPT",
+        "conditionalOrderIds": {
+          "0x5b3cdb6ffa3c95507cbfc459162609007865c2e87340312d3cd469c4ffbfae81": "DROP"
+        },
+        "transactions": {
+          "0x33ef06af308d1e4f94dd61fa8df43fe52b67e8a485f4e4fff75235080e663bfa": "DROP"
+        },
+        "handlers": {
+          "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP"
+        },
+        "owners": {
+          "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP"
+        }
+      }
+    },
+    {
+      "name": "arbitrum_one",
+      "rpc": "https://arb1.arbitrum.io/rpc",
+      "deploymentBlock": 343493668,
+      "filterPolicy": {
+        "defaultAction": "ACCEPT",
+        "conditionalOrderIds": {
+          "0x5b3cdb6ffa3c95507cbfc459162609007865c2e87340312d3cd469c4ffbfae81": "DROP"
+        },
+        "transactions": {
+          "0x33ef06af308d1e4f94dd61fa8df43fe52b67e8a485f4e4fff75235080e663bfa": "DROP"
+        },
+        "handlers": {
+          "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP"
+        },
+        "owners": {
+          "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP"
+        }
+      }
+    },
+    {
+      "name": "avalanche",
+      "rpc": "https://api.avax.network/ext/bc/C/rpc",
+      "deploymentBlock": 63235114,
+      "filterPolicy": {
+        "defaultAction": "ACCEPT",
+        "conditionalOrderIds": {
+          "0x5b3cdb6ffa3c95507cbfc459162609007865c2e87340312d3cd469c4ffbfae81": "DROP"
+        },
+        "transactions": {
+          "0x33ef06af308d1e4f94dd61fa8df43fe52b67e8a485f4e4fff75235080e663bfa": "DROP"
+        },
+        "handlers": {
+          "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP"
+        },
+        "owners": {
+          "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP"
+        }
+      }
+    },
+    {
+      "name": "base",
+      "rpc": "https://mainnet.base.org",
+      "deploymentBlock": 31084679,
+      "filterPolicy": {
+        "defaultAction": "ACCEPT",
+        "conditionalOrderIds": {
+          "0x5b3cdb6ffa3c95507cbfc459162609007865c2e87340312d3cd469c4ffbfae81": "DROP"
+        },
+        "transactions": {
+          "0x33ef06af308d1e4f94dd61fa8df43fe52b67e8a485f4e4fff75235080e663bfa": "DROP"
+        },
+        "handlers": {
+          "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP"
+        },
+        "owners": {
+          "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP"
+        }
+      }
+    },
+    {
+      "name": "gnosis_chain",
+      "rpc": "https://rpc.gnosischain.com",
+      "deploymentBlock": 40394915,
+      "filterPolicy": {
+        "defaultAction": "ACCEPT",
+        "conditionalOrderIds": {
+          "0x5b3cdb6ffa3c95507cbfc459162609007865c2e87340312d3cd469c4ffbfae81": "DROP"
+        },
+        "transactions": {
+          "0x33ef06af308d1e4f94dd61fa8df43fe52b67e8a485f4e4fff75235080e663bfa": "DROP"
+        },
+        "handlers": {
+          "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP"
+        },
+        "owners": {
+          "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP"
+        }
+      }
+    },
+    {
+      "name": "polygon",
+      "rpc": "https://polygon-rpc.com",
+      "deploymentBlock": 72315184,
+      "filterPolicy": {
+        "defaultAction": "ACCEPT",
+        "conditionalOrderIds": {
+          "0x5b3cdb6ffa3c95507cbfc459162609007865c2e87340312d3cd469c4ffbfae81": "DROP"
+        },
+        "transactions": {
+          "0x33ef06af308d1e4f94dd61fa8df43fe52b67e8a485f4e4fff75235080e663bfa": "DROP"
+        },
+        "handlers": {
+          "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP"
+        },
+        "owners": {
+          "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP"
+        }
+      }
+    }
+  ]
 }
