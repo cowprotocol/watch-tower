@@ -6,7 +6,14 @@ import {
   initLogging,
   parseCustomError,
 } from ".";
-import { COMPOSABLE_COW_CONTRACT_ADDRESS } from "@cowprotocol/cow-sdk";
+import {
+  COMPOSABLE_COW_CONTRACT_ADDRESS,
+  SupportedChainId,
+} from "@cowprotocol/cow-sdk";
+
+const chainIds: SupportedChainId[] = [
+  1, 100, 42161, 8453, 137, 43114, 11155111,
+];
 
 describe("parse custom errors (reversions)", () => {
   it("should pass the SingleOrderNotAuthed selector correctly", () => {
@@ -70,51 +77,71 @@ describe("handle on-chain custom errors", () => {
     orderNumber: 3,
   };
 
-  it("should pass a known selector correctly", () => {
-    expect(handleOnChainCustomError(happyPath)).toMatchObject({
-      reason: "SINGLE_ORDER_NOT_AUTHED: The owner has not authorized the order",
-      result: "DONT_TRY_AGAIN",
+  const getHappyPathWithChainId = (chainId: number) => {
+    return {
+      ...happyPath,
+      chainId,
+    };
+  };
+
+  chainIds.forEach((chainId) => {
+    it(`should pass a known selector correctly for chainId ${chainId}`, () => {
+      expect(
+        handleOnChainCustomError(getHappyPathWithChainId(chainId))
+      ).toMatchObject({
+        reason:
+          "SINGLE_ORDER_NOT_AUTHED: The owner has not authorized the order",
+        result: "DONT_TRY_AGAIN",
+      });
     });
   });
 
-  it("should drop if the revert selector does not exist in the map", () => {
-    const unknownSelector = "0xdeadbeef";
-    expect(
-      handleOnChainCustomError({
-        ...happyPath,
-        revertData: unknownSelector,
-      })
-    ).toMatchObject({
-      reason: "Order returned a non-compliant (invalid/erroneous) revert hint",
-      result: "DONT_TRY_AGAIN",
-    });
-  });
-
-  it("should drop if the revert data is too short even to be a selector", () => {
-    const shortReverts = ["0x", "0xca1f"];
-    shortReverts.forEach((shortRevert) =>
+  chainIds.forEach((chainId) => {
+    it(`should drop if the revert selector does not exist in the map for chainId ${chainId}`, () => {
+      const unknownSelector = "0xdeadbeef";
       expect(
         handleOnChainCustomError({
-          ...happyPath,
-          revertData: shortRevert,
+          ...getHappyPathWithChainId(chainId),
+          revertData: unknownSelector,
         })
       ).toMatchObject({
         reason:
           "Order returned a non-compliant (invalid/erroneous) revert hint",
         result: "DONT_TRY_AGAIN",
-      })
-    );
+      });
+    });
   });
 
-  it("should drop if the revert data has not been encoded correctly", () => {
-    expect(
-      handleOnChainCustomError({
-        ...happyPath,
-        revertData: POLL_TRY_AT_EPOCH_INVALID,
-      })
-    ).toMatchObject({
-      reason: "Order returned a non-compliant (invalid/erroneous) revert hint",
-      result: "DONT_TRY_AGAIN",
+  chainIds.forEach((chainId) => {
+    it(`should drop if the revert data is too short even to be a selector for chainId ${chainId}`, () => {
+      const shortReverts = ["0x", "0xca1f"];
+      shortReverts.forEach((shortRevert) =>
+        expect(
+          handleOnChainCustomError({
+            ...getHappyPathWithChainId(chainId),
+            revertData: shortRevert,
+          })
+        ).toMatchObject({
+          reason:
+            "Order returned a non-compliant (invalid/erroneous) revert hint",
+          result: "DONT_TRY_AGAIN",
+        })
+      );
+    });
+  });
+
+  chainIds.forEach((chainId) => {
+    it(`should drop if the revert data has not been encoded correctly for chainId ${chainId}`, () => {
+      expect(
+        handleOnChainCustomError({
+          ...getHappyPathWithChainId(chainId),
+          revertData: POLL_TRY_AT_EPOCH_INVALID,
+        })
+      ).toMatchObject({
+        reason:
+          "Order returned a non-compliant (invalid/erroneous) revert hint",
+        result: "DONT_TRY_AGAIN",
+      });
     });
   });
 });

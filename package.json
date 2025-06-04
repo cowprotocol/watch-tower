@@ -46,11 +46,11 @@
   "dependencies": {
     "@commander-js/extra-typings": "^11.0.0",
     "@cowprotocol/contracts": "^1.4.0",
-    "@cowprotocol/cow-sdk": "^v5.10.3",
+    "@cowprotocol/cow-sdk": "6.0.0-RC.53",
     "ajv": "^8.12.0",
     "ajv-formats": "^2.1.1",
     "chalk": "^4.1.2",
-    "ethers": "^5.7.2",
+    "ethers": "5.8.0",
     "express": "^4.18.2",
     "graphql-request": "^6.1.0",
     "level": "^8.0.0",

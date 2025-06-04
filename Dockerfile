@@ -5,6 +5,8 @@ WORKDIR /usr/src/app
 COPY . .
 
 RUN yarn && \
+    yarn lint && \
+    yarn test && \
     yarn build
 
 VOLUME [ "/usr/src/app/database" ]
