@@ -11,9 +11,9 @@ import {
   SupportedChainId,
 } from "@cowprotocol/cow-sdk";
 
-const chainIds: SupportedChainId[] = [
-  1, 100, 42161, 8453, 137, 43114, 11155111,
-];
+const chainIds = Object.keys(SupportedChainId)
+  .map((chainId) => Number(chainId))
+  .filter((chainId) => !isNaN(chainId));
 
 describe("parse custom errors (reversions)", () => {
   it("should pass the SingleOrderNotAuthed selector correctly", () => {
