@@ -1,7 +1,7 @@
 {
   "name": "@cowprotocol/watch-tower",
   "license": "GPL-3.0-or-later",
-  "version": "2.11.0",
+  "version": "2.11.1",
   "description": "A standalone watch tower, keeping an eye on Composable Cows  👀🐮",
   "author": {
     "name": "Cow Protocol"
@@ -46,7 +46,7 @@
   "dependencies": {
     "@commander-js/extra-typings": "^11.0.0",
     "@cowprotocol/contracts": "^1.4.0",
-    "@cowprotocol/cow-sdk": "6.0.0-RC.53",
+    "@cowprotocol/cow-sdk": "6.0.0-RC.59",
     "ajv": "^8.12.0",
     "ajv-formats": "^2.1.1",
     "chalk": "^4.1.2",
