@@ -62,7 +62,7 @@
     },
     {
       "name": "avalanche",
-      "rpc": ""https://avax-mainnet.g.alchemy.com/v2/<<API_KEY>>",
+      "rpc": "https://avax-mainnet.g.alchemy.com/v2/<<API_KEY>>",
       "deploymentBlock": 63235114,
       "filterPolicy": {
         "defaultAction": "ACCEPT",
