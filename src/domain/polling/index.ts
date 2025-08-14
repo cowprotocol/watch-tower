@@ -104,7 +104,7 @@ export async function checkForAndPlaceOrder(
   context: ChainContext,
   block: ethers.providers.Block,
   blockNumberOverride?: number,
-  blockTimestampOverride?: number
+  blockTimestampOverride?: number,
 ) {
   const { chainId, registry, filterPolicy } = context;
   const { ownerOrders, numOrders, numOwners } = registry;
@@ -135,7 +135,7 @@ export async function checkForAndPlaceOrder(
     let ordersPendingDelete = [];
 
     log.debug(
-      `Process owner ${ownerCounter}/${numOwners}. Owner=${owner}. Orders=${conditionalOrders.size}`
+      `Process owner ${ownerCounter}/${numOwners}. Owner=${owner}. Orders=${conditionalOrders.size}`,
     );
 
     for (const conditionalOrder of conditionalOrders) {
@@ -194,7 +194,7 @@ export async function checkForAndPlaceOrder(
           `Skipping conditional order. Reason: Not due yet (TRY_AT_EPOCH=${
             lastHint.epoch
           }, ${formatEpoch(lastHint.epoch)}). ${logOrderDetails}`,
-          conditionalOrder.params
+          conditionalOrder.params,
         );
         continue;
       }
@@ -210,7 +210,7 @@ export async function checkForAndPlaceOrder(
           }, in ${
             lastHint.blockNumber - blockNumber
           } blocks). ${logOrderDetails}`,
-          conditionalOrder.params
+          conditionalOrder.params,
         );
         continue;
       }
@@ -225,7 +225,7 @@ export async function checkForAndPlaceOrder(
         blockNumber,
         context,
         ownerCounter,
-        orderCounter
+        orderCounter,
       );
 
       // Don't try again the same order, in case that's the poll result
@@ -255,12 +255,12 @@ export async function checkForAndPlaceOrder(
       log[unexpectedError ? "error" : "info"](
         `Check conditional order result for order ${
           conditionalOrder.id
-        }: ${getEmojiByPollResult(pollResult?.result)} ${resultDescription}`
+        }: ${getEmojiByPollResult(pollResult?.result)} ${resultDescription}`,
       );
       if (unexpectedError) {
         log.error(
           `UNEXPECTED_ERROR for order ${conditionalOrder.id}. Details:`,
-          pollResult.error
+          pollResult.error,
         );
       }
 
@@ -285,7 +285,7 @@ export async function checkForAndPlaceOrder(
   await registry.write();
 
   log.debug(
-    `After processing orders. Owners=${registry.numOwners}, Orders=${registry.numOrders}`
+    `After processing orders. Owners=${registry.numOwners}, Orders=${registry.numOrders}`,
   );
 
   // Throw execution error if there was at least one error
@@ -298,13 +298,13 @@ function deleteOrders(
   ordersPendingDelete: ConditionalOrder[],
   conditionalOrders: Set<ConditionalOrder>,
   log: LoggerWithMethods,
-  chainId: SupportedChainId
+  chainId: SupportedChainId,
 ) {
-  ordersPendingDelete.length &&
+  if (ordersPendingDelete.length)
     log.debug(
       `Delete ${ordersPendingDelete.length} orders: ${ordersPendingDelete.join(
-        ", "
-      )}`
+        ", ",
+      )}`,
     );
 
   for (const conditionalOrder of ordersPendingDelete) {
@@ -312,7 +312,7 @@ function deleteOrders(
     const action = deleted ? "Stop Watching" : "Failed to stop watching";
 
     log.debug(
-      `${action} conditional order ${conditionalOrder.id} from TX ${conditionalOrder.tx}`
+      `${action} conditional order ${conditionalOrder.id} from TX ${conditionalOrder.tx}`,
     );
     metrics.activeOrdersTotal.labels(chainId.toString()).dec();
   }
@@ -325,7 +325,7 @@ async function processConditionalOrder(
   blockNumber: number,
   context: ChainContext,
   ownerNumber: number,
-  orderNumber: number
+  orderNumber: number,
 ): Promise<PollResult> {
   const { provider, orderBookApi, dryRun, chainId } = context;
   const { handler } = conditionalOrder.params;
@@ -371,7 +371,7 @@ async function processConditionalOrder(
       chainId,
       blockNumber,
       ownerNumber,
-      orderNumber
+      orderNumber,
     );
 
     if (!pollResult) {
@@ -388,7 +388,7 @@ async function processConditionalOrder(
             offchainInput,
             blockNumber,
             ownerNumber,
-            orderNumber
+            orderNumber,
           ),
         labelValues: metricLabels,
         durationMetric: metrics.pollingOnChainDurationSeconds,
@@ -459,7 +459,7 @@ async function processConditionalOrder(
       log.info(
         `OrderUid ${orderUid} status: ${
           orderStatus ? formatStatus(orderStatus) : "Not found"
-        }`
+        }`,
       );
     }
 
@@ -484,7 +484,7 @@ async function processConditionalOrder(
 function getOrderUid(
   chainId: SupportedChainId,
   orderToSubmit: Order,
-  owner: string
+  owner: string,
 ) {
   return computeOrderUid(
     {
@@ -500,7 +500,7 @@ function getOrderUid(
           ? undefined
           : orderToSubmit.receiver,
     },
-    owner
+    owner,
   );
 }
 
@@ -511,8 +511,8 @@ function getOrderUid(
  */
 export const _printUnfilledOrders = (orders: Map<BytesLike, OrderStatus>) => {
   const unfilledOrders = Array.from(orders.entries())
-    .filter(([_orderUid, status]) => status === OrderStatus.SUBMITTED) // as SUBMITTED != FILLED
-    .map(([orderUid, _status]) => orderUid)
+    .filter(([, status]) => status === OrderStatus.SUBMITTED) // as SUBMITTED != FILLED
+    .map(([orderUid]) => orderUid)
     .join(", ");
 
   if (unfilledOrders) {
@@ -580,7 +580,7 @@ async function postDiscreteOrder(params: {
 
     // If the operation is a dry run, don't post to the API
     log.info(
-      `Post order ${orderUid} (ID=${conditionalOrder.id}, TX=${conditionalOrder.tx})`
+      `Post order ${orderUid} (ID=${conditionalOrder.id}, TX=${conditionalOrder.tx})`,
     );
     log.debug(`Post order ${orderUid} details`, postOrder);
     if (!dryRun) {
@@ -599,7 +599,7 @@ async function postDiscreteOrder(params: {
         body,
         error,
         blockTimestamp,
-        metricLabels
+        metricLabels,
       );
       const isHandled = HANDLED_RESULT_CODES.includes(handleErrorResult.result);
       const logLevel = isHandled ? "info" : "error";
@@ -607,7 +607,7 @@ async function postDiscreteOrder(params: {
         `${
           isHandled ? "Unable to place" : "Error placing"
         } order in API. Result: ${status}`,
-        body
+        body,
       );
 
       return handleErrorResult;
@@ -638,7 +638,7 @@ function handleOrderBookError(
   body: any,
   error: any,
   blockTimestamp: number,
-  metricLabels: string[]
+  metricLabels: string[],
 ): Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors {
   const apiError = body?.errorType as OrderPostError.errorType;
   metrics.orderBookErrorsTotal
@@ -663,9 +663,9 @@ function handleOrderBookError(
           result: PollResultCode.TRY_AT_EPOCH,
           epoch: nextPollTimestamp,
           reason: `Not enough allowance/balance (${apiError}). Scheduling next polling in ${Math.floor(
-            backOffDelay / 60
+            backOffDelay / 60,
           )} minutes, at ${nextPollTimestamp} ${formatEpoch(
-            nextPollTimestamp
+            nextPollTimestamp,
           )}`,
         };
       }
@@ -700,7 +700,7 @@ function handleOrderBookError(
         result: PollResultCode.TRY_AT_EPOCH,
         epoch: nextPollTimestamp,
         reason: `No liquidity found when quoting order. Scheduling next polling in ${Math.floor(
-          TEN_MINS / 60
+          TEN_MINS / 60,
         )} minutes, at ${nextPollTimestamp} ${formatEpoch(nextPollTimestamp)}`,
       };
     case 429:
@@ -710,9 +710,9 @@ function handleOrderBookError(
         result: PollResultCode.TRY_AT_EPOCH,
         epoch: nextPollTimestamp429,
         reason: `Too many orders placed. Scheduling next polling in ${Math.floor(
-          TEN_MINS / 60
+          TEN_MINS / 60,
         )} minutes, at ${nextPollTimestamp429} ${formatEpoch(
-          nextPollTimestamp429
+          nextPollTimestamp429,
         )}`,
       };
   }
@@ -732,7 +732,7 @@ async function pollLegacy(
   offchainInput: string,
   blockNumber: number,
   ownerNumber: number,
-  orderNumber: number
+  orderNumber: number,
 ): Promise<PollResult> {
   const { contract, multicall, chainId } = context;
   const log = getLogger({
@@ -749,7 +749,7 @@ async function pollLegacy(
   // By not using `populateTransaction`, we avoid an `eth_estimateGas` RPC call.
   const callData = contract.interface.encodeFunctionData(
     "getTradeableOrderWithSignature",
-    [owner, conditionalOrder.params, offchainInput, proof]
+    [owner, conditionalOrder.params, offchainInput, proof],
   );
   const id = ConditionalOrderSDK.leafToId(conditionalOrder.params);
   const metricLabels = [chainId.toString(), owner, handler, id];
@@ -771,7 +771,7 @@ async function pollLegacy(
         // Decode the returnData to get the order and signature tuple
         const { order, signature } = contract.interface.decodeFunctionResult(
           "getTradeableOrderWithSignature",
-          returnData
+          returnData,
         );
         return {
           result: PollResultCode.SUCCESS,

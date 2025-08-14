@@ -34,7 +34,7 @@ const composableCow = ComposableCoW__factory.createInterface();
  */
 export async function processNewOrderEvent(
   context: ChainContext,
-  event: ConditionalOrderCreatedEvent
+  event: ConditionalOrderCreatedEvent,
 ) {
   const { chainId, registry } = context;
 
@@ -60,7 +60,7 @@ export async function processNewOrderEvent(
       numContractsAdded++;
     } else {
       log.error(
-        `Failed to register Smart Order from tx ${tx} on block ${blockNumber}. Error: ${error}`
+        `Failed to register Smart Order from tx ${tx} on block ${blockNumber}. Error: ${error}`,
       );
     }
 
@@ -78,7 +78,7 @@ export async function processNewOrderEvent(
       }
     } else {
       log.info(
-        `No conditional order added for tx ${tx} on block ${blockNumber}`
+        `No conditional order added for tx ${tx} on block ${blockNumber}`,
       );
     }
   };
@@ -95,7 +95,7 @@ export async function processNewOrderEvent(
 
 async function decodeAndAddOrder(
   event: ConditionalOrderCreatedEvent | MerkleRootSetEvent,
-  context: ChainContext
+  context: ChainContext,
 ): Promise<{ error: boolean; added: boolean }> {
   const { chainId, registry } = context;
   const log = getLogger({
@@ -117,7 +117,7 @@ async function decodeAndAddOrder(
       const [owner, params] = composableCow.decodeEventLog(
         "ConditionalOrderCreated",
         eventLog.data,
-        eventLog.topics
+        eventLog.topics,
       ) as [string, IConditionalOrder.ConditionalOrderParamsStruct];
 
       // Attempt to add the conditional order to the registry
@@ -128,7 +128,7 @@ async function decodeAndAddOrder(
         null,
         eventLog.address,
         event.blockNumber,
-        context
+        context,
       );
       if (added) {
         metrics.singleOrdersTotal.labels(network).inc();
@@ -140,7 +140,7 @@ async function decodeAndAddOrder(
       const [owner, root, proof] = composableCow.decodeEventLog(
         "MerkleRootSet",
         eventLog.data,
-        eventLog.topics
+        eventLog.topics,
       ) as [string, BytesLike, ComposableCoW.ProofStruct];
 
       // First need to flush the owner's conditional orders that do not have the merkle root set
@@ -151,7 +151,7 @@ async function decodeAndAddOrder(
         // Decode the proof.data
         const proofData = ethers.utils.defaultAbiCoder.decode(
           ["bytes[]"],
-          proof.data as BytesLike
+          proof.data as BytesLike,
         );
 
         for (const order of proofData) {
@@ -161,7 +161,7 @@ async function decodeAndAddOrder(
               "bytes32[]",
               "tuple(address handler, bytes32 salt, bytes staticInput)",
             ],
-            order as BytesLike
+            order as BytesLike,
           );
           // Attempt to add the conditional order to the registry
 
@@ -172,7 +172,7 @@ async function decodeAndAddOrder(
             { merkleRoot: root, path: decodedOrder[0] },
             eventLog.address,
             event.blockNumber,
-            context
+            context,
           );
           if (added) {
             metrics.merkleRootTotal.labels(network).inc();
@@ -183,7 +183,7 @@ async function decodeAndAddOrder(
   } catch (err) {
     log.error(
       `Error handling ConditionalOrderCreated/MerkleRootSet event for tx: ${tx}` +
-        err
+        err,
     );
     return { error: true, added };
   }
@@ -208,7 +208,7 @@ function addOrder(
   proof: Proof | null,
   composableCow: string,
   blockNumber: number,
-  context: ChainContext
+  context: ChainContext,
 ): boolean {
   const { chainId, registry, filterPolicy } = context;
   const log = getLogger({ name: "addOrder", chainId, blockNumber });
@@ -290,7 +290,7 @@ function addOrder(
           orders: new Map(),
           composableCow,
         },
-      ])
+      ]),
     );
 
     metrics.activeOwnersTotal.labels(network).inc();

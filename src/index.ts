@@ -25,7 +25,7 @@ const logLevelOption = new Option("--log-level <logLevel>", "Log level")
 
 const disableNotificationsOption = new Option(
   "--silent",
-  "Disable notifications (local logging only)"
+  "Disable notifications (local logging only)",
 )
   .conflicts(["slackWebhook"])
   .default(false)
@@ -33,7 +33,7 @@ const disableNotificationsOption = new Option(
 
 const dryRunOnlyOption = new Option(
   "--dry-run",
-  "Do not publish orders to the OrderBook API"
+  "Do not publish orders to the OrderBook API",
 )
   .default(false)
   .env("DRY_RUN");
@@ -44,7 +44,7 @@ const disableApiOption = new Option("--disable-api", "Disable the REST API")
 
 const apiPortOption = new Option(
   "--api-port <apiPort>",
-  "Port for the REST API"
+  "Port for the REST API",
 )
   .default("8080")
   .env("API_PORT")
@@ -52,33 +52,33 @@ const apiPortOption = new Option(
 
 const oneShotOption = new Option(
   "--one-shot",
-  "Run the watch-tower once and exit"
+  "Run the watch-tower once and exit",
 )
   .default(false)
   .env("ONE_SHOT");
 
 const slackWebhookOption = new Option(
   "--slack-webhook <slackWebhook>",
-  "Slack webhook URL"
+  "Slack webhook URL",
 ).env("SLACK_WEBHOOK");
 
 const databasePathOption = new Option(
   "--database-path <databasePath>",
-  "Path to the database"
+  "Path to the database",
 )
   .default(DEFAULT_DATABASE_PATH)
   .env("DATABASE_PATH");
 
 const configPathOption = new Option(
   "--config-path <configPath>",
-  "Path to chain configuration file"
+  "Path to chain configuration file",
 )
   .default(DEFAULT_CONFIG_PATH)
   .env("CONFIG_PATH");
 
 const onlyOwnerOption = new Option(
   "--only-owner <onlyOwner...>",
-  "Addresses of contracts / safes to monitor conditional orders for"
+  "Addresses of contracts / safes to monitor conditional orders for",
 ).argParser(parseAddressOption);
 
 async function main() {
@@ -154,9 +154,9 @@ function parseAddressOption(option: string, previous: string[] = []): string[] {
       throw new Error();
     }
     getAddress(option);
-  } catch (error) {
+  } catch {
     throw new InvalidArgumentError(
-      `${option} must be a valid '0x' prefixed address`
+      `${option} must be a valid '0x' prefixed address`,
     );
   }
   return [...previous, option];
@@ -166,7 +166,7 @@ function validateJSON(filePath: string): Config {
   const ajv = new Ajv();
   addFormats(ajv);
   const schema: JSONSchemaType<Config> = JSON.parse(
-    fs.readFileSync(CONFIG_SCHEMA_PATH, "utf8")
+    fs.readFileSync(CONFIG_SCHEMA_PATH, "utf8"),
   );
   const validate = ajv.compile(schema);
   try {

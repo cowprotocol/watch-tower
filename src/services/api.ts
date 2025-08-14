@@ -61,8 +61,8 @@ export class ApiService {
             pageSize,
             processEveryNumBlocks,
             addresses,
-          })
-        )
+          }),
+        ),
       );
     });
     this.app.use("/api", router);
@@ -84,7 +84,7 @@ export class ApiService {
         }
         this.server = this.app.listen(this.port, () => {
           log.info(
-            `Rest API server is running on port ${this.port}. See http://localhost:${this.port}/api/version`
+            `Rest API server is running on port ${this.port}. See http://localhost:${this.port}/api/version`,
           );
         });
 
@@ -127,7 +127,7 @@ const dumpRoute = (router: Router) => {
     try {
       const dump = await Registry.dump(
         DBService.getInstance(),
-        req.params.chainId
+        req.params.chainId,
       );
       res.setHeader("Content-Type", "application/json");
       res.send(dump);

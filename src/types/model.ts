@@ -1,4 +1,4 @@
-import Slack = require("node-slack");
+import Slack from "node-slack";
 
 import { BytesLike } from "ethers";
 
@@ -124,7 +124,7 @@ export class Registry {
     storage: DBService,
     network: string,
     lastNotifiedError: Date | null,
-    lastProcessedBlock: RegistryBlock | null
+    lastProcessedBlock: RegistryBlock | null,
   ) {
     this.ownerOrders = ownerOrders;
     this.storage = storage;
@@ -141,7 +141,7 @@ export class Registry {
    */
   public static async dump(
     storage: DBService,
-    network: string
+    network: string,
   ): Promise<string> {
     const ownerOrders = await loadOwnerOrders(storage, network);
     return JSON.stringify(ownerOrders, replacer, 2);
@@ -157,25 +157,25 @@ export class Registry {
   public static async load(
     storage: DBService,
     network: string,
-    genesisBlockNumber: number
+    genesisBlockNumber: number,
   ): Promise<Registry> {
     const db = storage.getDB();
     const ownerOrders = await loadOwnerOrders(storage, network).catch(() =>
-      createNewOrderMap()
+      createNewOrderMap(),
     );
 
     const lastNotifiedError = await db
       .get(getNetworkStorageKey(LAST_NOTIFIED_ERROR_STORAGE_KEY, network))
       .then((isoDate: string | number | Date) =>
-        isoDate ? new Date(isoDate) : null
+        isoDate ? new Date(isoDate) : null,
       )
       .catch(() => null);
 
     const lastProcessedBlock = await db
       .get(getNetworkStorageKey(LAST_PROCESSED_BLOCK_STORAGE_KEY, network))
       .then(
-        (block: string): RegistryBlock =>
-          block ? JSON.parse(block) : { number: genesisBlockNumber - 1 }
+        (block: string): Partial<RegistryBlock> =>
+          block ? JSON.parse(block) : { number: genesisBlockNumber - 1 },
       )
       .catch(() => null);
 
@@ -183,7 +183,7 @@ export class Registry {
     metrics.activeOwnersTotal.labels(network).set(ownerOrders.size);
     const numOrders = Array.from(ownerOrders.values()).reduce(
       (acc, o) => acc + o.size,
-      0
+      0,
     );
     metrics.activeOrdersTotal.labels(network).set(numOrders);
 
@@ -192,7 +192,7 @@ export class Registry {
       storage,
       network,
       lastNotifiedError,
-      lastProcessedBlock
+      lastProcessedBlock as RegistryBlock,
     );
   }
 
@@ -214,27 +214,27 @@ export class Registry {
       .put(
         getNetworkStorageKey(
           CONDITIONAL_ORDER_REGISTRY_VERSION_KEY,
-          this.network
+          this.network,
         ),
-        this.version.toString()
+        this.version.toString(),
       )
       .put(
         getNetworkStorageKey(
           CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY,
-          this.network
+          this.network,
         ),
-        this.stringifyOrders()
+        this.stringifyOrders(),
       );
 
     // Write or delete last notified error
     if (this.lastNotifiedError !== null) {
       batch.put(
         getNetworkStorageKey(LAST_NOTIFIED_ERROR_STORAGE_KEY, this.network),
-        this.lastNotifiedError.toISOString()
+        this.lastNotifiedError.toISOString(),
       );
     } else {
       batch.del(
-        getNetworkStorageKey(LAST_NOTIFIED_ERROR_STORAGE_KEY, this.network)
+        getNetworkStorageKey(LAST_NOTIFIED_ERROR_STORAGE_KEY, this.network),
       );
     }
 
@@ -242,11 +242,11 @@ export class Registry {
     if (this.lastProcessedBlock !== null) {
       batch.put(
         getNetworkStorageKey(LAST_PROCESSED_BLOCK_STORAGE_KEY, this.network),
-        JSON.stringify(this.lastProcessedBlock)
+        JSON.stringify(this.lastProcessedBlock),
       );
     } else {
       batch.del(
-        getNetworkStorageKey(LAST_PROCESSED_BLOCK_STORAGE_KEY, this.network)
+        getNetworkStorageKey(LAST_PROCESSED_BLOCK_STORAGE_KEY, this.network),
       );
     }
 
@@ -256,7 +256,7 @@ export class Registry {
     this.logger.debug(
       `${this.network}@${this.lastProcessedBlock?.number}:v${this.version}${
         this.lastNotifiedError ? ":lastError_" + this.lastNotifiedError : ""
-      } DB persisted`
+      } DB persisted`,
     );
   }
 
@@ -294,33 +294,33 @@ function replacer(_key: any, value: any) {
 
 async function loadOwnerOrders(
   storage: DBService,
-  network: string
+  network: string,
 ): Promise<OrdersPerOwner> {
   const loadOwnerOrdersLogger = getLogger({ name: "loadOwnerOrders" });
   // Get the owner orders
   const db = storage.getDB();
   const str = await db.get(
-    getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY, network)
+    getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY, network),
   );
   // Get the persisted registry version
 
   const version = Number(
     await db.get(
-      getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_VERSION_KEY, network)
-    )
+      getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_VERSION_KEY, network),
+    ),
   );
 
   // Parse conditional orders registry (for the persisted version, converting it to the last version)
   const ordersPerOwner = parseConditionalOrders(
     !!str ? str : undefined,
-    version
+    version,
   );
 
   loadOwnerOrdersLogger.info(
     `Data size: ${str?.length}`,
     `Owners: ${ordersPerOwner.size}`,
     `Total orders: ${getOrdersCountFromOrdersPerOwner(ordersPerOwner)}`,
-    `Network: ${network}`
+    `Network: ${network}`,
   );
 
   return ordersPerOwner;
@@ -328,7 +328,7 @@ async function loadOwnerOrders(
 
 function parseConditionalOrders(
   serializedConditionalOrders: string | undefined,
-  _version: number | undefined
+  _version: number | undefined,
 ): OrdersPerOwner {
   if (!serializedConditionalOrders) {
     return createNewOrderMap();
@@ -359,7 +359,7 @@ function createNewOrderMap(): OrdersPerOwner {
 }
 
 function getOrdersCountFromOrdersPerOwner(
-  ordersPerOwner: OrdersPerOwner
+  ordersPerOwner: OrdersPerOwner,
 ): number {
   let ordersCount = 0;
 

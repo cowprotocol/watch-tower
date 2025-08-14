@@ -84,7 +84,7 @@ export class FilterPolicy {
           Object.entries(object).map(([key, value]) => [
             key,
             FilterAction[value],
-          ])
+          ]),
         )
       : new Map<string, FilterAction>();
   }

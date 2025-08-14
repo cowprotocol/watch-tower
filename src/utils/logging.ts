@@ -5,7 +5,7 @@ import {
 } from "loglevel";
 import rootLogger from "loglevel";
 import prefix from "loglevel-plugin-prefix";
-import chalk, { Chalk } from "chalk";
+import chalk, { ChalkInstance } from "chalk";
 import { SupportedChainId } from "@cowprotocol/cow-sdk";
 
 const DEFAULT_LOG_LEVEL = "INFO";
@@ -16,7 +16,7 @@ interface LogLevelOverride {
   level: LogLevelNames;
 }
 
-const COLORS: Record<string, Chalk> = {
+const COLORS: Record<string, ChalkInstance> = {
   TRACE: chalk.magenta,
   DEBUG: chalk.cyan,
   INFO: chalk.blue,
@@ -41,7 +41,7 @@ export function initLogging({ logLevel }: { logLevel?: string }) {
     },
     format(level, name, timestamp) {
       return `${chalk.gray(timestamp)} ${COLORS[level.toUpperCase()](
-        level
+        level,
       )} ${chalk.green(`${name}:`)}`;
     },
   });
@@ -92,7 +92,7 @@ export function getLogger(params: GetLoggerParams): LoggerWithMethods {
   const prefix = getLogPrefix(params);
 
   const logLevelOverride = logLevelOverrides.find((override) =>
-    override.regex.test(name)
+    override.regex.test(name),
   );
 
   if (logLevelOverride) {
@@ -143,7 +143,7 @@ function setLogLevel(logLevel = DEFAULT_LOG_LEVEL) {
         if (loggerDef.length !== 2) {
           throw new Error(
             'Invalid logger definition. Please use "loggerModulePattern=LEVEL". Offending definition: ' +
-              loggerDefinition
+              loggerDefinition,
           );
         }
 
@@ -157,11 +157,11 @@ function setLogLevel(logLevel = DEFAULT_LOG_LEVEL) {
           throw new Error(
             `Error parsing logger overrides: "${loggerDefinition}". ${
               (e as any)?.message
-            }`
+            }`,
           );
         }
       },
-      []
+      [],
     );
   } else {
     logLevelOverrides = [];
@@ -178,7 +178,7 @@ function setLogLevel(logLevel = DEFAULT_LOG_LEVEL) {
 function getLogLevel(level: string): LogLevelNames {
   if (!LEVELS.includes(level)) {
     throw new Error(
-      `Invalid log level: ${level}. Please use one of ${LEVELS.join(", ")}`
+      `Invalid log level: ${level}. Please use one of ${LEVELS.join(", ")}`,
     );
   }
 

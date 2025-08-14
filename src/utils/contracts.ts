@@ -79,15 +79,15 @@ type ParsedCustomError = {
     | CustomErrorSelectors.SWAP_GUARD_RESTRICTED
     ? { selector: K }
     : K extends
-        | CustomErrorSelectors.ORDER_NOT_VALID
-        | CustomErrorSelectors.POLL_TRY_NEXT_BLOCK
-        | CustomErrorSelectors.POLL_NEVER
-    ? { selector: K; message: string }
-    : K extends
-        | CustomErrorSelectors.POLL_TRY_AT_BLOCK
-        | CustomErrorSelectors.POLL_TRY_AT_EPOCH
-    ? { selector: K; message: string; blockNumberOrEpoch: number }
-    : never;
+          | CustomErrorSelectors.ORDER_NOT_VALID
+          | CustomErrorSelectors.POLL_TRY_NEXT_BLOCK
+          | CustomErrorSelectors.POLL_NEVER
+      ? { selector: K; message: string }
+      : K extends
+            | CustomErrorSelectors.POLL_TRY_AT_BLOCK
+            | CustomErrorSelectors.POLL_TRY_AT_EPOCH
+        ? { selector: K; message: string; blockNumberOrEpoch: number }
+        : never;
 }[CustomErrorSelectors];
 
 export const CUSTOM_ERROR_ABI_MAP: Record<CustomErrorSelectors, string> = {
@@ -113,11 +113,11 @@ export function abiToSelector(abi: string) {
 
 export function composableCowContract(
   provider: ethers.providers.Provider,
-  chainId: SupportedChainId
+  chainId: SupportedChainId,
 ): ComposableCoW {
   return ComposableCoW__factory.connect(
     COMPOSABLE_COW_CONTRACT_ADDRESS[chainId],
-    provider
+    provider,
   );
 }
 
@@ -142,7 +142,7 @@ export function parseCustomError(revertData: string): ParsedCustomError {
   // interface and we should signal to drop it.
   if (!(revertData.slice(0, 10) in CUSTOM_ERROR_SELECTOR_MAP)) {
     throw new Error(
-      "On-chain hint / custom error not compliant with ComposableCoW interface"
+      "On-chain hint / custom error not compliant with ComposableCoW interface",
     );
   }
 
@@ -151,7 +151,7 @@ export function parseCustomError(revertData: string): ParsedCustomError {
 
   const selector = CUSTOM_ERROR_SELECTOR_MAP[rawSelector];
   const fragment = ethers.utils.Fragment.fromString(
-    "error " + CUSTOM_ERROR_ABI_MAP[selector]
+    "error " + CUSTOM_ERROR_ABI_MAP[selector],
   );
   const iface = new ethers.utils.Interface([fragment]);
 
@@ -167,14 +167,14 @@ export function parseCustomError(revertData: string): ParsedCustomError {
     case CustomErrorSelectors.POLL_TRY_NEXT_BLOCK:
     case CustomErrorSelectors.POLL_NEVER:
       const [message] = iface.decodeErrorResult(fragment, revertData) as [
-        string
+        string,
       ];
       return { selector, message };
     case CustomErrorSelectors.POLL_TRY_AT_BLOCK:
     case CustomErrorSelectors.POLL_TRY_AT_EPOCH:
       const [blockNumberOrEpoch, msg] = iface.decodeErrorResult(
         fragment,
-        revertData
+        revertData,
       ) as [BigNumber, string];
 
       // It is reasonable to expect that the block number or epoch is bound by
@@ -254,30 +254,30 @@ export function handleOnChainCustomError(params: {
         return dropOrder("The owner has not authorized the order");
       case CustomErrorSelectors.INTERFACE_NOT_SUPPORTED:
         log.info(
-          `Order type for safe ${owner}, failed IERC165 introspection check. Deleting order...`
+          `Order type for safe ${owner}, failed IERC165 introspection check. Deleting order...`,
         );
         return dropOrder("The order type failed IERC165 introspection check");
       case CustomErrorSelectors.INVALID_FALLBACK_HANDLER:
         log.info(
-          `Order for safe ${owner} where the Safe does not have ExtensibleFallbackHandler set. Deleting order...`
+          `Order for safe ${owner} where the Safe does not have ExtensibleFallbackHandler set. Deleting order...`,
         );
         return dropOrder(
-          "The safe does not have ExtensibleFallbackHandler set"
+          "The safe does not have ExtensibleFallbackHandler set",
         );
       case CustomErrorSelectors.INVALID_HANDLER:
         log.info(
-          `Order on safe ${owner} attempted to use a handler that is not supported. Deleting order...`
+          `Order on safe ${owner} attempted to use a handler that is not supported. Deleting order...`,
         );
         return dropOrder("The handler is not supported");
       case CustomErrorSelectors.SWAP_GUARD_RESTRICTED:
         log.info(
-          `Order for safe ${owner} where the Safe has swap guard enabled. Deleting order...`
+          `Order for safe ${owner} where the Safe has swap guard enabled. Deleting order...`,
         );
         return dropOrder("The conditional order didn't pass the swap guard");
       case CustomErrorSelectors.ORDER_NOT_VALID:
         const reason = msgWithSelector(parsedCustomError.message);
         log.info(
-          `Order for ${owner} is invalid. Reason: ${reason}. Deleting order...`
+          `Order for ${owner} is invalid. Reason: ${reason}. Deleting order...`,
         );
         return dropOrder(`Invalid order: ${reason}`);
       case CustomErrorSelectors.POLL_TRY_NEXT_BLOCK:
@@ -309,10 +309,10 @@ export function handleOnChainCustomError(params: {
     log.debug(
       `Non-compliant interface error thrown${
         err.message ? `: ${err.message}` : ""
-      }`
+      }`,
     );
     log.debug(
-      `Contract returned a non-compliant interface revert via getTradeableOrderWithSignature. Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${target}&rawFunctionInput=${callData}`
+      `Contract returned a non-compliant interface revert via getTradeableOrderWithSignature. Simulate: https://dashboard.tenderly.co/gp-v2/watch-tower-prod/simulator/new?network=${chainId}&contractAddress=${target}&rawFunctionInput=${callData}`,
     );
     metrics.pollingOnChainInvalidInterfacesTotal.labels(...metricLabels).inc();
     return {
@@ -329,7 +329,7 @@ function generateCustomErrorSelectorMap(): Record<
   const CUSTOM_ERROR_SELECTOR_MAP: Record<string, CustomErrorSelectors> = {};
 
   for (const errorType of Object.keys(
-    CUSTOM_ERROR_ABI_MAP
+    CUSTOM_ERROR_ABI_MAP,
   ) as CustomErrorSelectors[]) {
     const selector = abiToSelector(CUSTOM_ERROR_ABI_MAP[errorType]);
     CUSTOM_ERROR_SELECTOR_MAP[selector] = errorType;

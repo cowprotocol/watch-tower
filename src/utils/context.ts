@@ -1,4 +1,4 @@
-import Slack = require("node-slack");
+import Slack from "node-slack";
 import { DBService } from "../services";
 
 import { ContextOptions, ExecutionContext, Registry } from "../types";
@@ -12,7 +12,7 @@ let executionContext: ExecutionContext | undefined;
 export async function initContext(
   transactionName: string,
   chainId: SupportedChainId,
-  options: ContextOptions
+  options: ContextOptions,
 ): Promise<ExecutionContext> {
   // Init storage
   const storage = DBService.getInstance();
@@ -21,7 +21,7 @@ export async function initContext(
   const registry = await Registry.load(
     storage,
     chainId.toString(),
-    Number(options.deploymentBlock)
+    Number(options.deploymentBlock),
   );
 
   // Init slack
@@ -51,7 +51,7 @@ function _getSlack(options: ContextOptions): Slack | undefined {
 
   if (!webhookUrl) {
     throw new Error(
-      "SLACK_WEBHOOK_URL must be set if not running in silent mode"
+      "SLACK_WEBHOOK_URL must be set if not running in silent mode",
     );
   }
 
@@ -64,7 +64,7 @@ export async function handleExecutionError(e: any) {
     const errorMessage = e?.message || "Unknown error";
     const notified = sendSlack(
       errorMessage +
-        ". More info https://dashboard.tenderly.co/devcow/project/actions"
+        ". More info https://dashboard.tenderly.co/devcow/project/actions",
     );
 
     if (notified && executionContext) {
@@ -101,8 +101,8 @@ export function sendSlack(message: string): boolean {
         `Last error notification happened earlier than ${
           NOTIFICATION_WAIT_PERIOD / 60_000
         } minutes ago. Next notification will happen after ${new Date(
-          nextErrorNotificationTime
-        )}`
+          nextErrorNotificationTime,
+        )}`,
       );
       return false;
     }
