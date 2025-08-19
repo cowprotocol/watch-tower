@@ -1,3 +1,6 @@
+import { describe, it } from "node:test";
+import assert from "node:assert";
+
 import {
   CUSTOM_ERROR_ABI_MAP,
   CustomErrorSelectors,
@@ -17,27 +20,30 @@ const chainIds = Object.keys(SupportedChainId)
 
 describe("parse custom errors (reversions)", () => {
   it("should pass the SingleOrderNotAuthed selector correctly", () => {
-    expect(parseCustomError(SINGLE_ORDER_NOT_AUTHED_ERROR)).toMatchObject({
-      selector: "SINGLE_ORDER_NOT_AUTHED",
-    });
+    assert.partialDeepStrictEqual(
+      parseCustomError(SINGLE_ORDER_NOT_AUTHED_ERROR),
+      {
+        selector: "SINGLE_ORDER_NOT_AUTHED",
+      },
+    );
   });
 
   it("should pass the OrderNotValid selector correctly", () => {
-    expect(parseCustomError(ORDER_NOT_VALID)).toMatchObject({
+    assert.partialDeepStrictEqual(parseCustomError(ORDER_NOT_VALID), {
       selector: "ORDER_NOT_VALID",
       message: "after twap finish",
     });
   });
 
   it("should pass the PollTryNextBlock selector correctly", () => {
-    expect(parseCustomError(POLL_TRY_NEXT_BLOCK)).toMatchObject({
+    assert.partialDeepStrictEqual(parseCustomError(POLL_TRY_NEXT_BLOCK), {
       selector: "POLL_TRY_NEXT_BLOCK",
       message: "try me again",
     });
   });
 
   it("should pass the PollTryAtBlock selector correctly", () => {
-    expect(parseCustomError(POLL_TRY_AT_BLOCK)).toMatchObject({
+    assert.partialDeepStrictEqual(parseCustomError(POLL_TRY_AT_BLOCK), {
       selector: "POLL_TRY_AT_BLOCK",
       message: "red pill",
       blockNumberOrEpoch: 303,
@@ -45,7 +51,7 @@ describe("parse custom errors (reversions)", () => {
   });
 
   it("should pass the PollTryAtEpoch selector correctly", () => {
-    expect(parseCustomError(POLL_TRY_AT_EPOCH)).toMatchObject({
+    assert.partialDeepStrictEqual(parseCustomError(POLL_TRY_AT_EPOCH), {
       selector: "POLL_TRY_AT_EPOCH",
       message: "here's looking at you",
       blockNumberOrEpoch: 1694340000,
@@ -53,7 +59,7 @@ describe("parse custom errors (reversions)", () => {
   });
 
   it("should pass the PollNever selector correctly", () => {
-    expect(parseCustomError(POLL_NEVER)).toMatchObject({
+    assert.partialDeepStrictEqual(parseCustomError(POLL_NEVER), {
       selector: "POLL_NEVER",
       message: "after twap finish",
     });
@@ -69,7 +75,7 @@ describe("handle on-chain custom errors", () => {
     orderRef: "orderRefForLogging",
     chainId: 1,
     revertData: abiToSelector(
-      CUSTOM_ERROR_ABI_MAP[CustomErrorSelectors.SINGLE_ORDER_NOT_AUTHED]
+      CUSTOM_ERROR_ABI_MAP[CustomErrorSelectors.SINGLE_ORDER_NOT_AUTHED],
     ),
     metricLabels: ["chain_id", "handler", "owner", "id"],
     blockNumber: 123456,
@@ -86,29 +92,31 @@ describe("handle on-chain custom errors", () => {
 
   chainIds.forEach((chainId) => {
     it(`should pass a known selector correctly for chainId ${chainId}`, () => {
-      expect(
-        handleOnChainCustomError(getHappyPathWithChainId(chainId))
-      ).toMatchObject({
-        reason:
-          "SINGLE_ORDER_NOT_AUTHED: The owner has not authorized the order",
-        result: "DONT_TRY_AGAIN",
-      });
+      assert.partialDeepStrictEqual(
+        handleOnChainCustomError(getHappyPathWithChainId(chainId)),
+        {
+          reason:
+            "SINGLE_ORDER_NOT_AUTHED: The owner has not authorized the order",
+          result: "DONT_TRY_AGAIN",
+        },
+      );
     });
   });
 
   chainIds.forEach((chainId) => {
     it(`should drop if the revert selector does not exist in the map for chainId ${chainId}`, () => {
       const unknownSelector = "0xdeadbeef";
-      expect(
+      assert.partialDeepStrictEqual(
         handleOnChainCustomError({
           ...getHappyPathWithChainId(chainId),
           revertData: unknownSelector,
-        })
-      ).toMatchObject({
-        reason:
-          "Order returned a non-compliant (invalid/erroneous) revert hint",
-        result: "DONT_TRY_AGAIN",
-      });
+        }),
+        {
+          reason:
+            "Order returned a non-compliant (invalid/erroneous) revert hint",
+          result: "DONT_TRY_AGAIN",
+        },
+      );
     });
   });
 
@@ -116,32 +124,34 @@ describe("handle on-chain custom errors", () => {
     it(`should drop if the revert data is too short even to be a selector for chainId ${chainId}`, () => {
       const shortReverts = ["0x", "0xca1f"];
       shortReverts.forEach((shortRevert) =>
-        expect(
+        assert.partialDeepStrictEqual(
           handleOnChainCustomError({
             ...getHappyPathWithChainId(chainId),
             revertData: shortRevert,
-          })
-        ).toMatchObject({
-          reason:
-            "Order returned a non-compliant (invalid/erroneous) revert hint",
-          result: "DONT_TRY_AGAIN",
-        })
+          }),
+          {
+            reason:
+              "Order returned a non-compliant (invalid/erroneous) revert hint",
+            result: "DONT_TRY_AGAIN",
+          },
+        ),
       );
     });
   });
 
   chainIds.forEach((chainId) => {
     it(`should drop if the revert data has not been encoded correctly for chainId ${chainId}`, () => {
-      expect(
+      assert.partialDeepStrictEqual(
         handleOnChainCustomError({
           ...getHappyPathWithChainId(chainId),
           revertData: POLL_TRY_AT_EPOCH_INVALID,
-        })
-      ).toMatchObject({
-        reason:
-          "Order returned a non-compliant (invalid/erroneous) revert hint",
-        result: "DONT_TRY_AGAIN",
-      });
+        }),
+        {
+          reason:
+            "Order returned a non-compliant (invalid/erroneous) revert hint",
+          result: "DONT_TRY_AGAIN",
+        },
+      );
     });
   });
 });

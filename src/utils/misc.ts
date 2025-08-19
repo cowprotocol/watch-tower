@@ -34,7 +34,7 @@ export function toConditionalOrderParams({
 
 export function getAreConditionalOrderParamsEqual(
   a: ConditionalOrderParams,
-  b: ConditionalOrderParams
+  b: ConditionalOrderParams,
 ): boolean {
   return (
     a.handler.toLowerCase() === b.handler.toLowerCase() &&

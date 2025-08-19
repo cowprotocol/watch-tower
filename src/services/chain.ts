@@ -93,7 +93,7 @@ export class ChainContext {
     options: ContextOptions,
     provider: providers.Provider,
     chainId: SupportedChainId,
-    registry: Registry
+    registry: Registry,
   ) {
     const {
       deploymentBlock,
@@ -145,7 +145,7 @@ export class ChainContext {
    */
   public static async init(
     options: ContextOptions,
-    storage: DBService
+    storage: DBService,
   ): Promise<ChainContext> {
     const { rpc, deploymentBlock } = options;
 
@@ -155,7 +155,7 @@ export class ChainContext {
     const registry = await Registry.load(
       storage,
       chainId.toString(),
-      deploymentBlock
+      deploymentBlock,
     );
 
     // Save the context to the static map to be used by the API
@@ -218,7 +218,7 @@ export class ChainContext {
           }
 
           log.debug(
-            `Reaching tip of chain, current block number: ${currentBlock.number}`
+            `Reaching tip of chain, current block number: ${currentBlock.number}`,
           );
         }
 
@@ -228,17 +228,17 @@ export class ChainContext {
             `🔄 Start sync with from block ${fromBlock} to ${toBlock}. Pending ${
               toBlock - fromBlock
             } blocks (~${Math.ceil(
-              (toBlock - fromBlock) / pageSize
+              (toBlock - fromBlock) / pageSize,
             )} pages, processing every ${
               processEveryNumBlocks > 1
                 ? processEveryNumBlocks + " blocks"
                 : "block"
-            })`
+            })`,
           );
         }
 
         log.debug(
-          `Processing events from block ${fromBlock} to block ${toBlock}`
+          `Processing events from block ${fromBlock} to block ${toBlock}`,
         );
 
         const events = await pollContractForEvents(fromBlock, toBlock, this);
@@ -308,7 +308,7 @@ export class ChainContext {
     log.info(
       `☀️ ${
         oneShot ? "Chain watcher is in sync" : "Chain watcher is warmed up"
-      }`
+      }`,
     );
     log.debug(`Last processed block: ${JSON.stringify(lastProcessedBlock)}`);
 
@@ -367,7 +367,7 @@ export class ChainContext {
         const events = await pollContractForEvents(
           blockNumber,
           blockNumber,
-          this
+          this,
         );
 
         await processBlockAndPersist({
@@ -381,7 +381,7 @@ export class ChainContext {
       } catch (error) {
         log.error(
           `Error in pollContractForEvents for block ${blockNumber}`,
-          error
+          error,
         );
       }
     });
@@ -401,7 +401,7 @@ export class ChainContext {
       // an error or exit if not running in a kubernetes pod
       if (timeElapsed >= watchdogTimeout) {
         log.error(
-          `Chain watcher last processed a block ${timeElapsed}s ago (${watchdogTimeout}s timeout configured). Check the RPC.`
+          `Chain watcher last processed a block ${timeElapsed}s ago (${watchdogTimeout}s timeout configured). Check the RPC.`,
         );
         if (isRunningInKubernetesPod()) {
           this.sync = ChainSync.UNKNOWN;
@@ -440,7 +440,7 @@ export class ChainContext {
         acc.overallHealth = acc.overallHealth && chain.isHealthy();
         return acc;
       },
-      { chains: {}, overallHealth: true } as ChainWatcherHealth
+      { chains: {}, overallHealth: true } as ChainWatcherHealth,
     );
 
     return chains;
@@ -465,7 +465,7 @@ async function processBlockEvent(
   block: providers.Block,
   events: ConditionalOrderCreatedEvent[],
   blockNumberOverride?: number,
-  blockTimestampOverride?: number
+  blockTimestampOverride?: number,
 ) {
   const { provider, chainId, processEveryNumBlocks } = context;
   const timer = metrics.processBlockDurationSeconds
@@ -492,14 +492,14 @@ async function processBlockEvent(
           hasErrors = true;
           log.error(
             `Error processing new order event of TX ${event.transactionHash}:`,
-            e
+            e,
           );
           return false;
         });
       log.info(
         `Result of processing new order event of TX ${
           event.transactionHash
-        }: ${_formatResult(result)}`
+        }: ${_formatResult(result)}`,
       );
       metrics.eventsProcessedTotal.labels(chainId.toString()).inc();
     }
@@ -514,7 +514,7 @@ async function processBlockEvent(
       context,
       block,
       blockNumberOverride,
-      blockTimestampOverride
+      blockTimestampOverride,
     )
       .then(() => true)
       .catch(() => {
@@ -525,7 +525,7 @@ async function processBlockEvent(
     log.debug(
       `Result of "checkForAndPlaceOrder" action for block ${
         block.number
-      }: ${_formatResult(result)}`
+      }: ${_formatResult(result)}`,
     );
   }
 
@@ -579,7 +579,7 @@ async function processBlockAndPersist(params: {
       _block,
       events,
       currentBlock?.number,
-      currentBlock?.timestamp
+      currentBlock?.timestamp,
     );
   } catch (err) {
     log.error(`Error processing block ${_block.number}`, err);
@@ -591,7 +591,7 @@ async function processBlockAndPersist(params: {
 async function pollContractForEvents(
   fromBlock: number,
   toBlock: number | "latest",
-  context: ChainContext
+  context: ChainContext,
 ): Promise<ConditionalOrderCreatedEvent[]> {
   const { provider, chainId, addresses } = context;
   const composableCow = composableCowContract(provider, chainId);
@@ -609,7 +609,7 @@ async function pollContractForEvents(
       const decoded = composableCow.interface.decodeEventLog(
         topic,
         event.data,
-        event.topics
+        event.topics,
       ) as unknown as ConditionalOrderCreatedEvent;
 
       if (!addresses || addresses.includes(decoded.args.owner)) {

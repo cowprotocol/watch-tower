@@ -12,7 +12,7 @@ import { getLogger } from "../../utils/logging";
 const POLL_FROM_LATEST_BLOCK = false;
 
 const ordersFactory = new ConditionalOrderFactory(
-  DEFAULT_CONDITIONAL_ORDER_REGISTRY
+  DEFAULT_CONDITIONAL_ORDER_REGISTRY,
 );
 
 export async function pollConditionalOrder(
@@ -22,7 +22,7 @@ export async function pollConditionalOrder(
   chainId: SupportedChainId,
   blockNumber: number,
   ownerNumber: number,
-  orderNumber: number
+  orderNumber: number,
 ): Promise<PollResult | undefined> {
   const log = getLogger({
     name: "pollConditionalOrder",
@@ -46,7 +46,7 @@ export async function pollConditionalOrder(
       actualPollParams.blockInfo === undefined
         ? "latest"
         : actualPollParams.blockInfo.blockNumber
-    })....`
+    })....`,
   );
   return order.poll(actualPollParams);
 }

@@ -42,9 +42,9 @@ export async function run(options: RunOptions) {
             ...options,
             ...network,
           },
-          storage
+          storage,
         );
-      })
+      }),
     );
 
     // Set the chain contexts on the API server
