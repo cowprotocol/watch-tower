@@ -412,9 +412,10 @@ async function processConditionalOrder(
 
     const orderToSubmit: Order = {
       ...order,
-      kind: kindToString(order.kind.toString()),
-      sellTokenBalance: balanceToString(order.sellTokenBalance.toString()),
-      buyTokenBalance: balanceToString(order.buyTokenBalance.toString()),
+      appData: order.appData as string,
+      kind: kindToString(order.kind as string),
+      sellTokenBalance: balanceToString(order.sellTokenBalance as string),
+      buyTokenBalance: balanceToString(order.buyTokenBalance as string),
       validTo: Number(order.validTo),
     };
 
