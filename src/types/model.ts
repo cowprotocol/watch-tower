@@ -3,13 +3,13 @@ import Slack = require("node-slack");
 import { BytesLike } from "ethers";
 
 import {
-  ConditionalOrder as ConditionalOrderSdk,
   ConditionalOrderParams,
+  ConditionalOrder as ConditionalOrderSdk,
   PollResult,
-} from "@cowprotocol/cow-sdk";
+} from "@cowprotocol/sdk-composable";
 import { DBService } from "../services";
-import * as metrics from "../utils/metrics";
 import { getLogger } from "../utils/logging";
+import * as metrics from "../utils/metrics";
 
 // Standardise the storage key
 const LAST_NOTIFIED_ERROR_STORAGE_KEY = "LAST_NOTIFIED_ERROR";

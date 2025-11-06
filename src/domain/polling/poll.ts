@@ -1,11 +1,11 @@
+import { SupportedChainId } from "@cowprotocol/cow-sdk";
 import {
   ConditionalOrderFactory,
   ConditionalOrderParams,
   DEFAULT_CONDITIONAL_ORDER_REGISTRY,
   PollParams,
   PollResult,
-  SupportedChainId,
-} from "@cowprotocol/cow-sdk";
+} from "@cowprotocol/sdk-composable";
 import { getLogger } from "../../utils/logging";
 
 // Watch-tower will index every block, so we will by default the processing block and not the latest.

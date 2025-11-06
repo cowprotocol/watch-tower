@@ -1,4 +1,4 @@
-import { ConditionalOrderParams } from "@cowprotocol/cow-sdk";
+import { ConditionalOrderParams } from "@cowprotocol/sdk-composable";
 import { IConditionalOrder, OrderStatus } from "../types";
 export function formatStatus(status: OrderStatus) {
   switch (status) {

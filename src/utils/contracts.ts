@@ -1,14 +1,13 @@
-import { BigNumber, ethers } from "ethers";
-import { ComposableCoW, ComposableCoW__factory } from "../types";
 import {
   COMPOSABLE_COW_CONTRACT_ADDRESS,
   MAX_UINT32,
-  PollResultCode,
-  PollResultErrors,
   SupportedChainId,
 } from "@cowprotocol/cow-sdk";
-import { getLogger } from "./logging";
+import { PollResultCode, PollResultErrors } from "@cowprotocol/sdk-composable";
+import { BigNumber, ethers } from "ethers";
 import { metrics } from ".";
+import { ComposableCoW, ComposableCoW__factory } from "../types";
+import { getLogger } from "./logging";
 
 // Define an enum for the custom error revert hints that can be returned by the ComposableCoW's interfaces.
 export enum CustomErrorSelectors {

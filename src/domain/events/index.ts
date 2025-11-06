@@ -1,12 +1,10 @@
 import {
-  getAreConditionalOrderParamsEqual,
-  getLogger,
-  handleExecutionError,
-  metrics,
-  toConditionalOrderParams,
-} from "../../utils";
+  ConditionalOrder,
+  ConditionalOrderParams,
+} from "@cowprotocol/sdk-composable";
 import { BytesLike, ethers } from "ethers";
 
+import { ChainContext } from "../../services/chain";
 import {
   ComposableCoW,
   ComposableCoW__factory,
@@ -17,9 +15,13 @@ import {
   Proof,
   Registry,
 } from "../../types";
-import { ConditionalOrder, ConditionalOrderParams } from "@cowprotocol/cow-sdk";
-
-import { ChainContext } from "../../services/chain";
+import {
+  getAreConditionalOrderParamsEqual,
+  getLogger,
+  handleExecutionError,
+  metrics,
+  toConditionalOrderParams,
+} from "../../utils";
 import { policy } from "../polling/filtering";
 
 const composableCow = ComposableCoW__factory.createInterface();

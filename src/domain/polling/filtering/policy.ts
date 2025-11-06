@@ -1,4 +1,5 @@
-import { ConditionalOrderParams } from "@cowprotocol/cow-sdk";
+import { ConditionalOrderParams } from "@cowprotocol/sdk-composable";
+
 import { Config, FilterAction as FilterActionSchema } from "../../../types";
 
 export enum FilterAction {
