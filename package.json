@@ -48,6 +48,7 @@
     "@cowprotocol/contracts": "^1.4.0",
     "@cowprotocol/cow-sdk": "^7.1.0",
     "@cowprotocol/sdk-composable": "^0.1.10",
+    "@cowprotocol/sdk-ethers-v5-adapter": "^0.2.0",
     "ajv": "^8.12.0",
     "ajv-formats": "^2.1.1",
     "chalk": "^4.1.2",

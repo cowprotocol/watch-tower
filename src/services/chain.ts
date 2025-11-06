@@ -1,8 +1,10 @@
 import {
   ApiBaseUrls,
   OrderBookApi,
+  setGlobalAdapter,
   SupportedChainId,
 } from "@cowprotocol/cow-sdk";
+import { EthersV5Adapter } from "@cowprotocol/sdk-ethers-v5-adapter";
 import { ethers, providers } from "ethers";
 import { DBService } from ".";
 import { processNewOrderEvent } from "../domain/events";
@@ -18,10 +20,10 @@ import {
   RegistryBlock,
 } from "../types";
 import {
-  LoggerWithMethods,
   composableCowContract,
   getLogger,
   isRunningInKubernetesPod,
+  LoggerWithMethods,
   metrics,
 } from "../utils";
 
@@ -151,6 +153,8 @@ export class ChainContext {
 
     const provider = getProvider(rpc.toLowerCase());
     const chainId = (await provider.getNetwork()).chainId;
+
+    setGlobalAdapter(new EthersV5Adapter({ provider: provider }));
 
     const registry = await Registry.load(
       storage,
