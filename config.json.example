@@ -140,5 +140,25 @@
         }
       }
     }
+    {
+      "name": "linea",
+      "rpc": "https://rpc.linea.build",
+      "deploymentBlock": 25028604,
+      "filterPolicy": {
+        "defaultAction": "ACCEPT",
+        "conditionalOrderIds": {
+          "0x5b3cdb6ffa3c95507cbfc459162609007865c2e87340312d3cd469c4ffbfae81": "DROP"
+        },
+        "transactions": {
+          "0x33ef06af308d1e4f94dd61fa8df43fe52b67e8a485f4e4fff75235080e663bfa": "DROP"
+        },
+        "handlers": {
+          "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP"
+        },
+        "owners": {
+          "0xd3338f21c89745e46af56aeaf553cf96ba9bc66f": "DROP"
+        }
+      }
+    }
   ]
 }
