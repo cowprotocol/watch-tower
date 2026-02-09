@@ -506,11 +506,6 @@
     json-stringify-deterministic "^1.0.8"
     multiformats "^9.6.4"
 
-"@cowprotocol/sdk-common@0.3.0":
-  version "0.3.0"
-  resolved "https://registry.yarnpkg.com/@cowprotocol/sdk-common/-/sdk-common-0.3.0.tgz#f03a5e36d67d0c5cdb6be5bd7ceda879b751542d"
-  integrity sha512-xk2VUjO4+XI5968r1pYFbqUxM2nmBcVPvGIw0pcqDpx4OLef0Flr3tuHtZY42RYYa6nNsNKOBV9Jd4RauYUOgQ==
-
 "@cowprotocol/sdk-common@0.6.0":
   version "0.6.0"
   resolved "https://registry.yarnpkg.com/@cowprotocol/sdk-common/-/sdk-common-0.6.0.tgz#03dd6b3dbcf61ddb7fc91ee3ec93a63c01ba526d"
@@ -546,12 +541,12 @@
     "@cowprotocol/sdk-common" "0.6.0"
     "@cowprotocol/sdk-config" "0.7.3"
 
-"@cowprotocol/sdk-ethers-v5-adapter@^0.2.0":
-  version "0.2.0"
-  resolved "https://registry.yarnpkg.com/@cowprotocol/sdk-ethers-v5-adapter/-/sdk-ethers-v5-adapter-0.2.0.tgz#c04ea01fe38635a4afc77ad84078db3987999628"
-  integrity sha512-90YxjDHe6WHwa6NDxXn04KFj71TAQyfuO8T1SI8eWgNTaF9EDEgMrTXmfdBDp7S9WZSBVfyu3XQGOoXe3v4PGQ==
+"@cowprotocol/sdk-ethers-v5-adapter@^0.3.6":
+  version "0.3.6"
+  resolved "https://registry.yarnpkg.com/@cowprotocol/sdk-ethers-v5-adapter/-/sdk-ethers-v5-adapter-0.3.6.tgz#2bb4881f320bd7da2ff9af29e51fca20c0d6393c"
+  integrity sha512-6M5q80lWAO9nB/mzLYc9kM4hpsFig+S9L5TpPNUfyUT0jdktUJVX+a8JnshlEiEIf4hE2ZfCRiCb5iAeHxGeZg==
   dependencies:
-    "@cowprotocol/sdk-common" "0.3.0"
+    "@cowprotocol/sdk-common" "0.6.0"
 
 "@cowprotocol/sdk-order-book@0.6.4":
   version "0.6.4"
