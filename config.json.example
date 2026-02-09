@@ -183,7 +183,7 @@
     {
       "name": "ink",
       "rpc": "https://rpc-ten.inkonchain.com",
-      "deploymentBlock": 36923986,
+      "deploymentBlock": -1,
       "filterPolicy": {
         "defaultAction": "ACCEPT",
         "conditionalOrderIds": {
