@@ -179,7 +179,7 @@ export function parseCustomError(revertData: string): ParsedCustomError {
       // It is reasonable to expect that the block number or epoch is bound by
       // uint32. It is therefore safe to throw if the value is outside of that
       // for javascript's number type.
-      if (blockNumberOrEpoch.gt(MAX_UINT32)) {
+      if (BigInt(blockNumberOrEpoch.toString()) > MAX_UINT32) {
         throw new Error("Block number or epoch out of bounds");
       }
 
