@@ -1,9 +1,10 @@
 import {
   ApiBaseUrls,
-  OrderBookApi,
   setGlobalAdapter,
   SupportedChainId,
 } from "@cowprotocol/cow-sdk";
+import { setGlobalAdapter as setComposableGlobalAdapter } from "@cowprotocol/sdk-composable/node_modules/@cowprotocol/sdk-common";
+import { OrderBookApi } from "@cowprotocol/sdk-order-book";
 import { EthersV5Adapter } from "@cowprotocol/sdk-ethers-v5-adapter";
 import { ethers, providers } from "ethers";
 import { DBService } from ".";
@@ -34,6 +35,12 @@ const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const PAGE_SIZE_DEFAULT = 5000;
 
 const SDK_BACKOFF_NUM_OF_ATTEMPTS = 5;
+
+function configureSdkAdapters(provider: providers.Provider): void {
+  const adapter = new EthersV5Adapter({ provider });
+  setGlobalAdapter(adapter);
+  setComposableGlobalAdapter(adapter);
+}
 
 enum ChainSync {
   /** The chain is currently in the warm-up phase, synchronising from contract genesis or lastBlockProcessed */
@@ -154,7 +161,7 @@ export class ChainContext {
     const provider = getProvider(rpc.toLowerCase());
     const chainId = (await provider.getNetwork()).chainId;
 
-    setGlobalAdapter(new EthersV5Adapter({ provider: provider }));
+    configureSdkAdapters(provider);
 
     const registry = await Registry.load(
       storage,

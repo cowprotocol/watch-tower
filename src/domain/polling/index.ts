@@ -4,13 +4,13 @@ import {
   OrderKind,
   computeOrderUid,
 } from "@cowprotocol/contracts";
+import { SupportedChainId } from "@cowprotocol/cow-sdk";
 import {
   OrderBookApi,
   OrderCreation,
   OrderPostError,
   SigningScheme,
-  SupportedChainId,
-} from "@cowprotocol/cow-sdk";
+} from "@cowprotocol/sdk-order-book";
 import {
   ConditionalOrder as ConditionalOrderSDK,
   PollParams,
@@ -363,7 +363,9 @@ async function processConditionalOrder(
         blockNumber,
       },
       provider,
-      orderBookApi,
+      // sdk-composable currently resolves its own sdk-order-book copy, so this
+      // boundary needs an explicit cast until the dependency tree is unified.
+      orderBookApi: orderBookApi as unknown as PollParams["orderBookApi"],
     };
 
     let pollResult = await pollConditionalOrder(
