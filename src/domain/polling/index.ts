@@ -4,13 +4,13 @@ import {
   OrderKind,
   computeOrderUid,
 } from "@cowprotocol/contracts";
+import { SupportedChainId } from "@cowprotocol/cow-sdk";
 import {
   OrderBookApi,
   OrderCreation,
   OrderPostError,
   SigningScheme,
-  SupportedChainId,
-} from "@cowprotocol/cow-sdk";
+} from "@cowprotocol/sdk-order-book";
 import {
   ConditionalOrder as ConditionalOrderSDK,
   PollParams,
