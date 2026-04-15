@@ -21,3 +21,6 @@ database*
 
 # Default config
 /config*.json
+
+# Idea
+.idea/
