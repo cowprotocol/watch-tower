@@ -34,10 +34,15 @@ const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const PAGE_SIZE_DEFAULT = 5000;
 
 const SDK_BACKOFF_NUM_OF_ATTEMPTS = 5;
+let sdkAdapter: EthersV5Adapter | undefined;
 
-function configureSdkAdapters(provider: providers.Provider): void {
-  const adapter = new EthersV5Adapter({ provider });
-  setGlobalAdapter(adapter);
+function configureSdkAdapters(provider: providers.Provider): EthersV5Adapter {
+  if (!sdkAdapter) {
+    sdkAdapter = new EthersV5Adapter({ provider });
+    setGlobalAdapter(sdkAdapter);
+  }
+
+  return sdkAdapter;
 }
 
 enum ChainSync {
