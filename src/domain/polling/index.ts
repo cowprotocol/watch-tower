@@ -363,9 +363,7 @@ async function processConditionalOrder(
         blockNumber,
       },
       provider,
-      // sdk-composable currently resolves its own sdk-order-book copy, so this
-      // boundary needs an explicit cast until the dependency tree is unified.
-      orderBookApi: orderBookApi as unknown as PollParams["orderBookApi"],
+      orderBookApi,
     };
 
     let pollResult = await pollConditionalOrder(

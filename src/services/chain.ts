@@ -3,7 +3,6 @@ import {
   setGlobalAdapter,
   SupportedChainId,
 } from "@cowprotocol/cow-sdk";
-import { setGlobalAdapter as setComposableGlobalAdapter } from "@cowprotocol/sdk-composable/node_modules/@cowprotocol/sdk-common";
 import { OrderBookApi } from "@cowprotocol/sdk-order-book";
 import { EthersV5Adapter } from "@cowprotocol/sdk-ethers-v5-adapter";
 import { ethers, providers } from "ethers";
@@ -39,7 +38,6 @@ const SDK_BACKOFF_NUM_OF_ATTEMPTS = 5;
 function configureSdkAdapters(provider: providers.Provider): void {
   const adapter = new EthersV5Adapter({ provider });
   setGlobalAdapter(adapter);
-  setComposableGlobalAdapter(adapter);
 }
 
 enum ChainSync {
