@@ -1,5 +1,5 @@
 import { RunOptions } from "../types";
-import { formatMemoryUsage, getLogger } from "../utils";
+import { getLogger } from "../utils";
 import { DBService, ApiService, ChainContext } from "../services";
 
 // How often to log the process memory usage. This leaves a memory trail in the
@@ -108,4 +108,11 @@ async function stop(exitCode?: number, memoryLogInterval?: NodeJS.Timeout) {
   });
   log.info("Exiting watchtower...");
   process.exit(exitCode || 0);
+}
+
+function formatMemoryUsage(usage: NodeJS.MemoryUsage): string {
+  const toMB = (bytes: number) => Math.round(bytes / 1024 / 1024);
+  return `rss=${toMB(usage.rss)}MB heapUsed=${toMB(
+    usage.heapUsed
+  )}MB heapTotal=${toMB(usage.heapTotal)}MB external=${toMB(usage.external)}MB`;
 }
