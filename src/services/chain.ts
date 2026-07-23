@@ -363,28 +363,24 @@ export class ChainContext {
           log.debug("New block received");
 
           const block = await provider.getBlock(blockNumber);
-          if (block.number < lastBlockReceived.number) {
-            log.debug(`Ignoring stale block ${block.number}`);
-            return;
-          }
-
           // Set the block time metric
           const _blockTime = block.timestamp - lastBlockReceived.timestamp;
           metrics.blockProducingRate.labels(chainId.toString()).set(_blockTime);
+          const [fromBlock, toBlock] = getEventPollingRange(
+            lastBlockReceived.number,
+            block.number
+          );
 
           if (await isReorg(provider, lastBlockReceived, block)) {
-            // This is a re-org, so process the block again
             metrics.reorgsTotal.labels(chainId.toString()).inc();
-            log.warn(`Re-org detected, re-processing block ${blockNumber}`);
-            metrics.reorgDepth.labels(chainId.toString()).set(1);
+            log.warn(`Re-org detected at block ${blockNumber}`);
+            metrics.reorgDepth
+              .labels(chainId.toString())
+              .set(Math.max(lastBlockReceived.number - block.number + 1, 1));
           }
           lastBlockReceived = block;
 
-          const events = await pollContractForEvents(
-            blockNumber,
-            blockNumber,
-            this
-          );
+          const events = await pollContractForEvents(fromBlock, toBlock, this);
 
           await processBlockAndPersist({
             context: this,
@@ -676,9 +672,7 @@ export async function isReorg(
   block: providers.Block
 ): Promise<boolean> {
   if (block.number <= previousBlock.number) {
-    return (
-      block.number === previousBlock.number && block.hash !== previousBlock.hash
-    );
+    return block.hash !== previousBlock.hash;
   }
 
   if (block.number === previousBlock.number + 1) {
@@ -688,4 +682,11 @@ export async function isReorg(
   return (
     (await provider.getBlock(previousBlock.number)).hash !== previousBlock.hash
   );
+}
+
+export function getEventPollingRange(
+  previousBlockNumber: number,
+  blockNumber: number
+): [number, number] {
+  return [Math.min(previousBlockNumber + 1, blockNumber), blockNumber];
 }

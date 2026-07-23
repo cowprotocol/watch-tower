@@ -1,5 +1,5 @@
 import { providers } from "ethers";
-import { isReorg } from "./chain";
+import { getEventPollingRange, isReorg } from "./chain";
 
 const block = (
   number: number,
@@ -23,6 +23,12 @@ describe("isReorg", () => {
   it("detects a consecutive block with a different parent", async () => {
     await expect(
       isReorg(provider, block(10, "old"), block(11, "new", "fork"))
+    ).resolves.toBe(true);
+  });
+
+  it("detects a lower replacement head", async () => {
+    await expect(
+      isReorg(provider, block(10, "old"), block(8, "fork"))
     ).resolves.toBe(true);
   });
 
@@ -50,4 +56,19 @@ describe("isReorg", () => {
       isReorg(provider, block(10, "old"), block(13, "new"))
     ).rejects.toThrow("RPC failed");
   });
+});
+
+describe("getEventPollingRange", () => {
+  it.each([
+    [10, 11, [11, 11]],
+    [10, 13, [11, 13]],
+    [10, 8, [8, 8]],
+  ])(
+    "returns the event range after block %i for incoming block %i",
+    (previousBlockNumber, blockNumber, expected) => {
+      expect(getEventPollingRange(previousBlockNumber, blockNumber)).toEqual(
+        expected
+      );
+    }
+  );
 });
