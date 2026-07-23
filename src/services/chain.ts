@@ -363,6 +363,12 @@ export class ChainContext {
           log.debug("New block received");
 
           const block = await provider.getBlock(blockNumber);
+          const reorg = await isReorg(provider, lastBlockReceived, block);
+          if (!reorg && block.number < lastBlockReceived.number) {
+            log.debug(`Ignoring stale block ${block.number}`);
+            return;
+          }
+
           // Set the block time metric
           const _blockTime = block.timestamp - lastBlockReceived.timestamp;
           metrics.blockProducingRate.labels(chainId.toString()).set(_blockTime);
@@ -371,14 +377,13 @@ export class ChainContext {
             block.number
           );
 
-          if (await isReorg(provider, lastBlockReceived, block)) {
+          if (reorg) {
             metrics.reorgsTotal.labels(chainId.toString()).inc();
             log.warn(`Re-org detected at block ${blockNumber}`);
             metrics.reorgDepth
               .labels(chainId.toString())
               .set(Math.max(lastBlockReceived.number - block.number + 1, 1));
           }
-          lastBlockReceived = block;
 
           const events = await pollContractForEvents(fromBlock, toBlock, this);
 
@@ -390,6 +395,7 @@ export class ChainContext {
             log,
             provider,
           });
+          lastBlockReceived = block;
         } catch (error) {
           log.error(`Error processing block ${blockNumber}`, error);
         }
@@ -671,7 +677,7 @@ export async function isReorg(
   previousBlock: providers.Block,
   block: providers.Block
 ): Promise<boolean> {
-  if (block.number <= previousBlock.number) {
+  if (block.number === previousBlock.number) {
     return block.hash !== previousBlock.hash;
   }
 

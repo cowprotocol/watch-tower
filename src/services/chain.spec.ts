@@ -27,9 +27,20 @@ describe("isReorg", () => {
   });
 
   it("detects a lower replacement head", async () => {
+    provider.getBlock = jest.fn().mockResolvedValue(block(10, "fork"));
+
     await expect(
       isReorg(provider, block(10, "old"), block(8, "fork"))
     ).resolves.toBe(true);
+    expect(provider.getBlock).toHaveBeenCalledWith(10);
+  });
+
+  it("accepts a delayed lower block when the previous block remains canonical", async () => {
+    provider.getBlock = jest.fn().mockResolvedValue(block(10, "old"));
+
+    await expect(
+      isReorg(provider, block(10, "old"), block(8, "canonical"))
+    ).resolves.toBe(false);
   });
 
   it("accepts a block gap when the previous block remains canonical", async () => {
