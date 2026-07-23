@@ -348,56 +348,56 @@ export class ChainContext {
     log.info(`👀 Start block watcher`);
     log.debug(`Watchdog timeout: ${watchdogTimeout} seconds`);
     let lastBlockReceived = lastProcessedBlock;
-    provider.on("block", async (blockNumber: number) => {
+    // Chain callbacks onto a resolved promise so blocks are processed sequentially.
+    let processing = Promise.resolve();
+    provider.on("block", (blockNumber: number) => {
       metrics.blockHeightLatest.labels(chainId.toString()).set(blockNumber);
 
-      try {
-        log = getLogger({
-          name: loggerName,
-          chainId,
-          blockNumber,
-        });
-        log.debug("New block received");
+      processing = processing.then(async () => {
+        try {
+          log = getLogger({
+            name: loggerName,
+            chainId,
+            blockNumber,
+          });
+          log.debug("New block received");
 
-        const block = await provider.getBlock(blockNumber);
+          const block = await provider.getBlock(blockNumber);
+          if (block.number < lastBlockReceived.number) {
+            log.debug(`Ignoring stale block ${block.number}`);
+            return;
+          }
 
-        // Set the block time metric
-        const _blockTime = block.timestamp - lastBlockReceived.timestamp;
-        metrics.blockProducingRate.labels(chainId.toString()).set(_blockTime);
+          // Set the block time metric
+          const _blockTime = block.timestamp - lastBlockReceived.timestamp;
+          metrics.blockProducingRate.labels(chainId.toString()).set(_blockTime);
 
-        if (
-          blockNumber <= lastBlockReceived.number &&
-          block.hash !== lastBlockReceived.hash
-        ) {
-          // This is a re-org, so process the block again
-          metrics.reorgsTotal.labels(chainId.toString()).inc();
-          log.info(`Re-org detected, re-processing block ${blockNumber}`);
-          metrics.reorgDepth
-            .labels(chainId.toString())
-            .set(lastBlockReceived.number - blockNumber + 1);
+          if (await isReorg(provider, lastBlockReceived, block)) {
+            // This is a re-org, so process the block again
+            metrics.reorgsTotal.labels(chainId.toString()).inc();
+            log.warn(`Re-org detected, re-processing block ${blockNumber}`);
+            metrics.reorgDepth.labels(chainId.toString()).set(1);
+          }
+          lastBlockReceived = block;
+
+          const events = await pollContractForEvents(
+            blockNumber,
+            blockNumber,
+            this
+          );
+
+          await processBlockAndPersist({
+            context: this,
+            block,
+            blockNumber,
+            events,
+            log,
+            provider,
+          });
+        } catch (error) {
+          log.error(`Error processing block ${blockNumber}`, error);
         }
-        lastBlockReceived = block;
-
-        const events = await pollContractForEvents(
-          blockNumber,
-          blockNumber,
-          this
-        );
-
-        await processBlockAndPersist({
-          context: this,
-          block,
-          blockNumber,
-          events,
-          log,
-          provider,
-        });
-      } catch (error) {
-        log.error(
-          `Error in pollContractForEvents for block ${blockNumber}`,
-          error
-        );
-      }
+      });
     });
 
     // We run a watchdog to check if we are receiving blocks. This determines if
@@ -668,4 +668,24 @@ function blockToRegistryBlock(block: ethers.providers.Block): RegistryBlock {
     timestamp: block.timestamp,
     hash: block.hash,
   };
+}
+
+export async function isReorg(
+  provider: providers.Provider,
+  previousBlock: providers.Block,
+  block: providers.Block
+): Promise<boolean> {
+  if (block.number <= previousBlock.number) {
+    return (
+      block.number === previousBlock.number && block.hash !== previousBlock.hash
+    );
+  }
+
+  if (block.number === previousBlock.number + 1) {
+    return block.parentHash !== previousBlock.hash;
+  }
+
+  return (
+    (await provider.getBlock(previousBlock.number)).hash !== previousBlock.hash
+  );
 }
