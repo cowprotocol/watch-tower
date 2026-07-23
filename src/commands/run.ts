@@ -5,7 +5,7 @@ import { DBService, ApiService, ChainContext } from "../services";
 // How often to log the process memory usage. This leaves a memory trail in the
 // logs so a restart can be correlated with memory pressure (e.g. OOM) even when
 // only the application logs are available.
-const MEMORY_LOG_FREQUENCY_SECS = 60;
+const MEMORY_LOG_INTERVAL_MS = 60_000;
 
 /**
  * Run the watch-tower 👀🐮
@@ -31,7 +31,7 @@ export async function run(options: RunOptions) {
   log.info(`Memory usage: ${formatMemoryUsage(process.memoryUsage())}`);
   const memoryLogInterval = setInterval(() => {
     log.info(`Memory usage: ${formatMemoryUsage(process.memoryUsage())}`);
-  }, MEMORY_LOG_FREQUENCY_SECS * 1000);
+  }, MEMORY_LOG_INTERVAL);
   memoryLogInterval.unref();
 
   process.on("unhandledRejection", async (error) => {
