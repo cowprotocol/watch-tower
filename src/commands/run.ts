@@ -31,7 +31,7 @@ export async function run(options: RunOptions) {
   log.info(`Memory usage: ${formatMemoryUsage(process.memoryUsage())}`);
   const memoryLogInterval = setInterval(() => {
     log.info(`Memory usage: ${formatMemoryUsage(process.memoryUsage())}`);
-  }, MEMORY_LOG_INTERVAL);
+  }, MEMORY_LOG_INTERVAL_MS);
   memoryLogInterval.unref();
 
   process.on("unhandledRejection", async (error) => {
