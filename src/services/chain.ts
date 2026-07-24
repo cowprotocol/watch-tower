@@ -348,56 +348,58 @@ export class ChainContext {
     log.info(`👀 Start block watcher`);
     log.debug(`Watchdog timeout: ${watchdogTimeout} seconds`);
     let lastBlockReceived = lastProcessedBlock;
-    provider.on("block", async (blockNumber: number) => {
+    // Chain callbacks onto a resolved promise so blocks are processed sequentially.
+    let processing = Promise.resolve();
+    provider.on("block", (blockNumber: number) => {
       metrics.blockHeightLatest.labels(chainId.toString()).set(blockNumber);
 
-      try {
-        log = getLogger({
-          name: loggerName,
-          chainId,
-          blockNumber,
-        });
-        log.debug("New block received");
+      processing = processing.then(async () => {
+        try {
+          log = getLogger({
+            name: loggerName,
+            chainId,
+            blockNumber,
+          });
+          log.debug("New block received");
 
-        const block = await provider.getBlock(blockNumber);
+          const block = await provider.getBlock(blockNumber);
+          const reorg = await isReorg(provider, lastBlockReceived, block);
+          if (!reorg && block.number < lastBlockReceived.number) {
+            log.debug(`Ignoring stale block ${block.number}`);
+            return;
+          }
 
-        // Set the block time metric
-        const _blockTime = block.timestamp - lastBlockReceived.timestamp;
-        metrics.blockProducingRate.labels(chainId.toString()).set(_blockTime);
+          // Set the block time metric
+          const _blockTime = block.timestamp - lastBlockReceived.timestamp;
+          metrics.blockProducingRate.labels(chainId.toString()).set(_blockTime);
+          const [fromBlock, toBlock] = getEventPollingRange(
+            lastBlockReceived.number,
+            block.number
+          );
 
-        if (
-          blockNumber <= lastBlockReceived.number &&
-          block.hash !== lastBlockReceived.hash
-        ) {
-          // This is a re-org, so process the block again
-          metrics.reorgsTotal.labels(chainId.toString()).inc();
-          log.info(`Re-org detected, re-processing block ${blockNumber}`);
-          metrics.reorgDepth
-            .labels(chainId.toString())
-            .set(lastBlockReceived.number - blockNumber + 1);
+          if (reorg) {
+            metrics.reorgsTotal.labels(chainId.toString()).inc();
+            log.warn(`Re-org detected at block ${blockNumber}`);
+            metrics.reorgDepth
+              .labels(chainId.toString())
+              .set(Math.max(lastBlockReceived.number - block.number + 1, 1));
+          }
+
+          const events = await pollContractForEvents(fromBlock, toBlock, this);
+
+          await processBlockAndPersist({
+            context: this,
+            block,
+            blockNumber,
+            events,
+            log,
+            provider,
+          });
+          lastBlockReceived = block;
+        } catch (error) {
+          log.error(`Error processing block ${blockNumber}`, error);
         }
-        lastBlockReceived = block;
-
-        const events = await pollContractForEvents(
-          blockNumber,
-          blockNumber,
-          this
-        );
-
-        await processBlockAndPersist({
-          context: this,
-          block,
-          blockNumber,
-          events,
-          log,
-          provider,
-        });
-      } catch (error) {
-        log.error(
-          `Error in pollContractForEvents for block ${blockNumber}`,
-          error
-        );
-      }
+      });
     });
 
     // We run a watchdog to check if we are receiving blocks. This determines if
@@ -668,4 +670,29 @@ function blockToRegistryBlock(block: ethers.providers.Block): RegistryBlock {
     timestamp: block.timestamp,
     hash: block.hash,
   };
+}
+
+export async function isReorg(
+  provider: providers.Provider,
+  previousBlock: providers.Block,
+  block: providers.Block
+): Promise<boolean> {
+  if (block.number === previousBlock.number) {
+    return block.hash !== previousBlock.hash;
+  }
+
+  if (block.number === previousBlock.number + 1) {
+    return block.parentHash !== previousBlock.hash;
+  }
+
+  return (
+    (await provider.getBlock(previousBlock.number)).hash !== previousBlock.hash
+  );
+}
+
+export function getEventPollingRange(
+  previousBlockNumber: number,
+  blockNumber: number
+): [number, number] {
+  return [Math.min(previousBlockNumber + 1, blockNumber), blockNumber];
 }
