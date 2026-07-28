@@ -3,7 +3,9 @@ import {
   escalatingRetryDelay,
   handleOrderBookError,
   postDiscreteOrder,
+  checkForAndPlaceOrder,
 } from ".";
+import { ConditionalOrder, OrderStatus, Registry } from "../../types";
 import { WATCHDOG_TIMEOUT_DEFAULT_SECS } from "../../services/chain";
 import { initLogging } from "../../utils";
 import { PollResultCode } from "@cowprotocol/sdk-composable";
@@ -106,5 +108,71 @@ describe("postDiscreteOrder", () => {
 
     expect(result).toMatchObject({ result: PollResultCode.UNEXPECTED_ERROR });
     expect((result as { reason: string }).reason).toContain("socket hang up");
+  });
+});
+
+describe("checkForAndPlaceOrder chunked writes", () => {
+  const NOW_EPOCH = 1_784_857_003;
+  const expiredUid = (i: number) =>
+    "0x" +
+    i.toString(16).padStart(64, "0") +
+    "bb".repeat(20) +
+    (NOW_EPOCH - 600).toString(16).padStart(8, "0");
+
+  // More than CHUNK_SIZE (50) so the chunked write at updatedCount === 51 fires
+  const ORDER_COUNT = 60;
+
+  const buildRegistry = (persisted: string[]) => {
+    const orders = Array.from({ length: ORDER_COUNT }, (_, i) => ({
+      id: `0x${i}`,
+      tx: "0xtx",
+      params: { handler: "0xhandler", salt: "0xsalt", staticInput: "0x" },
+      proof: null,
+      orders: new Map([[expiredUid(i), OrderStatus.SUBMITTED]]),
+      composableCow: "0xccow",
+    })) as unknown as ConditionalOrder[];
+
+    const batch: { put: jest.Mock; del: jest.Mock; write: jest.Mock } = {
+      put: jest.fn((key: string, value: string) => {
+        if (String(key) === "CONDITIONAL_ORDER_REGISTRY_8453") {
+          persisted.push(value);
+        }
+        return batch;
+      }),
+      del: jest.fn(() => batch),
+      write: jest.fn(async () => undefined),
+    };
+
+    return new Registry(
+      new Map([["0xowner", new Set(orders)]]) as never,
+      { getDB: () => ({ batch: () => batch }) } as never,
+      "8453",
+      null,
+      { number: 1, timestamp: NOW_EPOCH, hash: "0x0" }
+    );
+  };
+
+  it("excludes expired uids from the first persisted registry", async () => {
+    const persisted: string[] = [];
+    const registry = buildRegistry(persisted);
+
+    const context = {
+      chainId: 8453,
+      registry,
+      filterPolicy: undefined,
+      provider: { _isProvider: true },
+      orderBookApi: {},
+      dryRun: true,
+      contract: {},
+      multicall: {},
+    } as never;
+
+    await checkForAndPlaceOrder(context, {
+      number: 1,
+      timestamp: NOW_EPOCH,
+    } as never).catch(() => undefined);
+
+    expect(persisted.length).toBeGreaterThan(1);
+    expect(persisted[0]).not.toContain(expiredUid(0));
   });
 });

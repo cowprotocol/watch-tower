@@ -172,6 +172,19 @@ export async function checkForAndPlaceOrder(
   const log = getLogger(loggerParams);
   log.debug(`The registry has ${numOwners} owners and ${numOrders} orders`);
 
+  // Evict discrete orders that can no longer be placed. `orders` is otherwise
+  // append-only and dominates the persisted payload, which every write pays
+  // for twice - once to `JSON.stringify` and once to write to LevelDB.
+  //
+  // This is a whole-registry scan, so it runs once per block rather than
+  // inside `write()`. It must happen before the loop below, because that also
+  // writes every CHUNK_SIZE orders - pruning afterwards would leave the first
+  // post-deploy chunks serialising the full expired registry.
+  const pruned = registry.prune(blockTimestamp);
+  if (pruned > 0) {
+    log.debug(`Pruned ${pruned} expired discrete orders`);
+  }
+
   for (const [owner, conditionalOrders] of ownerOrders.entries()) {
     ownerCounter++;
     const log = getLogger({
@@ -325,17 +338,6 @@ export async function checkForAndPlaceOrder(
       ownerOrders.delete(owner);
       metrics.activeOwnersTotal.labels(chainId.toString()).dec();
     }
-  }
-
-  // Evict discrete orders that can no longer be placed. `orders` is otherwise
-  // append-only and dominates the persisted payload, which every write pays
-  // for twice - once to `JSON.stringify` and once to write to LevelDB.
-  //
-  // This is a whole-registry scan, so it runs once per block here rather than
-  // inside `write()`, which is also called on every CHUNK_SIZE orders.
-  const pruned = registry.prune(blockTimestamp);
-  if (pruned > 0) {
-    log.debug(`Pruned ${pruned} expired discrete orders`);
   }
 
   // save the registry - don't catch errors here, as it's now a docker container
