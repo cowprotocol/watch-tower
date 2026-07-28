@@ -3,6 +3,8 @@ export interface RetryOptions {
   attempts: number;
   /** Delay before the first retry; doubles on each subsequent retry */
   baseDelayMs: number;
+  /** Ceiling on the doubling delay, keeping a long retry loop bounded */
+  maxDelayMs?: number;
   /** Called before sleeping, so the caller can log the upcoming retry */
   onRetry?: (attempt: number, error: unknown, delayMs: number) => void;
 }
@@ -15,7 +17,7 @@ export async function withRetry<T>(
   operation: () => Promise<T>,
   options: RetryOptions
 ): Promise<T> {
-  const { attempts, baseDelayMs, onRetry } = options;
+  const { attempts, baseDelayMs, maxDelayMs, onRetry } = options;
 
   let lastError: unknown;
 
@@ -29,7 +31,10 @@ export async function withRetry<T>(
         break;
       }
 
-      const delayMs = baseDelayMs * 2 ** (attempt - 1);
+      const delayMs = Math.min(
+        baseDelayMs * 2 ** (attempt - 1),
+        maxDelayMs ?? Infinity
+      );
       onRetry?.(attempt, error, delayMs);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }

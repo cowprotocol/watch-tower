@@ -505,8 +505,15 @@ export class ChainContext {
         continue;
       }
 
-      // We need to handle our own exit here as the process is not running in a kubernetes pod
-      await registry.storage.close();
+      // We need to handle our own exit here as the process is not running in a
+      // kubernetes pod. Exit even if closing the database fails: warm-up is
+      // retried as a unit, so letting an error escape here would re-enter
+      // `subscribeToNewBlocks` and attach a second `block` listener.
+      try {
+        await registry.storage.close();
+      } catch (error) {
+        log.error("Error closing the database while shutting down", error);
+      }
       process.exit(1);
     }
   }
@@ -520,6 +527,18 @@ export class ChainContext {
       lastProcessedBlock: this.registry.lastProcessedBlock,
       isHealthy: this.isHealthy(),
     };
+  }
+
+  /**
+   * Flag the chain as no longer in sync.
+   *
+   * Called when warm-up has been abandoned: nothing is watching this chain any
+   * more, so `/health` must stop reporting it healthy even though the process
+   * stays up for the chains that are still working.
+   */
+  public markUnhealthy() {
+    this.sync = ChainSync.UNKNOWN;
+    metrics.syncStatus.labels(this.chainId.toString()).set(0);
   }
 
   /** Determine if the specific chain is healthy */

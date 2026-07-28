@@ -51,4 +51,22 @@ describe("withRetry", () => {
     // 3 retries after the initial attempt, doubling each time
     expect(delays).toEqual([1, 2, 4]);
   });
+
+  it("caps the backoff so a long retry loop stays bounded", async () => {
+    const delays: number[] = [];
+    const operation = async () => {
+      throw new Error("rpc down");
+    };
+
+    await expect(
+      withRetry(operation, {
+        attempts: 5,
+        baseDelayMs: 10,
+        maxDelayMs: 25,
+        onRetry: (_a, _e, ms) => delays.push(ms),
+      })
+    ).rejects.toThrow("rpc down");
+
+    expect(delays).toEqual([10, 20, 25, 25]);
+  });
 });
