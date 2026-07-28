@@ -8,11 +8,6 @@ export class TimeoutError extends Error {
 
 /**
  * Bound how long an operation may take.
- *
- * Neither the orderbook SDK nor the ethers providers apply a request timeout,
- * so a hung socket blocks for however long the OS takes to give up on the TCP
- * connection - minutes. Block processing is serialised, so a single wedged
- * request stalls the whole chain watcher behind it.
  */
 export function withTimeout<T>(
   promise: Promise<T>,
