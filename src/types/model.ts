@@ -129,26 +129,28 @@ export function pruneExpiredOrders(
   return pruned;
 }
 
-/** `"0x"` + 32 byte order digest + 20 byte owner + 4 byte `validTo` */
-const ORDER_UID_HEX_LENGTH = 2 + 2 * (32 + 20 + 4);
+/** 32 byte order digest + 20 byte owner + 4 byte `validTo`, as hex characters */
+const ORDER_UID_HEX_CHARS = 2 * (32 + 20 + 4);
 const VALID_TO_HEX_LENGTH = 2 * 4;
+
+/** A complete GPv2 order uid: `0x` followed by 112 hex characters */
+const ORDER_UID_PATTERN = new RegExp(`^0x[0-9a-fA-F]{${ORDER_UID_HEX_CHARS}}$`);
 
 /**
  * Read the `validTo` encoded in the trailing 4 bytes of a GPv2 order uid.
  * Returns `undefined` for anything that isn't a well formed uid, so unknown
  * entries are retained rather than silently discarded.
+ *
+ * The uid must be validated in full before parsing: `parseInt` stops at the
+ * first invalid character instead of returning `NaN`, so a corrupt uid would
+ * otherwise yield a truncated `validTo` that looks long expired and be pruned.
  */
 function getOrderUidValidTo(orderUid: OrderUid): number | undefined {
-  if (
-    typeof orderUid !== "string" ||
-    orderUid.length !== ORDER_UID_HEX_LENGTH
-  ) {
+  if (typeof orderUid !== "string" || !ORDER_UID_PATTERN.test(orderUid)) {
     return undefined;
   }
 
-  const validTo = Number.parseInt(orderUid.slice(-VALID_TO_HEX_LENGTH), 16);
-
-  return Number.isNaN(validTo) ? undefined : validTo;
+  return Number.parseInt(orderUid.slice(-VALID_TO_HEX_LENGTH), 16);
 }
 
 export interface RegistryBlock {
@@ -282,18 +284,6 @@ export class Registry {
   }
 
   public async write(): Promise<void> {
-    // Evict discrete orders that can no longer be placed before serialising.
-    // `orders` is otherwise append-only and dominates the persisted payload -
-    // left unbounded it grows into tens of megabytes, and every block pays for
-    // it twice, once to `JSON.stringify` and once to write to LevelDB.
-    const nowEpoch = this.lastProcessedBlock?.timestamp;
-    if (nowEpoch !== undefined) {
-      const pruned = this.prune(nowEpoch);
-      if (pruned > 0) {
-        this.logger.debug(`Pruned ${pruned} expired discrete orders`);
-      }
-    }
-
     const batch = this.storage
       .getDB()
       .batch()

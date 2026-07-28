@@ -25,14 +25,19 @@ import {
   isRunningInKubernetesPod,
   LoggerWithMethods,
   metrics,
+  withRetry,
   withTimeout,
 } from "../utils";
 
 const WATCHDOG_FREQUENCY_SECS = 5; // 5 seconds
-const WATCHDOG_TIMEOUT_DEFAULT_SECS = 30;
+export const WATCHDOG_TIMEOUT_DEFAULT_SECS = 60;
 
 /** Upper bound on a single RPC call made from the block processing path */
 const RPC_TIMEOUT_MS = 30_000;
+
+/** Warm-up RPC calls are retried rather than crashing the whole run */
+const WARM_UP_RPC_ATTEMPTS = 5;
+const WARM_UP_RPC_BASE_DELAY_MS = 1_000;
 
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const PAGE_SIZE_DEFAULT = 5000;
@@ -192,6 +197,21 @@ export class ChainContext {
   public async warmUp(oneShot?: boolean) {
     const { provider, chainId, processEveryNumBlocks } = this;
     const log = getLogger({ name: "warmUp", chainId });
+
+    // Warm-up runs before the watchdog starts, and any error escaping here
+    // reaches `run()` and exits the process - taking down every other chain
+    // with it. So bound each RPC call and retry transient failures with
+    // backoff, isolating a flaky RPC to the chain it belongs to.
+    const rpc = <T>(operation: () => Promise<T>, description: string) =>
+      withRetry(() => withTimeout(operation(), RPC_TIMEOUT_MS, description), {
+        attempts: WARM_UP_RPC_ATTEMPTS,
+        baseDelayMs: WARM_UP_RPC_BASE_DELAY_MS,
+        onRetry: (attempt, error, delayMs) =>
+          log.warn(
+            `${description} failed (attempt ${attempt}/${WARM_UP_RPC_ATTEMPTS}), retrying in ${delayMs}ms`,
+            error
+          ),
+      });
     let { lastProcessedBlock } = this.registry;
     const { pageSize } = this;
 
@@ -208,7 +228,10 @@ export class ChainContext {
       ? lastProcessedBlock.number + 1
       : this.deploymentBlock;
 
-    let currentBlock = await provider.getBlock("latest");
+    let currentBlock = await rpc(
+      () => provider.getBlock("latest"),
+      "getBlock latest"
+    );
     metrics.blockHeightLatest
       .labels(chainId.toString())
       .set(currentBlock.number);
@@ -220,7 +243,10 @@ export class ChainContext {
         toBlock = !pageSize ? "latest" : fromBlock + (pageSize - 1);
         if (typeof toBlock === "number" && toBlock > currentBlock.number) {
           // refresh the current block
-          currentBlock = await provider.getBlock("latest");
+          currentBlock = await rpc(
+            () => provider.getBlock("latest"),
+            "getBlock latest"
+          );
           metrics.blockHeightLatest
             .labels(chainId.toString())
             .set(currentBlock.number);
@@ -259,7 +285,10 @@ export class ChainContext {
           `Processing events from block ${fromBlock} to block ${toBlock}`
         );
 
-        const events = await pollContractForEvents(fromBlock, toBlock, this);
+        const events = await rpc(
+          () => pollContractForEvents(fromBlock, toBlock, this),
+          `getLogs ${fromBlock}..${toBlock}`
+        );
 
         if (events.length > 0) {
           log.debug(`Found ${events.length} events`);
@@ -295,7 +324,10 @@ export class ChainContext {
         // Persist "toBlock" as the last block (even if there's no events, we are caught up until this block)
         lastProcessedBlock = await persistLastProcessedBlock({
           context: this,
-          block: await provider.getBlock(toBlock),
+          block: await rpc(
+            () => provider.getBlock(toBlock),
+            `getBlock ${toBlock}`
+          ),
           log,
         });
 
@@ -307,7 +339,10 @@ export class ChainContext {
 
       // It may have taken some time to process the blocks, so refresh the current block number
       // and check if we are in sync
-      currentBlock = await provider.getBlock("latest");
+      currentBlock = await rpc(
+        () => provider.getBlock("latest"),
+        "getBlock latest"
+      );
       metrics.blockHeightLatest
         .labels(chainId.toString())
         .set(currentBlock.number);
@@ -389,7 +424,16 @@ export class ChainContext {
               .set(Math.max(lastBlockReceived.number - block.number + 1, 1));
           }
 
-          const events = await pollContractForEvents(fromBlock, toBlock, this);
+          // Bound the RPC call here rather than inside `pollContractForEvents`
+          // - block processing is serialised, so a hung `getLogs` stalls every
+          // block queued behind it. Warm-up shares that helper but pages over
+          // thousands of blocks with no watchdog running, so it must stay
+          // unbounded or a slow backfill would exit the process.
+          const events = await withTimeout(
+            pollContractForEvents(fromBlock, toBlock, this),
+            RPC_TIMEOUT_MS,
+            `getLogs ${fromBlock}..${toBlock}`
+          );
 
           await processBlockAndPersist({
             context: this,
@@ -631,17 +675,11 @@ async function pollContractForEvents(
   const eventName = "ConditionalOrderCreated(address,(address,bytes32,bytes))";
   const topic = ethers.utils.id(eventName);
 
-  // Bound the RPC call - block processing is serialised, so a hung `getLogs`
-  // stalls every block queued behind it.
-  const logs = await withTimeout(
-    provider.getLogs({
-      fromBlock,
-      toBlock,
-      topics: [topic],
-    }),
-    RPC_TIMEOUT_MS,
-    `getLogs ${fromBlock}..${toBlock}`
-  );
+  const logs = await provider.getLogs({
+    fromBlock,
+    toBlock,
+    topics: [topic],
+  });
 
   return logs.reduce<ConditionalOrderCreatedEvent[]>((acc, event) => {
     try {

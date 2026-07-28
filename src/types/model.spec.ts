@@ -51,6 +51,16 @@ describe("pruneExpiredOrders", () => {
     expect(orders.has(malformed)).toBe(true);
   });
 
+  it("keeps a full-length uid whose validTo is not valid hex", () => {
+    // `parseInt` stops at the first invalid character rather than returning
+    // NaN, so a truncated parse would look long expired and be pruned
+    const malformed = "0x" + "aa".repeat(32) + "bb".repeat(20) + "6a6429az";
+    const orders = ordersWith([malformed]);
+
+    expect(pruneExpiredOrders(orders, NOW)).toBe(0);
+    expect(orders.has(malformed)).toBe(true);
+  });
+
   it("prunes only the expired entries of a mixed registry", () => {
     const live = orderUid(NOW + 600, "11");
     const orders = ordersWith([
@@ -117,7 +127,9 @@ describe("Registry.write", () => {
     return batch;
   };
 
-  it("prunes expired discrete orders before serialising", async () => {
+  // `write()` is called on every CHUNK_SIZE orders, so it must stay cheap.
+  // Pruning is a whole-registry scan and belongs to the once-per-block caller.
+  it("does not prune, leaving that to the once-per-block caller", async () => {
     const batch = fakeBatch();
     const storage = {
       getDB: () => ({ batch: () => batch }),
@@ -142,10 +154,6 @@ describe("Registry.write", () => {
 
     await registry.write();
 
-    expect([...order.orders.keys()]).toEqual([live]);
-    const serialised = batch.put.mock.calls.find((call: unknown[]) =>
-      String(call[0]).startsWith("CONDITIONAL_ORDER_REGISTRY_")
-    );
-    expect(String(serialised?.[1])).not.toContain(expired);
+    expect([...order.orders.keys()]).toEqual([expired, live]);
   });
 });

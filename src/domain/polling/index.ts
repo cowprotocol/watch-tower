@@ -130,10 +130,16 @@ const CHUNK_SIZE = 50; // How many orders to process before saving
 
 /**
  * Upper bound on a single `sendOrder` call, including the SDK's internal
- * retries. Comfortably above the observed p99 (~3s) but far below the
- * watchdog timeout, so a wedged socket can't stall block processing.
+ * retries.
+ *
+ * Must stay below `WATCHDOG_TIMEOUT_DEFAULT_SECS` so one wedged socket cannot
+ * on its own push the chain watcher past the watchdog deadline. Still ~6x the
+ * observed p99 (~3.4s), leaving room for the SDK to retry transport failures.
+ *
+ * Note this bounds a *single* call, not a whole block pass - a pass posting
+ * many orders can still exceed the watchdog if each one is slow.
  */
-const ORDER_BOOK_API_TIMEOUT_MS = 60_000;
+export const ORDER_BOOK_API_TIMEOUT_MS = 40_000;
 
 /**
  * Watch for new blocks and check for orders to place
@@ -319,6 +325,17 @@ export async function checkForAndPlaceOrder(
       ownerOrders.delete(owner);
       metrics.activeOwnersTotal.labels(chainId.toString()).dec();
     }
+  }
+
+  // Evict discrete orders that can no longer be placed. `orders` is otherwise
+  // append-only and dominates the persisted payload, which every write pays
+  // for twice - once to `JSON.stringify` and once to write to LevelDB.
+  //
+  // This is a whole-registry scan, so it runs once per block here rather than
+  // inside `write()`, which is also called on every CHUNK_SIZE orders.
+  const pruned = registry.prune(blockTimestamp);
+  if (pruned > 0) {
+    log.debug(`Pruned ${pruned} expired discrete orders`);
   }
 
   // save the registry - don't catch errors here, as it's now a docker container
@@ -567,7 +584,7 @@ export const _printUnfilledOrders = (orders: Map<BytesLike, OrderStatus>) => {
  * @param order to be placed on the cow protocol api
  * @param apiUrl rest api url
  */
-async function postDiscreteOrder(params: {
+export async function postDiscreteOrder(params: {
   conditionalOrder: ConditionalOrder;
   orderUid: string;
   order: any;
@@ -677,8 +694,9 @@ async function postDiscreteOrder(params: {
       // http.ClientRequest in node.js
       reasonError += `Unresponsive API: ${error.request}`;
     } else if (error.message) {
-      // Something happened in setting up the request that triggered an Error
-      reasonError += `. Internal Error: ${error.request}`;
+      // Something happened in setting up the request that triggered an Error,
+      // including a `TimeoutError` from the `withTimeout` wrapper.
+      reasonError += `. Internal Error: ${error.message}`;
     } else {
       reasonError += `. Unhandled Error: ${error.message}`;
     }
