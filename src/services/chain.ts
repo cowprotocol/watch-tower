@@ -32,8 +32,23 @@ import {
 const WATCHDOG_FREQUENCY_SECS = 5; // 5 seconds
 export const WATCHDOG_TIMEOUT_DEFAULT_SECS = 60;
 
-/** Upper bound on a single RPC call made from the block processing path */
-const RPC_TIMEOUT_MS = 30_000;
+/**
+ * Upper bound on a single RPC call made from the block processing path, where
+ * work is serialised behind the watchdog and must fail fast.
+ */
+export const RPC_TIMEOUT_MS = 30_000;
+
+/**
+ * Upper bound on a single warm-up RPC call.
+ *
+ * Deliberately far larger than `RPC_TIMEOUT_MS`: warm-up pages over `pageSize`
+ * blocks at a time and a cold-start backfill can legitimately take minutes per
+ * page on a rate limited RPC. Retrying would not help there - every attempt
+ * would hit the same deadline - and the failure exits the whole process. This
+ * only exists so a genuinely hung socket eventually errors instead of hanging
+ * warm-up forever.
+ */
+export const WARM_UP_RPC_TIMEOUT_MS = 180_000;
 
 /** Warm-up RPC calls are retried rather than crashing the whole run */
 const WARM_UP_RPC_ATTEMPTS = 5;
@@ -203,15 +218,18 @@ export class ChainContext {
     // with it. So bound each RPC call and retry transient failures with
     // backoff, isolating a flaky RPC to the chain it belongs to.
     const rpc = <T>(operation: () => Promise<T>, description: string) =>
-      withRetry(() => withTimeout(operation(), RPC_TIMEOUT_MS, description), {
-        attempts: WARM_UP_RPC_ATTEMPTS,
-        baseDelayMs: WARM_UP_RPC_BASE_DELAY_MS,
-        onRetry: (attempt, error, delayMs) =>
-          log.warn(
-            `${description} failed (attempt ${attempt}/${WARM_UP_RPC_ATTEMPTS}), retrying in ${delayMs}ms`,
-            error
-          ),
-      });
+      withRetry(
+        () => withTimeout(operation(), WARM_UP_RPC_TIMEOUT_MS, description),
+        {
+          attempts: WARM_UP_RPC_ATTEMPTS,
+          baseDelayMs: WARM_UP_RPC_BASE_DELAY_MS,
+          onRetry: (attempt, error, delayMs) =>
+            log.warn(
+              `${description} failed (attempt ${attempt}/${WARM_UP_RPC_ATTEMPTS}), retrying in ${delayMs}ms`,
+              error
+            ),
+        }
+      );
     let { lastProcessedBlock } = this.registry;
     const { pageSize } = this;
 
@@ -426,9 +444,10 @@ export class ChainContext {
 
           // Bound the RPC call here rather than inside `pollContractForEvents`
           // - block processing is serialised, so a hung `getLogs` stalls every
-          // block queued behind it. Warm-up shares that helper but pages over
-          // thousands of blocks with no watchdog running, so it must stay
-          // unbounded or a slow backfill would exit the process.
+          // block queued behind it and must fail fast. Warm-up shares that
+          // helper but bounds it far more loosely (`WARM_UP_RPC_TIMEOUT_MS`),
+          // because paging over thousands of blocks is legitimately slow and
+          // there is no watchdog to satisfy.
           const events = await withTimeout(
             pollContractForEvents(fromBlock, toBlock, this),
             RPC_TIMEOUT_MS,

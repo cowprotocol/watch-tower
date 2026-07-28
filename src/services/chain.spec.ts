@@ -1,6 +1,8 @@
 import { providers } from "ethers";
 import {
   ChainSync,
+  RPC_TIMEOUT_MS,
+  WARM_UP_RPC_TIMEOUT_MS,
   getEventPollingRange,
   isReorg,
   watchdogSyncState,
@@ -102,5 +104,14 @@ describe("watchdogSyncState", () => {
     expect(watchdogSyncState(WATCHDOG_TIMEOUT - 1, WATCHDOG_TIMEOUT)).toBe(
       ChainSync.IN_SYNC
     );
+  });
+});
+
+describe("warm-up RPC bounds", () => {
+  it("allows a warm-up call far longer than a block-path call", () => {
+    // Warm-up pages over thousands of blocks with no watchdog running, so a
+    // slow backfill must be able to finish. The block path is serialised
+    // behind a watchdog and has to fail fast instead.
+    expect(WARM_UP_RPC_TIMEOUT_MS).toBeGreaterThan(RPC_TIMEOUT_MS);
   });
 });

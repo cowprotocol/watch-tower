@@ -82,6 +82,14 @@ export type ConditionalOrder = {
   composableCow: string;
 
   /**
+   * Chain timestamp at which this conditional order was first seen.
+   *
+   * Backfilled on first poll for orders persisted before this field existed,
+   * so the clock starts at that point rather than being unknown forever.
+   */
+  createdAtEpoch?: number;
+
+  /**
    * How many times in a row placing this order has been rejected by the API.
    *
    * Drives an escalating backoff so an order that is permanently invalid (bad
@@ -89,6 +97,14 @@ export type ConditionalOrder = {
    * block. Reset to `0` as soon as an order is accepted.
    */
   consecutiveApiFailures?: number;
+
+  /**
+   * The API error type behind `consecutiveApiFailures`.
+   *
+   * The backoff tiers mean "this order keeps failing the same way", so the
+   * count restarts when the API starts rejecting it for a different reason.
+   */
+  lastApiError?: string;
 
   /**
    * The result of the last poll

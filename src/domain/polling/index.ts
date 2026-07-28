@@ -156,6 +156,9 @@ const API_ERRORS_DROP: DropApiErrorsArray = [
 
 const CHUNK_SIZE = 50; // How many orders to process before saving
 
+/** `lastApiError` value used to scope a run of consecutive request timeouts */
+const TIMEOUT_ERROR_KEY = "Timeout";
+
 /**
  * Upper bound on a single `sendOrder` call, including the SDK's internal
  * retries.
@@ -247,6 +250,13 @@ export async function checkForAndPlaceOrder(
 
         // Save the registry after processing each chunk
         await registry.write();
+      }
+
+      // Orders persisted before `createdAtEpoch` existed have no age, which
+      // would exempt them from the presign cut-off forever. Stamp them on
+      // first sight so the clock starts now rather than never.
+      if (conditionalOrder.createdAtEpoch === undefined) {
+        conditionalOrder.createdAtEpoch = blockTimestamp;
       }
 
       const logOrderDetails = `Processing order ${orderCounter}/${numOrders} with ID ${conditionalOrder.id} from TX ${conditionalOrder.tx} with params:`;
@@ -684,6 +694,7 @@ export async function postDiscreteOrder(params: {
 
     // The order was accepted, so any previous backoff no longer applies
     conditionalOrder.consecutiveApiFailures = 0;
+    conditionalOrder.lastApiError = undefined;
   } catch (error: any) {
     let reasonError = "Error placing order in API";
 
@@ -694,8 +705,11 @@ export async function postDiscreteOrder(params: {
     // once per block.
     if (error instanceof TimeoutError) {
       const consecutiveFailures =
-        (conditionalOrder.consecutiveApiFailures ?? 0) + 1;
+        conditionalOrder.lastApiError === TIMEOUT_ERROR_KEY
+          ? (conditionalOrder.consecutiveApiFailures ?? 0) + 1
+          : 1;
       conditionalOrder.consecutiveApiFailures = consecutiveFailures;
+      conditionalOrder.lastApiError = TIMEOUT_ERROR_KEY;
 
       metrics.orderBookErrorsTotal
         .labels(...metricLabels, "timeout", "Timeout")
@@ -713,9 +727,16 @@ export async function postDiscreteOrder(params: {
       const { status } = error.response;
       const { body } = error;
 
+      // The backoff tiers mean "this order keeps failing the same way", so a
+      // different rejection restarts the count rather than inheriting the
+      // penalty accrued by an unrelated error.
+      const apiError = body?.errorType as string | undefined;
       const consecutiveFailures =
-        (conditionalOrder.consecutiveApiFailures ?? 0) + 1;
+        conditionalOrder.lastApiError === apiError
+          ? (conditionalOrder.consecutiveApiFailures ?? 0) + 1
+          : 1;
       conditionalOrder.consecutiveApiFailures = consecutiveFailures;
+      conditionalOrder.lastApiError = apiError;
 
       const handleErrorResult = handleOrderBookError(
         status,
@@ -730,6 +751,7 @@ export async function postDiscreteOrder(params: {
       // as acceptance so we don't back off a perfectly healthy order.
       if (handleErrorResult.result === PollResultCode.SUCCESS) {
         conditionalOrder.consecutiveApiFailures = 0;
+        conditionalOrder.lastApiError = undefined;
       }
       const isHandled = HANDLED_RESULT_CODES.includes(handleErrorResult.result);
       const logLevel = isHandled ? "info" : "error";
@@ -803,9 +825,9 @@ export function handleOrderBookError(
       }
 
       // Handle some errors, that might be solved in the next block. These are
-      // only *usually* transient though - an order with a permanently invalid
-      // signature would otherwise be re-posted on every block forever, so back
-      // off progressively the longer it keeps failing.
+      // only *usually* transient though - an order that keeps being rejected
+      // would otherwise be re-posted on every block forever, so back off
+      // progressively the longer it keeps failing.
       if (API_ERRORS_TRY_NEXT_BLOCK.includes(apiError)) {
         return escalatingRetryResult(
           consecutiveFailures,

@@ -10,6 +10,8 @@ import { WATCHDOG_TIMEOUT_DEFAULT_SECS } from "../../services/chain";
 import { initLogging, withTimeout } from "../../utils";
 import { PollResultCode } from "@cowprotocol/sdk-composable";
 
+initLogging({});
+
 describe("escalatingRetryDelay", () => {
   it("retries on the next block for the first two failures", () => {
     expect(escalatingRetryDelay(1)).toBeUndefined();
@@ -33,15 +35,18 @@ describe("escalatingRetryDelay", () => {
 describe("handleOrderBookError", () => {
   const NOW = 1_784_857_003;
   const LABELS = ["8453", "0xhandler", "0xowner", "0xid"];
-  const invalidSignature = {
-    errorType: "InvalidEip1271Signature",
-    description: "signature for computed order has bad format",
+  // A transient-but-possibly-permanent error. Note this is deliberately *not*
+  // `InvalidEip1271Signature`, which is exempt from the escalating backoff
+  // because pending presign orders return it legitimately for days.
+  const quoteNotFound = {
+    errorType: "QuoteNotFound",
+    description: "no quote found for the order",
   };
 
   const handle = (consecutiveFailures: number) =>
     handleOrderBookError(
       400,
-      invalidSignature,
+      quoteNotFound,
       new Error("api"),
       NOW,
       LABELS,
@@ -78,8 +83,6 @@ describe("ORDER_BOOK_API_TIMEOUT_MS", () => {
 });
 
 describe("postDiscreteOrder", () => {
-  initLogging({});
-
   const post = (
     sendOrder: jest.Mock,
     conditionalOrder: ConditionalOrder = { id: "0xid" } as ConditionalOrder
@@ -122,6 +125,7 @@ describe("postDiscreteOrder", () => {
     const conditionalOrder = {
       id: "0xid",
       consecutiveApiFailures: 2,
+      lastApiError: "Timeout",
     } as ConditionalOrder;
 
     const result = await post(timesOut(), conditionalOrder);
@@ -204,7 +208,133 @@ describe("checkForAndPlaceOrder chunked writes", () => {
       timestamp: NOW_EPOCH,
     } as never).catch(() => undefined);
 
+    // This assertion is load-bearing: it proves the chunked write at
+    // updatedCount === 51 actually fired, so the check below is meaningful.
     expect(persisted.length).toBeGreaterThan(1);
     expect(persisted[0]).not.toContain(expiredUid(0));
+  });
+
+  it("stamps orders that predate createdAtEpoch so their age is knowable", async () => {
+    const registry = buildRegistry([]);
+
+    const context = {
+      chainId: 8453,
+      registry,
+      filterPolicy: undefined,
+      provider: { _isProvider: true },
+      orderBookApi: {},
+      dryRun: true,
+      contract: {},
+      multicall: {},
+    } as never;
+
+    await checkForAndPlaceOrder(context, {
+      number: 1,
+      timestamp: NOW_EPOCH,
+    } as never).catch(() => undefined);
+
+    const stamped = [...registry.ownerOrders.values()]
+      .flatMap((orders) => [...orders])
+      .map((order) => order.createdAtEpoch);
+    expect(stamped).toEqual(Array(ORDER_COUNT).fill(NOW_EPOCH));
+  });
+});
+
+describe("postDiscreteOrder - presign age", () => {
+  const NOW = 1_784_857_003;
+  const DAY = 24 * 60 * 60;
+
+  const rejectsWithInvalidSignature = () =>
+    jest.fn().mockRejectedValue(
+      Object.assign(new Error("api"), {
+        response: { status: 400 },
+        body: {
+          errorType: "InvalidEip1271Signature",
+          description: "signature for computed order has bad format",
+        },
+      })
+    );
+
+  const postAged = (createdAtEpoch?: number) =>
+    postDiscreteOrder({
+      conditionalOrder: { id: "0xid", createdAtEpoch } as ConditionalOrder,
+      orderUid: "0xuid",
+      order: { kind: "sell", sellAmount: 1n, buyAmount: 1n, feeAmount: 0n },
+      orderBookApi: { sendOrder: rejectsWithInvalidSignature() } as never,
+      blockTimestamp: NOW,
+      dryRun: false,
+      metricLabels: ["8453", "0xhandler", "0xowner", "0xid"],
+      chainId: 8453 as never,
+      blockNumber: 1,
+      ownerNumber: 1,
+      orderNumber: 1,
+    });
+
+  it("keeps polling a presign order still inside the window", async () => {
+    await expect(postAged(NOW - 2 * DAY)).resolves.toMatchObject({
+      result: PollResultCode.TRY_NEXT_BLOCK,
+    });
+  });
+});
+
+describe("postDiscreteOrder - failure counter scoping", () => {
+  const NOW = 1_784_857_003;
+
+  const rejectsWith = (errorType: string) =>
+    jest.fn().mockRejectedValue(
+      Object.assign(new Error("api"), {
+        response: { status: 400 },
+        body: { errorType, description: "d" },
+      })
+    );
+
+  const postWith = (conditionalOrder: ConditionalOrder, sendOrder: jest.Mock) =>
+    postDiscreteOrder({
+      conditionalOrder,
+      orderUid: "0xuid",
+      order: { kind: "sell", sellAmount: 1n, buyAmount: 1n, feeAmount: 0n },
+      orderBookApi: { sendOrder } as never,
+      blockTimestamp: NOW,
+      dryRun: false,
+      metricLabels: ["8453", "0xhandler", "0xowner", "0xid"],
+      chainId: 8453 as never,
+      blockNumber: 1,
+      ownerNumber: 1,
+      orderNumber: 1,
+    });
+
+  // Backoff tiers describe "this order keeps failing the same way". A run of
+  // balance failures must not push an unrelated quote failure straight to the
+  // top tier.
+  it("restarts the count when the API error changes", async () => {
+    const conditionalOrder = {
+      id: "0xid",
+      consecutiveApiFailures: 5,
+      lastApiError: "InsufficientBalance",
+    } as ConditionalOrder;
+
+    const result = await postWith(
+      conditionalOrder,
+      rejectsWith("QuoteNotFound")
+    );
+
+    expect(result).toMatchObject({ result: PollResultCode.TRY_NEXT_BLOCK });
+    expect(conditionalOrder.consecutiveApiFailures).toBe(1);
+  });
+
+  it("keeps counting while the same API error repeats", async () => {
+    const conditionalOrder = {
+      id: "0xid",
+      consecutiveApiFailures: 2,
+      lastApiError: "QuoteNotFound",
+    } as ConditionalOrder;
+
+    const result = await postWith(
+      conditionalOrder,
+      rejectsWith("QuoteNotFound")
+    );
+
+    expect(result).toMatchObject({ result: PollResultCode.TRY_AT_EPOCH });
+    expect(conditionalOrder.consecutiveApiFailures).toBe(3);
   });
 });
