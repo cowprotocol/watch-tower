@@ -32,6 +32,7 @@ import {
   getLogger,
   handleOnChainCustomError,
   metrics,
+  TimeoutError,
   withTimeout,
 } from "../../utils";
 import { badOrder, policy } from "./filtering";
@@ -102,6 +103,33 @@ export function escalatingRetryDelay(
   return (
     delay ?? ESCALATING_BACKOFF_DELAYS[ESCALATING_BACKOFF_DELAYS.length - 1]
   );
+}
+
+/**
+ * Map a consecutive failure count onto the escalating retry progression: retry
+ * on the next block while the failure may still be transient, then back off by
+ * increasing amounts.
+ */
+function escalatingRetryResult(
+  consecutiveFailures: number,
+  blockTimestamp: number,
+  reason: string
+): Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors {
+  const retryDelay = escalatingRetryDelay(consecutiveFailures);
+
+  if (retryDelay === undefined) {
+    return { result: PollResultCode.TRY_NEXT_BLOCK, reason };
+  }
+
+  const nextPollTimestamp = blockTimestamp + retryDelay;
+
+  return {
+    result: PollResultCode.TRY_AT_EPOCH,
+    epoch: nextPollTimestamp,
+    reason: `${reason}. Failed ${consecutiveFailures} times in a row, scheduling next polling in ${Math.floor(
+      retryDelay / 60
+    )} minutes, at ${nextPollTimestamp} ${formatEpoch(nextPollTimestamp)}`,
+  };
 }
 
 const API_ERRORS_DROP: DropApiErrorsArray = [
@@ -658,6 +686,29 @@ export async function postDiscreteOrder(params: {
     conditionalOrder.consecutiveApiFailures = 0;
   } catch (error: any) {
     let reasonError = "Error placing order in API";
+
+    // A timeout carries no response to classify, but it is still a transient
+    // orderbook failure. Back it off on the same progression as one, rather
+    // than reporting an unexpected error and retrying on every block - if the
+    // API is unreachable, every order would otherwise pay the full timeout
+    // once per block.
+    if (error instanceof TimeoutError) {
+      const consecutiveFailures =
+        (conditionalOrder.consecutiveApiFailures ?? 0) + 1;
+      conditionalOrder.consecutiveApiFailures = consecutiveFailures;
+
+      metrics.orderBookErrorsTotal
+        .labels(...metricLabels, "timeout", "Timeout")
+        .inc();
+      log.info(`Unable to place order in API. Result: timeout`, error.message);
+
+      return escalatingRetryResult(
+        consecutiveFailures,
+        blockTimestamp,
+        `OrderBook API timeout: ${error.message}`
+      );
+    }
+
     if (error.response) {
       const { status } = error.response;
       const { body } = error;
@@ -756,23 +807,11 @@ export function handleOrderBookError(
       // signature would otherwise be re-posted on every block forever, so back
       // off progressively the longer it keeps failing.
       if (API_ERRORS_TRY_NEXT_BLOCK.includes(apiError)) {
-        const reason = `OrderBook API Known Error: ${apiError}, ${body?.description}`;
-        const retryDelay = escalatingRetryDelay(consecutiveFailures);
-
-        if (retryDelay === undefined) {
-          return { result: PollResultCode.TRY_NEXT_BLOCK, reason };
-        }
-
-        const nextPollTimestamp = blockTimestamp + retryDelay;
-        return {
-          result: PollResultCode.TRY_AT_EPOCH,
-          epoch: nextPollTimestamp,
-          reason: `${reason}. Failed ${consecutiveFailures} times in a row, scheduling next polling in ${Math.floor(
-            retryDelay / 60
-          )} minutes, at ${nextPollTimestamp} ${formatEpoch(
-            nextPollTimestamp
-          )}`,
-        };
+        return escalatingRetryResult(
+          consecutiveFailures,
+          blockTimestamp,
+          `OrderBook API Known Error: ${apiError}, ${body?.description}`
+        );
       }
 
       // Drop orders that have some element of invalidity

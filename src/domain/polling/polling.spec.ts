@@ -7,7 +7,7 @@ import {
 } from ".";
 import { ConditionalOrder, OrderStatus, Registry } from "../../types";
 import { WATCHDOG_TIMEOUT_DEFAULT_SECS } from "../../services/chain";
-import { initLogging } from "../../utils";
+import { initLogging, withTimeout } from "../../utils";
 import { PollResultCode } from "@cowprotocol/sdk-composable";
 
 describe("escalatingRetryDelay", () => {
@@ -80,9 +80,12 @@ describe("ORDER_BOOK_API_TIMEOUT_MS", () => {
 describe("postDiscreteOrder", () => {
   initLogging({});
 
-  const post = (sendOrder: jest.Mock) =>
+  const post = (
+    sendOrder: jest.Mock,
+    conditionalOrder: ConditionalOrder = { id: "0xid" } as ConditionalOrder
+  ) =>
     postDiscreteOrder({
-      conditionalOrder: { id: "0xid" } as never,
+      conditionalOrder,
       orderUid: "0xuid",
       order: {
         kind: "sell",
@@ -100,6 +103,35 @@ describe("postDiscreteOrder", () => {
       ownerNumber: 1,
       orderNumber: 1,
     });
+
+  // A promise that outlives its deadline, producing a real `TimeoutError`
+  const timesOut = () =>
+    jest.fn(() => withTimeout(new Promise(() => undefined), 1, "sendOrder"));
+
+  it("backs off a timed-out post instead of reporting an unexpected error", async () => {
+    const conditionalOrder = { id: "0xid" } as ConditionalOrder;
+
+    const result = await post(timesOut(), conditionalOrder);
+
+    expect(result.result).not.toBe(PollResultCode.UNEXPECTED_ERROR);
+    expect(result).toMatchObject({ result: PollResultCode.TRY_NEXT_BLOCK });
+    expect(conditionalOrder.consecutiveApiFailures).toBe(1);
+  });
+
+  it("escalates repeated timeouts onto the same backoff progression", async () => {
+    const conditionalOrder = {
+      id: "0xid",
+      consecutiveApiFailures: 2,
+    } as ConditionalOrder;
+
+    const result = await post(timesOut(), conditionalOrder);
+
+    expect(result).toMatchObject({
+      result: PollResultCode.TRY_AT_EPOCH,
+      epoch: 1_784_857_003 + 60,
+    });
+    expect(conditionalOrder.consecutiveApiFailures).toBe(3);
+  });
 
   it("reports why a non-response failure happened instead of 'undefined'", async () => {
     const sendOrder = jest.fn().mockRejectedValue(new Error("socket hang up"));
