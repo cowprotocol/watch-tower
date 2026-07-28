@@ -25,10 +25,34 @@ import {
   isRunningInKubernetesPod,
   LoggerWithMethods,
   metrics,
+  withRetry,
+  withTimeout,
 } from "../utils";
 
 const WATCHDOG_FREQUENCY_SECS = 5; // 5 seconds
-const WATCHDOG_TIMEOUT_DEFAULT_SECS = 30;
+export const WATCHDOG_TIMEOUT_DEFAULT_SECS = 60;
+
+/**
+ * Upper bound on a single RPC call made from the block processing path, where
+ * work is serialised behind the watchdog and must fail fast.
+ */
+export const RPC_TIMEOUT_MS = 30_000;
+
+/**
+ * Upper bound on a single warm-up RPC call.
+ *
+ * Deliberately far larger than `RPC_TIMEOUT_MS`: warm-up pages over `pageSize`
+ * blocks at a time and a cold-start backfill can legitimately take minutes per
+ * page on a rate limited RPC. Retrying would not help there - every attempt
+ * would hit the same deadline - and the failure exits the whole process. This
+ * only exists so a genuinely hung socket eventually errors instead of hanging
+ * warm-up forever.
+ */
+export const WARM_UP_RPC_TIMEOUT_MS = 180_000;
+
+/** Warm-up RPC calls are retried rather than crashing the whole run */
+const WARM_UP_RPC_ATTEMPTS = 5;
+const WARM_UP_RPC_BASE_DELAY_MS = 1_000;
 
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const PAGE_SIZE_DEFAULT = 5000;
@@ -45,7 +69,7 @@ function configureSdkAdapters(provider: providers.Provider): EthersV5Adapter {
   return sdkAdapter;
 }
 
-enum ChainSync {
+export enum ChainSync {
   /** The chain is currently in the warm-up phase, synchronising from contract genesis or lastBlockProcessed */
   SYNCING = "SYNCING",
   /** The chain is in sync with the latest block */
@@ -188,6 +212,24 @@ export class ChainContext {
   public async warmUp(oneShot?: boolean) {
     const { provider, chainId, processEveryNumBlocks } = this;
     const log = getLogger({ name: "warmUp", chainId });
+
+    // Warm-up runs before the watchdog starts, and any error escaping here
+    // reaches `run()` and exits the process - taking down every other chain
+    // with it. So bound each RPC call and retry transient failures with
+    // backoff, isolating a flaky RPC to the chain it belongs to.
+    const rpc = <T>(operation: () => Promise<T>, description: string) =>
+      withRetry(
+        () => withTimeout(operation(), WARM_UP_RPC_TIMEOUT_MS, description),
+        {
+          attempts: WARM_UP_RPC_ATTEMPTS,
+          baseDelayMs: WARM_UP_RPC_BASE_DELAY_MS,
+          onRetry: (attempt, error, delayMs) =>
+            log.warn(
+              `${description} failed (attempt ${attempt}/${WARM_UP_RPC_ATTEMPTS}), retrying in ${delayMs}ms`,
+              error
+            ),
+        }
+      );
     let { lastProcessedBlock } = this.registry;
     const { pageSize } = this;
 
@@ -204,7 +246,10 @@ export class ChainContext {
       ? lastProcessedBlock.number + 1
       : this.deploymentBlock;
 
-    let currentBlock = await provider.getBlock("latest");
+    let currentBlock = await rpc(
+      () => provider.getBlock("latest"),
+      "getBlock latest"
+    );
     metrics.blockHeightLatest
       .labels(chainId.toString())
       .set(currentBlock.number);
@@ -216,7 +261,10 @@ export class ChainContext {
         toBlock = !pageSize ? "latest" : fromBlock + (pageSize - 1);
         if (typeof toBlock === "number" && toBlock > currentBlock.number) {
           // refresh the current block
-          currentBlock = await provider.getBlock("latest");
+          currentBlock = await rpc(
+            () => provider.getBlock("latest"),
+            "getBlock latest"
+          );
           metrics.blockHeightLatest
             .labels(chainId.toString())
             .set(currentBlock.number);
@@ -255,7 +303,10 @@ export class ChainContext {
           `Processing events from block ${fromBlock} to block ${toBlock}`
         );
 
-        const events = await pollContractForEvents(fromBlock, toBlock, this);
+        const events = await rpc(
+          () => pollContractForEvents(fromBlock, toBlock, this),
+          `getLogs ${fromBlock}..${toBlock}`
+        );
 
         if (events.length > 0) {
           log.debug(`Found ${events.length} events`);
@@ -291,7 +342,10 @@ export class ChainContext {
         // Persist "toBlock" as the last block (even if there's no events, we are caught up until this block)
         lastProcessedBlock = await persistLastProcessedBlock({
           context: this,
-          block: await provider.getBlock(toBlock),
+          block: await rpc(
+            () => provider.getBlock(toBlock),
+            `getBlock ${toBlock}`
+          ),
           log,
         });
 
@@ -303,7 +357,10 @@ export class ChainContext {
 
       // It may have taken some time to process the blocks, so refresh the current block number
       // and check if we are in sync
-      currentBlock = await provider.getBlock("latest");
+      currentBlock = await rpc(
+        () => provider.getBlock("latest"),
+        "getBlock latest"
+      );
       metrics.blockHeightLatest
         .labels(chainId.toString())
         .set(currentBlock.number);
@@ -385,7 +442,17 @@ export class ChainContext {
               .set(Math.max(lastBlockReceived.number - block.number + 1, 1));
           }
 
-          const events = await pollContractForEvents(fromBlock, toBlock, this);
+          // Bound the RPC call here rather than inside `pollContractForEvents`
+          // - block processing is serialised, so a hung `getLogs` stalls every
+          // block queued behind it and must fail fast. Warm-up shares that
+          // helper but bounds it far more loosely (`WARM_UP_RPC_TIMEOUT_MS`),
+          // because paging over thousands of blocks is legitimately slow and
+          // there is no watchdog to satisfy.
+          const events = await withTimeout(
+            pollContractForEvents(fromBlock, toBlock, this),
+            RPC_TIMEOUT_MS,
+            `getLogs ${fromBlock}..${toBlock}`
+          );
 
           await processBlockAndPersist({
             context: this,
@@ -415,19 +482,39 @@ export class ChainContext {
 
       // If we haven't received a block within `watchdogTimeout` seconds, either signal
       // an error or exit if not running in a kubernetes pod
-      if (timeElapsed >= watchdogTimeout) {
-        log.error(
-          `Chain watcher last processed a block ${timeElapsed}s ago (${watchdogTimeout}s timeout configured). Check the RPC.`
-        );
-        if (isRunningInKubernetesPod()) {
-          this.sync = ChainSync.UNKNOWN;
-          continue;
+      const sync = watchdogSyncState(timeElapsed, watchdogTimeout);
+      if (sync === ChainSync.IN_SYNC) {
+        // Blocks are flowing again (or never stopped). Clear any previous
+        // `UNKNOWN` so `/health` reports healthy without needing a restart -
+        // otherwise a single transient stall permanently fails the liveness
+        // probe and the pod is killed even though it has recovered.
+        if (this.sync !== ChainSync.IN_SYNC) {
+          log.info(
+            `Chain watcher recovered, last block processed ${timeElapsed}s ago`
+          );
+          this.sync = sync;
         }
-
-        // We need to handle our own exit here as the process is not running in a kubernetes pod
-        await registry.storage.close();
-        process.exit(1);
+        continue;
       }
+
+      log.error(
+        `Chain watcher last processed a block ${timeElapsed}s ago (${watchdogTimeout}s timeout configured). Check the RPC.`
+      );
+      if (isRunningInKubernetesPod()) {
+        this.sync = sync;
+        continue;
+      }
+
+      // We need to handle our own exit here as the process is not running in a
+      // kubernetes pod. Exit even if closing the database fails: warm-up is
+      // retried as a unit, so letting an error escape here would re-enter
+      // `subscribeToNewBlocks` and attach a second `block` listener.
+      try {
+        await registry.storage.close();
+      } catch (error) {
+        log.error("Error closing the database while shutting down", error);
+      }
+      process.exit(1);
     }
   }
 
@@ -440,6 +527,18 @@ export class ChainContext {
       lastProcessedBlock: this.registry.lastProcessedBlock,
       isHealthy: this.isHealthy(),
     };
+  }
+
+  /**
+   * Flag the chain as no longer in sync.
+   *
+   * Called when warm-up has been abandoned: nothing is watching this chain any
+   * more, so `/health` must stop reporting it healthy even though the process
+   * stays up for the chains that are still working.
+   */
+  public markUnhealthy() {
+    this.sync = ChainSync.UNKNOWN;
+    metrics.syncStatus.labels(this.chainId.toString()).set(0);
   }
 
   /** Determine if the specific chain is healthy */
@@ -688,6 +787,17 @@ export async function isReorg(
   return (
     (await provider.getBlock(previousBlock.number)).hash !== previousBlock.hash
   );
+}
+
+/**
+ * Determine the sync state the watchdog should report, given how long ago the
+ * last block was processed.
+ */
+export function watchdogSyncState(
+  timeElapsed: number,
+  watchdogTimeout: number
+): ChainSync {
+  return timeElapsed >= watchdogTimeout ? ChainSync.UNKNOWN : ChainSync.IN_SYNC;
 }
 
 export function getEventPollingRange(

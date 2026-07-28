@@ -1,11 +1,141 @@
 import { RunOptions } from "../types";
-import { getLogger } from "../utils";
+import {
+  getLogger,
+  LoggerWithMethods,
+  RetryOptions,
+  withRetry,
+} from "../utils";
 import { DBService, ApiService, ChainContext } from "../services";
 
 // How often to log the process memory usage. This leaves a memory trail in the
 // logs so a restart can be correlated with memory pressure (e.g. OOM) even when
 // only the application logs are available.
 const MEMORY_LOG_INTERVAL_MS = 60_000;
+
+type WarmUpBackoff = Required<
+  Pick<RetryOptions, "attempts" | "baseDelayMs" | "maxDelayMs">
+>;
+
+/**
+ * How hard to try warming a chain up before abandoning it.
+ *
+ * `ChainContext.warmUp` already retries each individual RPC call, so reaching
+ * here means that chain's endpoint has been unusable for a while. Retry the
+ * whole warm-up on top of that, bounded, so an RPC outage lasting a couple of
+ * minutes resolves itself without a restart: 5s, 10s, 20s, 40s.
+ */
+const WARM_UP_BACKOFF: WarmUpBackoff = {
+  attempts: 5,
+  baseDelayMs: 5_000,
+  maxDelayMs: 60_000,
+};
+
+/** The slice of `ChainContext` that warm-up supervision depends on */
+export interface WarmUpChain {
+  chainId: number;
+  warmUp(oneShot?: boolean): Promise<unknown>;
+  /** Flag the chain as out of sync so `/health` stops reporting it healthy */
+  markUnhealthy(): void;
+}
+
+export interface WarmUpOptions {
+  oneShot?: boolean;
+  /** Overridable so tests don't have to wait out the production backoff */
+  backoff?: WarmUpBackoff;
+}
+
+/**
+ * Warm every chain up concurrently, containing failures to the chain that
+ * caused them.
+ *
+ * `warmUp` throws once a chain has exhausted the retries on one of its RPC
+ * calls. That rejection used to travel through `Promise.all` into `run()`'s
+ * catch block, which exited the process - so a single unreachable endpoint took
+ * down every healthy chain with it, over and over. Each chain is now retried on
+ * its own with bounded backoff, and one that never comes up is marked unhealthy
+ * and left behind rather than aborting its siblings.
+ *
+ * @returns the exit code for the run: non-zero if any chain was abandoned.
+ */
+export async function warmUpChains(
+  chains: WarmUpChain[],
+  options: WarmUpOptions = {}
+): Promise<number> {
+  const log = getLogger({ name: "commands:warmUpChains" });
+  const { oneShot, backoff = WARM_UP_BACKOFF } = options;
+
+  // `allSettled` rather than `all`: `warmUpChain` is written not to throw, but
+  // the whole point of this function is that no single chain can abort the
+  // others, so don't rely on that holding.
+  const results = await Promise.allSettled(
+    chains.map((chain) => warmUpChain(chain, oneShot, backoff, log))
+  );
+
+  const failed = results.filter((result) => {
+    if (result.status === "rejected") {
+      log.error(
+        "Unexpected error thrown while warming up a chain",
+        result.reason
+      );
+      return true;
+    }
+    return !result.value;
+  });
+
+  if (failed.length > 0) {
+    // Healthy chains keep running; this only decides the code the process
+    // eventually exits with, which for a long-running watcher means every
+    // chain was abandoned and there is nothing left to watch.
+    log.error(
+      `${failed.length} of ${chains.length} chains could not be warmed up`
+    );
+    return 1;
+  }
+
+  return 0;
+}
+
+/**
+ * Warm a single chain up, retrying with bounded backoff.
+ * @returns whether the chain was warmed up successfully.
+ */
+async function warmUpChain(
+  chain: WarmUpChain,
+  oneShot: boolean | undefined,
+  backoff: WarmUpBackoff,
+  log: LoggerWithMethods
+): Promise<boolean> {
+  const { chainId } = chain;
+
+  try {
+    await withRetry(() => chain.warmUp(oneShot), {
+      ...backoff,
+      onRetry: (attempt, error, delayMs) =>
+        log.warn(
+          `Chain ${chainId} failed to warm up (attempt ${attempt}/${backoff.attempts}), retrying in ${delayMs}ms`,
+          error
+        ),
+    });
+    return true;
+  } catch (error) {
+    log.error(
+      `Chain ${chainId} gave up warming up after ${backoff.attempts} attempts. Check the RPC.`,
+      error
+    );
+
+    // Flag the chain so `/health` fails and the pod is restarted by its
+    // liveness probe, instead of exiting the process from under the chains
+    // that are working. Guarded so a broken chain cannot take out the rest
+    // through the very code that is supposed to isolate it.
+    try {
+      chain.markUnhealthy();
+    } catch (markError) {
+      log.error(`Could not mark chain ${chainId} as unhealthy`, markError);
+    }
+
+    return false;
+  }
+}
 
 /**
  * Run the watch-tower 👀🐮
@@ -70,13 +200,9 @@ export async function run(options: RunOptions) {
     // Set the chain contexts on the API server
     api?.setChainContexts(chainContexts);
 
-    // Run the block watcher after warm up for each chain
-    const runPromises = chainContexts.map(async (context) => {
-      return context.warmUp(oneShot);
-    });
-
-    // Run all the chain contexts
-    await Promise.all(runPromises);
+    // Warm up each chain and then run its block watcher. Failures are
+    // contained per chain, so a bad RPC endpoint cannot stop the others.
+    exitCode = await warmUpChains(chainContexts, { oneShot });
   } catch (error) {
     log.error("Unexpected error thrown when running watchtower", error);
     exitCode = 1;
