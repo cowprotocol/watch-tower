@@ -25,10 +25,14 @@ import {
   isRunningInKubernetesPod,
   LoggerWithMethods,
   metrics,
+  withTimeout,
 } from "../utils";
 
 const WATCHDOG_FREQUENCY_SECS = 5; // 5 seconds
 const WATCHDOG_TIMEOUT_DEFAULT_SECS = 30;
+
+/** Upper bound on a single RPC call made from the block processing path */
+const RPC_TIMEOUT_MS = 30_000;
 
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const PAGE_SIZE_DEFAULT = 5000;
@@ -45,7 +49,7 @@ function configureSdkAdapters(provider: providers.Provider): EthersV5Adapter {
   return sdkAdapter;
 }
 
-enum ChainSync {
+export enum ChainSync {
   /** The chain is currently in the warm-up phase, synchronising from contract genesis or lastBlockProcessed */
   SYNCING = "SYNCING",
   /** The chain is in sync with the latest block */
@@ -415,19 +419,32 @@ export class ChainContext {
 
       // If we haven't received a block within `watchdogTimeout` seconds, either signal
       // an error or exit if not running in a kubernetes pod
-      if (timeElapsed >= watchdogTimeout) {
-        log.error(
-          `Chain watcher last processed a block ${timeElapsed}s ago (${watchdogTimeout}s timeout configured). Check the RPC.`
-        );
-        if (isRunningInKubernetesPod()) {
-          this.sync = ChainSync.UNKNOWN;
-          continue;
+      const sync = watchdogSyncState(timeElapsed, watchdogTimeout);
+      if (sync === ChainSync.IN_SYNC) {
+        // Blocks are flowing again (or never stopped). Clear any previous
+        // `UNKNOWN` so `/health` reports healthy without needing a restart -
+        // otherwise a single transient stall permanently fails the liveness
+        // probe and the pod is killed even though it has recovered.
+        if (this.sync !== ChainSync.IN_SYNC) {
+          log.info(
+            `Chain watcher recovered, last block processed ${timeElapsed}s ago`
+          );
+          this.sync = sync;
         }
-
-        // We need to handle our own exit here as the process is not running in a kubernetes pod
-        await registry.storage.close();
-        process.exit(1);
+        continue;
       }
+
+      log.error(
+        `Chain watcher last processed a block ${timeElapsed}s ago (${watchdogTimeout}s timeout configured). Check the RPC.`
+      );
+      if (isRunningInKubernetesPod()) {
+        this.sync = sync;
+        continue;
+      }
+
+      // We need to handle our own exit here as the process is not running in a kubernetes pod
+      await registry.storage.close();
+      process.exit(1);
     }
   }
 
@@ -614,11 +631,17 @@ async function pollContractForEvents(
   const eventName = "ConditionalOrderCreated(address,(address,bytes32,bytes))";
   const topic = ethers.utils.id(eventName);
 
-  const logs = await provider.getLogs({
-    fromBlock,
-    toBlock,
-    topics: [topic],
-  });
+  // Bound the RPC call - block processing is serialised, so a hung `getLogs`
+  // stalls every block queued behind it.
+  const logs = await withTimeout(
+    provider.getLogs({
+      fromBlock,
+      toBlock,
+      topics: [topic],
+    }),
+    RPC_TIMEOUT_MS,
+    `getLogs ${fromBlock}..${toBlock}`
+  );
 
   return logs.reduce<ConditionalOrderCreatedEvent[]>((acc, event) => {
     try {
@@ -688,6 +711,17 @@ export async function isReorg(
   return (
     (await provider.getBlock(previousBlock.number)).hash !== previousBlock.hash
   );
+}
+
+/**
+ * Determine the sync state the watchdog should report, given how long ago the
+ * last block was processed.
+ */
+export function watchdogSyncState(
+  timeElapsed: number,
+  watchdogTimeout: number
+): ChainSync {
+  return timeElapsed >= watchdogTimeout ? ChainSync.UNKNOWN : ChainSync.IN_SYNC;
 }
 
 export function getEventPollingRange(

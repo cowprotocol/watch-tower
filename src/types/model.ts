@@ -82,6 +82,15 @@ export type ConditionalOrder = {
   composableCow: string;
 
   /**
+   * How many times in a row placing this order has been rejected by the API.
+   *
+   * Drives an escalating backoff so an order that is permanently invalid (bad
+   * EIP-1271 signature, unknown appData pre-image) stops being retried on every
+   * block. Reset to `0` as soon as an order is accepted.
+   */
+  consecutiveApiFailures?: number;
+
+  /**
    * The result of the last poll
    */
   pollResult?: {
@@ -91,13 +100,64 @@ export type ConditionalOrder = {
   };
 };
 
+/**
+ * Drop discrete orders that can no longer be placed from the dedup map.
+ *
+ * `orders` only exists to avoid re-posting an `orderUid` we have already
+ * submitted. Once an order's `validTo` has passed it can never be posted
+ * again, so retaining it serves no purpose - and left unbounded this map is
+ * what makes the persisted registry grow into the tens of megabytes.
+ *
+ * @returns the number of entries removed
+ */
+export function pruneExpiredOrders(
+  orders: Map<OrderUid, OrderStatus>,
+  nowEpoch: number
+): number {
+  let pruned = 0;
+
+  // Deleting while iterating a `Map` is well defined - entries already visited
+  // are unaffected and the deleted key is simply skipped.
+  for (const orderUid of orders.keys()) {
+    const validTo = getOrderUidValidTo(orderUid);
+    if (validTo !== undefined && validTo < nowEpoch) {
+      orders.delete(orderUid);
+      pruned++;
+    }
+  }
+
+  return pruned;
+}
+
+/** `"0x"` + 32 byte order digest + 20 byte owner + 4 byte `validTo` */
+const ORDER_UID_HEX_LENGTH = 2 + 2 * (32 + 20 + 4);
+const VALID_TO_HEX_LENGTH = 2 * 4;
+
+/**
+ * Read the `validTo` encoded in the trailing 4 bytes of a GPv2 order uid.
+ * Returns `undefined` for anything that isn't a well formed uid, so unknown
+ * entries are retained rather than silently discarded.
+ */
+function getOrderUidValidTo(orderUid: OrderUid): number | undefined {
+  if (
+    typeof orderUid !== "string" ||
+    orderUid.length !== ORDER_UID_HEX_LENGTH
+  ) {
+    return undefined;
+  }
+
+  const validTo = Number.parseInt(orderUid.slice(-VALID_TO_HEX_LENGTH), 16);
+
+  return Number.isNaN(validTo) ? undefined : validTo;
+}
+
 export interface RegistryBlock {
   number: number;
   timestamp: number;
   hash: string;
 }
 
-type OrdersPerOwner = Map<Owner, Set<ConditionalOrder>>;
+export type OrdersPerOwner = Map<Owner, Set<ConditionalOrder>>;
 
 /**
  * Models the state between executions.
@@ -205,9 +265,35 @@ export class Registry {
   }
 
   /**
-   * Write the registry to storage.
+   * Drop discrete orders that can no longer be placed, across every owner.
+   * @param nowEpoch the chain timestamp to consider "now"
+   * @returns the number of entries removed
    */
+  public prune(nowEpoch: number): number {
+    let pruned = 0;
+
+    for (const conditionalOrders of this.ownerOrders.values()) {
+      for (const conditionalOrder of conditionalOrders) {
+        pruned += pruneExpiredOrders(conditionalOrder.orders, nowEpoch);
+      }
+    }
+
+    return pruned;
+  }
+
   public async write(): Promise<void> {
+    // Evict discrete orders that can no longer be placed before serialising.
+    // `orders` is otherwise append-only and dominates the persisted payload -
+    // left unbounded it grows into tens of megabytes, and every block pays for
+    // it twice, once to `JSON.stringify` and once to write to LevelDB.
+    const nowEpoch = this.lastProcessedBlock?.timestamp;
+    if (nowEpoch !== undefined) {
+      const pruned = this.prune(nowEpoch);
+      if (pruned > 0) {
+        this.logger.debug(`Pruned ${pruned} expired discrete orders`);
+      }
+    }
+
     const batch = this.storage
       .getDB()
       .batch()

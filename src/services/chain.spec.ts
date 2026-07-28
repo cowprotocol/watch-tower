@@ -1,5 +1,10 @@
 import { providers } from "ethers";
-import { getEventPollingRange, isReorg } from "./chain";
+import {
+  ChainSync,
+  getEventPollingRange,
+  isReorg,
+  watchdogSyncState,
+} from "./chain";
 
 const block = (
   number: number,
@@ -82,4 +87,20 @@ describe("getEventPollingRange", () => {
       );
     }
   );
+});
+
+describe("watchdogSyncState", () => {
+  const WATCHDOG_TIMEOUT = 300;
+
+  it("reports UNKNOWN once the timeout has elapsed without a processed block", () => {
+    expect(watchdogSyncState(WATCHDOG_TIMEOUT, WATCHDOG_TIMEOUT)).toBe(
+      ChainSync.UNKNOWN
+    );
+  });
+
+  it("recovers to IN_SYNC once blocks are being processed again", () => {
+    expect(watchdogSyncState(WATCHDOG_TIMEOUT - 1, WATCHDOG_TIMEOUT)).toBe(
+      ChainSync.IN_SYNC
+    );
+  });
 });

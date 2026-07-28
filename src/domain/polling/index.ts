@@ -32,6 +32,7 @@ import {
   getLogger,
   handleOnChainCustomError,
   metrics,
+  withTimeout,
 } from "../../utils";
 import { badOrder, policy } from "./filtering";
 import { pollConditionalOrder } from "./poll";
@@ -72,6 +73,37 @@ const API_ERRORS_BACKOFF: BackOffApiErrorsDelays = {
   [ApiErrors.INVALID_APP_DATA]: ONE_MIN, // Give the user some time to upload the correct appData
 };
 
+/** How many times to retry on the very next block before backing off */
+const TRY_NEXT_BLOCK_MAX_ATTEMPTS = 2;
+/** Backoff applied once `TRY_NEXT_BLOCK_MAX_ATTEMPTS` is exhausted */
+const ESCALATING_BACKOFF_DELAYS = [ONE_MIN, TEN_MINS, ONE_HOUR];
+
+/**
+ * Escalating backoff for API errors that are *usually* transient but, when
+ * they aren't, would otherwise be retried on every single block forever.
+ *
+ * @param consecutiveFailures how many times in a row this order has failed,
+ * including the current failure
+ * @returns seconds to wait before the next attempt, or `undefined` to retry on
+ * the next block
+ */
+export function escalatingRetryDelay(
+  consecutiveFailures: number
+): number | undefined {
+  if (consecutiveFailures <= TRY_NEXT_BLOCK_MAX_ATTEMPTS) {
+    return undefined;
+  }
+
+  const delay =
+    ESCALATING_BACKOFF_DELAYS[
+      consecutiveFailures - TRY_NEXT_BLOCK_MAX_ATTEMPTS - 1
+    ];
+
+  return (
+    delay ?? ESCALATING_BACKOFF_DELAYS[ESCALATING_BACKOFF_DELAYS.length - 1]
+  );
+}
+
 const API_ERRORS_DROP: DropApiErrorsArray = [
   ApiErrors.SELL_AMOUNT_OVERFLOW, // Implies a `feeAmount` has been set and `sellAmount` + `feeAmount` > `type(uint256).max`
   ApiErrors.TRANSFER_SIMULATION_FAILED, // Sell token can't be transferred, drop it
@@ -95,6 +127,13 @@ const API_ERRORS_DROP: DropApiErrorsArray = [
 // ApiErrors.AppDataHashMismatch - we never submit full appData
 
 const CHUNK_SIZE = 50; // How many orders to process before saving
+
+/**
+ * Upper bound on a single `sendOrder` call, including the SDK's internal
+ * retries. Comfortably above the observed p99 (~3s) but far below the
+ * watchdog timeout, so a wedged socket can't stall block processing.
+ */
+const ORDER_BOOK_API_TIMEOUT_MS = 60_000;
 
 /**
  * Watch for new blocks and check for orders to place
@@ -587,23 +626,41 @@ async function postDiscreteOrder(params: {
     );
     log.debug(`Post order ${orderUid} details`, postOrder);
     if (!dryRun) {
-      const orderUid = await orderBookApi.sendOrder(postOrder);
+      const orderUid = await withTimeout(
+        orderBookApi.sendOrder(postOrder),
+        ORDER_BOOK_API_TIMEOUT_MS,
+        `sendOrder (ID=${conditionalOrder.id})`
+      );
       metrics.orderBookDiscreteOrdersTotal.labels(...metricLabels).inc();
       log.info(`API response`, { orderUid });
     }
+
+    // The order was accepted, so any previous backoff no longer applies
+    conditionalOrder.consecutiveApiFailures = 0;
   } catch (error: any) {
     let reasonError = "Error placing order in API";
     if (error.response) {
       const { status } = error.response;
       const { body } = error;
 
+      const consecutiveFailures =
+        (conditionalOrder.consecutiveApiFailures ?? 0) + 1;
+      conditionalOrder.consecutiveApiFailures = consecutiveFailures;
+
       const handleErrorResult = handleOrderBookError(
         status,
         body,
         error,
         blockTimestamp,
-        metricLabels
+        metricLabels,
+        consecutiveFailures
       );
+
+      // A duplicated order means it is already in the orderbook - treat that
+      // as acceptance so we don't back off a perfectly healthy order.
+      if (handleErrorResult.result === PollResultCode.SUCCESS) {
+        conditionalOrder.consecutiveApiFailures = 0;
+      }
       const isHandled = HANDLED_RESULT_CODES.includes(handleErrorResult.result);
       const logLevel = isHandled ? "info" : "error";
       log[logLevel](
@@ -636,12 +693,13 @@ async function postDiscreteOrder(params: {
   return { result: PollResultCode.SUCCESS };
 }
 
-function handleOrderBookError(
+export function handleOrderBookError(
   status: any,
   body: any,
   error: any,
   blockTimestamp: number,
-  metricLabels: string[]
+  metricLabels: string[],
+  consecutiveFailures: number
 ): Omit<PollResultSuccess, "order" | "signature"> | PollResultErrors {
   const apiError = body?.errorType as OrderPostError.errorType;
   metrics.orderBookErrorsTotal
@@ -673,11 +731,27 @@ function handleOrderBookError(
         };
       }
 
-      // Handle some errors, that might be solved in the next block
+      // Handle some errors, that might be solved in the next block. These are
+      // only *usually* transient though - an order with a permanently invalid
+      // signature would otherwise be re-posted on every block forever, so back
+      // off progressively the longer it keeps failing.
       if (API_ERRORS_TRY_NEXT_BLOCK.includes(apiError)) {
+        const reason = `OrderBook API Known Error: ${apiError}, ${body?.description}`;
+        const retryDelay = escalatingRetryDelay(consecutiveFailures);
+
+        if (retryDelay === undefined) {
+          return { result: PollResultCode.TRY_NEXT_BLOCK, reason };
+        }
+
+        const nextPollTimestamp = blockTimestamp + retryDelay;
         return {
-          result: PollResultCode.TRY_NEXT_BLOCK,
-          reason: `OrderBook API Known Error: ${apiError}, ${body?.description}`,
+          result: PollResultCode.TRY_AT_EPOCH,
+          epoch: nextPollTimestamp,
+          reason: `${reason}. Failed ${consecutiveFailures} times in a row, scheduling next polling in ${Math.floor(
+            retryDelay / 60
+          )} minutes, at ${nextPollTimestamp} ${formatEpoch(
+            nextPollTimestamp
+          )}`,
         };
       }
 
