@@ -304,7 +304,7 @@ export class ChainContext {
         );
 
         const events = await rpc(
-          () => pollContractForEvents(fromBlock, toBlock, this),
+          () => pollContractForEvents(fromBlock, toBlock, this, log),
           `getLogs ${fromBlock}..${toBlock}`
         );
 
@@ -449,7 +449,7 @@ export class ChainContext {
           // because paging over thousands of blocks is legitimately slow and
           // there is no watchdog to satisfy.
           const events = await withTimeout(
-            pollContractForEvents(fromBlock, toBlock, this),
+            pollContractForEvents(fromBlock, toBlock, this, log),
             RPC_TIMEOUT_MS,
             `getLogs ${fromBlock}..${toBlock}`
           );
@@ -706,7 +706,8 @@ async function processBlockAndPersist(params: {
 async function pollContractForEvents(
   fromBlock: number,
   toBlock: number | "latest",
-  context: ChainContext
+  context: ChainContext,
+  log: LoggerWithMethods
 ): Promise<ConditionalOrderCreatedEvent[]> {
   const { provider, chainId, addresses } = context;
   const composableCow = composableCowContract(provider, chainId);
@@ -717,6 +718,12 @@ async function pollContractForEvents(
     fromBlock,
     toBlock,
     topics: [topic],
+  });
+
+  log.debug("Conditional-order discovery RPC response", {
+    fromBlock,
+    toBlock,
+    logCount: logs.length,
   });
 
   return logs.reduce<ConditionalOrderCreatedEvent[]>((acc, event) => {
@@ -733,8 +740,12 @@ async function pollContractForEvents(
           ...event,
         });
       }
-    } catch {
-      // Ignore errors and do not add to the accumulator
+    } catch (error) {
+      log.error(
+        "Failed to decode ConditionalOrderCreated RPC log",
+        { fromBlock, toBlock, rpcLog: event },
+        error
+      );
     }
     return acc;
   }, []);
