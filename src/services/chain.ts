@@ -720,12 +720,6 @@ async function pollContractForEvents(
     topics: [topic],
   });
 
-  log.debug("Conditional-order discovery RPC response", {
-    fromBlock,
-    toBlock,
-    logCount: logs.length,
-  });
-
   return logs.reduce<ConditionalOrderCreatedEvent[]>((acc, event) => {
     try {
       const decoded = composableCow.interface.decodeEventLog(
