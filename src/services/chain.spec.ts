@@ -1,10 +1,14 @@
-import { providers } from "ethers";
+import { ethers, providers } from "ethers";
+import { ComposableCoW__factory } from "../types";
+import { LoggerWithMethods } from "../utils";
 import {
+  ChainContext,
   ChainSync,
   RPC_TIMEOUT_MS,
   WARM_UP_RPC_TIMEOUT_MS,
   getEventPollingRange,
   isReorg,
+  pollContractForEvents,
   watchdogSyncState,
 } from "./chain";
 
@@ -89,6 +93,84 @@ describe("getEventPollingRange", () => {
       );
     }
   );
+});
+
+describe("pollContractForEvents", () => {
+  const composableCow = ComposableCoW__factory.createInterface();
+  // Checksummed, as ethers returns decoded addresses
+  const OWNER = ethers.utils.getAddress(
+    "0x1234567890abcdef1234567890abcdef12345678"
+  );
+  const OTHER_OWNER = ethers.utils.getAddress(
+    "0x00000000000000000000000000000000000000aa"
+  );
+  const HANDLER = ethers.utils.getAddress(
+    "0x6cf1e9ca41f7611def408122793c358a3d11e5a5"
+  );
+
+  const rpcLog = (owner: string, logIndex: number): providers.Log => {
+    const { data, topics } = composableCow.encodeEventLog(
+      composableCow.getEvent("ConditionalOrderCreated"),
+      [owner, [HANDLER, ethers.constants.HashZero, "0x"]]
+    );
+    return {
+      blockNumber: 1,
+      blockHash: ethers.constants.HashZero,
+      transactionIndex: 0,
+      removed: false,
+      address: "0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74",
+      data,
+      topics,
+      transactionHash: ethers.constants.HashZero,
+      logIndex,
+    };
+  };
+
+  const log = {
+    error: jest.fn(),
+  } as unknown as LoggerWithMethods;
+
+  const poll = (addresses?: string[]) => {
+    const provider = {
+      _isProvider: true,
+      getLogs: jest
+        .fn()
+        .mockResolvedValue([rpcLog(OWNER, 0), rpcLog(OTHER_OWNER, 1)]),
+    };
+    const context = {
+      provider,
+      chainId: 1,
+      addresses,
+    } as unknown as ChainContext;
+    return pollContractForEvents(1, 1, context, log);
+  };
+
+  const owners = (events: { topics: string[] }[]) =>
+    events.map(({ topics }) => ethers.utils.hexDataSlice(topics[1], 12));
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it("returns every event when no owner filter is set", async () => {
+    const events = await poll();
+
+    expect(owners(events)).toEqual([
+      OWNER.toLowerCase(),
+      OTHER_OWNER.toLowerCase(),
+    ]);
+  });
+
+  it("returns only the events of the configured owners", async () => {
+    const events = await poll([OWNER]);
+
+    expect(owners(events)).toEqual([OWNER.toLowerCase()]);
+    expect(log.error).not.toHaveBeenCalled();
+  });
+
+  it("matches configured owners regardless of address casing", async () => {
+    const events = await poll([OWNER.toLowerCase()]);
+
+    expect(owners(events)).toEqual([OWNER.toLowerCase()]);
+  });
 });
 
 describe("watchdogSyncState", () => {
