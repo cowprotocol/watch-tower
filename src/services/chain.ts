@@ -703,7 +703,7 @@ async function processBlockAndPersist(params: {
   }
 }
 
-async function pollContractForEvents(
+export async function pollContractForEvents(
   fromBlock: number,
   toBlock: number | "latest",
   context: ChainContext,
@@ -726,13 +726,20 @@ async function pollContractForEvents(
         topic,
         event.data,
         event.topics
-      ) as unknown as ConditionalOrderCreatedEvent;
+      );
 
-      if (!addresses || addresses.includes(decoded.args.owner)) {
+      // `decodeEventLog` returns the decoded values directly (there is no
+      // `args`), and checksums addresses while `--only-owner` takes them as
+      // typed, so compare case-insensitively
+      const owner = (decoded.owner as string).toLowerCase();
+      if (
+        !addresses ||
+        addresses.some((address) => address.toLowerCase() === owner)
+      ) {
         acc.push({
           ...decoded,
           ...event,
-        });
+        } as unknown as ConditionalOrderCreatedEvent);
       }
     } catch (error) {
       log.error(
