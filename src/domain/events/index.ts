@@ -217,6 +217,18 @@ function addOrder(
   const { handler, salt, staticInput } = params;
   const { network, ownerOrders } = registry;
 
+  const feeHandler = context.feeTokenSwaps?.handler;
+  const feeSwapComposableCow =
+    feeHandler && handler.toLowerCase() === feeHandler
+      ? context.contract.address.toLowerCase()
+      : undefined;
+  if (
+    feeSwapComposableCow &&
+    (proof !== null || composableCow.toLowerCase() !== feeSwapComposableCow)
+  ) {
+    return false;
+  }
+
   const conditionalOrderParams = toConditionalOrderParams(params);
   const conditionalOrderId = ConditionalOrder.leafToId(params);
 
@@ -236,8 +248,16 @@ function addOrder(
     }
   }
 
-  if (ownerOrders.has(owner)) {
-    const conditionalOrders = ownerOrders.get(owner);
+  const order = {
+    id: conditionalOrderId,
+    tx,
+    params,
+    proof,
+    orders: new Map(),
+    composableCow,
+  };
+  const conditionalOrders = ownerOrders.get(owner);
+  if (conditionalOrders) {
     log.info(`Adding conditional order to already existing owner ${owner}`, {
       conditionalOrderId,
       tx,
@@ -245,33 +265,21 @@ function addOrder(
       salt,
       staticInput,
     });
-    let exists = false;
-    // Iterate over the conditionalOrders to make sure that the params are not already in the registry
-    for (const conditionalOrder of conditionalOrders?.values() ?? []) {
-      // Check if the params are in the conditionalOrder
-      const areConditionalOrderParamsEqual =
-        !!conditionalOrder &&
-        getAreConditionalOrderParamsEqual(conditionalOrder.params, params);
-
-      if (areConditionalOrderParamsEqual) {
-        exists = true;
-        break;
-      }
+    for (const conditionalOrder of conditionalOrders) {
+      if (!getAreConditionalOrderParamsEqual(conditionalOrder.params, params))
+        continue;
+      if (
+        !feeSwapComposableCow ||
+        (conditionalOrder.proof === null &&
+          conditionalOrder.composableCow.toLowerCase() === feeSwapComposableCow)
+      )
+        return false;
+      conditionalOrders.delete(conditionalOrder);
+      metrics.activeOrdersTotal.labels(chainId.toString()).dec();
     }
 
-    // If the params are not in the conditionalOrder
-    if (!exists) {
-      // Add the order for existing owner
-      conditionalOrders?.add({
-        id: conditionalOrderId,
-        tx,
-        params: { handler, salt, staticInput },
-        proof,
-        orders: new Map(),
-        composableCow,
-      });
-      return true;
-    }
+    conditionalOrders.add(order);
+    return true;
   } else {
     // Add the order for new owner
     log.info(`Adding conditional order to new owner ${owner}:`, {
@@ -281,25 +289,11 @@ function addOrder(
       salt,
       staticInput,
     });
-    registry.ownerOrders.set(
-      owner,
-      new Set([
-        {
-          id: conditionalOrderId,
-          tx,
-          params,
-          proof,
-          orders: new Map(),
-          composableCow,
-        },
-      ])
-    );
+    ownerOrders.set(owner, new Set([order]));
 
     metrics.activeOwnersTotal.labels(network).inc();
     return true;
   }
-
-  return false;
 }
 
 /**

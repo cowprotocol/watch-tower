@@ -10,19 +10,22 @@ export class DBService {
 
   private static _instance: DBService | undefined;
 
-  protected constructor(path = DEFAULT_DB_LOCATION) {
+  protected constructor(path = DEFAULT_DB_LOCATION, createIfMissing = true) {
     const options: DatabaseOptions<string, string> = {
       valueEncoding: "json",
-      createIfMissing: true,
+      createIfMissing,
       errorIfExists: false,
     };
 
     this.db = new Level<string, string>(path, options);
   }
 
-  public static getInstance(path?: string): DBService {
+  public static getInstance(
+    path?: string,
+    createIfMissing?: boolean
+  ): DBService {
     if (!DBService._instance) {
-      DBService._instance = new DBService(path);
+      DBService._instance = new DBService(path, createIfMissing);
     }
     return DBService._instance;
   }

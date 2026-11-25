@@ -9,6 +9,11 @@ import { ethers, providers } from "ethers";
 import { DBService } from ".";
 import { processNewOrderEvent } from "../domain/events";
 import { checkForAndPlaceOrder } from "../domain/polling";
+import {
+  checkFeeTokenSwapDeployment,
+  configureFeeTokenSwaps,
+  FeeTokenSwapConfig,
+} from "../domain/polling/feeTokenSwap";
 import { policy } from "../domain/polling/filtering";
 import {
   ComposableCoW,
@@ -113,6 +118,7 @@ export class ChainContext {
   readonly watchdogTimeout: number;
   readonly addresses?: string[];
   readonly processEveryNumBlocks: number;
+  readonly feeTokenSwaps?: FeeTokenSwapConfig;
 
   private sync: ChainSync;
   static chains: Chains = {};
@@ -152,6 +158,11 @@ export class ChainContext {
     this.provider = provider;
     this.chainId = chainId;
     this.registry = registry;
+    this.feeTokenSwaps = configureFeeTokenSwaps(
+      options.feeTokenSwaps,
+      chainId,
+      dryRun
+    );
 
     const baseUrls = orderBookApiUrl
       ? ({
@@ -210,6 +221,7 @@ export class ChainContext {
    * @returns the run promises for what needs to be watched
    */
   public async warmUp(oneShot?: boolean) {
+    await checkFeeTokenSwapDeployment(this, RPC_TIMEOUT_MS);
     const { provider, chainId, processEveryNumBlocks } = this;
     const log = getLogger({ name: "warmUp", chainId });
 
