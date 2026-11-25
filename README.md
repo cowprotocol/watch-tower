@@ -38,6 +38,28 @@ docker run --rm -it \
 
 **NOTE**: See the example `config.json.example` for an example configuration file.
 
+### Fee token swaps
+
+Add `feeTokenSwaps` to the Ethereum network config. Use the FeeTokenSwap handler with signing domain version 2. Allow it in `filterPolicy` and match the signer and app data in the wallet’s registration.
+
+```json
+{
+  "handler": "<FeeTokenSwap address>",
+  "pricingSigner": "<pricing key address>",
+  "appData": "{}",
+  "sellTokens": ["0x6b175474e89094c44da98b954eedeac495271d0f"],
+  "owners": ["<fee wallet address>"]
+}
+```
+
+Run with `--dry-run` to preview the quote. To trade, set `FEE_TOKEN_SWAP_PRICING_KEY` and use one Watchtower instance with an existing, persistent database. Keep the trading database when restarting.
+
+Run `yarn test --runInBand` to test quoting, signing, and order replay. The tests supply their own RPC and Order Book responses.
+
+At or above the wallet’s minimum, Watchtower quotes the full token balance. Retries use the same order ID. Once a fill, expiry, or cancellation is final on Ethereum, Watchtower can quote the next batch.
+
+Omit `owners` to follow all matching wallets, or use `[]` to pause submissions. To stop a live order, remove the wallet’s rule or invalidate the order UID in Settlement.
+
 ### DAppNode
 
 For [DAppNode](https://dappnode.com), the watch-tower is available as a package. This package is held in a [separate repository](https://github.com/cowprotocol/dappnodepackage-cow-watch-tower).

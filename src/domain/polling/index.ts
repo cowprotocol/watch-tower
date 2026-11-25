@@ -1,9 +1,4 @@
-import {
-  Order,
-  OrderBalance,
-  OrderKind,
-  computeOrderUid,
-} from "@cowprotocol/contracts";
+import { Order, OrderBalance, OrderKind } from "@cowprotocol/contracts";
 import { SupportedChainId } from "@cowprotocol/cow-sdk";
 import {
   OrderBookApi,
@@ -30,6 +25,7 @@ import {
   LoggerWithMethods,
   formatStatus,
   getLogger,
+  getOrderUid,
   handleOnChainCustomError,
   metrics,
   TimeoutError,
@@ -37,8 +33,7 @@ import {
 } from "../../utils";
 import { badOrder, policy } from "./filtering";
 import { pollConditionalOrder } from "./poll";
-
-const GPV2SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
+import { finalizedBlockReader, pollFeeTokenSwap } from "./feeTokenSwap";
 
 const HANDLED_RESULT_CODES = [
   PollResultCode.SUCCESS,
@@ -190,6 +185,8 @@ export async function checkForAndPlaceOrder(
   const blockNumber = blockNumberOverride || block.number;
   const blockTimestamp = blockTimestampOverride || block.timestamp;
 
+  const getFinalizedBlock = finalizedBlockReader(context.provider);
+
   let hasErrors = false;
   let ownerCounter = 0;
   let orderCounter = 0;
@@ -323,7 +320,8 @@ export async function checkForAndPlaceOrder(
         blockNumber,
         context,
         ownerCounter,
-        orderCounter
+        orderCounter,
+        getFinalizedBlock
       );
 
       // Don't try again the same order, in case that's the poll result
@@ -423,7 +421,8 @@ async function processConditionalOrder(
   blockNumber: number,
   context: ChainContext,
   ownerNumber: number,
-  orderNumber: number
+  orderNumber: number,
+  getFinalizedBlock: () => Promise<ethers.providers.Block>
 ): Promise<PollResult> {
   const { provider, orderBookApi, dryRun, chainId } = context;
   const { handler } = conditionalOrder.params;
@@ -443,6 +442,45 @@ async function processConditionalOrder(
   ];
   try {
     metrics.pollingRunsTotal.labels(...metricLabels).inc();
+
+    const postContext = {
+      conditionalOrder,
+      orderBookApi,
+      blockTimestamp,
+      dryRun,
+      metricLabels,
+      chainId,
+      blockNumber,
+      ownerNumber,
+      orderNumber,
+    };
+    const feeSwapConfig = context.feeTokenSwaps;
+    if (feeSwapConfig && feeSwapConfig.handler === handler.toLowerCase()) {
+      return await pollFeeTokenSwap(
+        context,
+        owner,
+        conditionalOrder,
+        blockNumber,
+        blockTimestamp,
+        {
+          config: feeSwapConfig,
+          getFinalizedBlock,
+          getTradeableOrder: (offchainInput) =>
+            pollLegacy(
+              context,
+              owner,
+              conditionalOrder,
+              [],
+              offchainInput,
+              blockNumber,
+              ownerNumber,
+              orderNumber
+            ),
+          post: (order, orderUid, feeSwap) =>
+            postDiscreteOrder({ ...postContext, orderUid, order, feeSwap }),
+        }
+      );
+    }
 
     const proof = conditionalOrder.proof
       ? conditionalOrder.proof.path.map((c) => c.toString())
@@ -533,17 +571,9 @@ async function processConditionalOrder(
     if (!conditionalOrder.orders.has(orderUid)) {
       // Place order
       const placeOrderResult = await postDiscreteOrder({
-        conditionalOrder,
+        ...postContext,
         orderUid,
         order: { ...orderToSubmit, from: owner, signature },
-        orderBookApi,
-        blockTimestamp,
-        dryRun,
-        metricLabels,
-        chainId,
-        blockNumber,
-        ownerNumber,
-        orderNumber,
       });
 
       // In case of error, return early
@@ -580,29 +610,6 @@ async function processConditionalOrder(
   }
 }
 
-function getOrderUid(
-  chainId: SupportedChainId,
-  orderToSubmit: Order,
-  owner: string
-) {
-  return computeOrderUid(
-    {
-      name: "Gnosis Protocol",
-      version: "v2",
-      chainId: chainId,
-      verifyingContract: GPV2SETTLEMENT,
-    },
-    {
-      ...orderToSubmit,
-      receiver:
-        orderToSubmit.receiver === ethers.constants.AddressZero
-          ? undefined
-          : orderToSubmit.receiver,
-    },
-    owner
-  );
-}
-
 /**
  * Print a list of all the orders that were placed and not filled
  *
@@ -628,6 +635,7 @@ export async function postDiscreteOrder(params: {
   conditionalOrder: ConditionalOrder;
   orderUid: string;
   order: any;
+  feeSwap?: Pick<OrderCreation, "appDataHash" | "quoteId">;
   orderBookApi: OrderBookApi;
   blockTimestamp: number;
   dryRun: boolean;
@@ -641,6 +649,7 @@ export async function postDiscreteOrder(params: {
     conditionalOrder,
     orderUid,
     order,
+    feeSwap,
     orderBookApi,
     blockTimestamp,
     dryRun,
@@ -670,6 +679,7 @@ export async function postDiscreteOrder(params: {
       feeAmount: order.feeAmount.toString(),
       validTo: order.validTo,
       appData: order.appData,
+      ...(feeSwap && { ...feeSwap, fullBalanceCheck: true }),
       partiallyFillable: order.partiallyFillable,
       sellTokenBalance: order.sellTokenBalance,
       buyTokenBalance: order.buyTokenBalance,
@@ -681,15 +691,26 @@ export async function postDiscreteOrder(params: {
     log.info(
       `Post order ${orderUid} (ID=${conditionalOrder.id}, TX=${conditionalOrder.tx})`
     );
-    log.debug(`Post order ${orderUid} details`, postOrder);
+    if (!feeSwap) log.debug(`Post order ${orderUid} details`, postOrder);
     if (!dryRun) {
-      const orderUid = await withTimeout(
-        orderBookApi.sendOrder(postOrder),
+      // Watchtower retries the saved fee swap. Let it see duplicate replies directly.
+      const responseUid = await withTimeout(
+        feeSwap
+          ? orderBookApi.sendOrder(postOrder, {
+              backoffOpts: { numOfAttempts: 1 },
+            })
+          : orderBookApi.sendOrder(postOrder),
         ORDER_BOOK_API_TIMEOUT_MS,
         `sendOrder (ID=${conditionalOrder.id})`
       );
+      if (feeSwap && responseUid.toLowerCase() !== orderUid.toLowerCase()) {
+        return {
+          result: PollResultCode.TRY_NEXT_BLOCK,
+          reason: "Order Book returned a different fee swap UID",
+        };
+      }
       metrics.orderBookDiscreteOrdersTotal.labels(...metricLabels).inc();
-      log.info(`API response`, { orderUid });
+      log.info(`API response`, { orderUid: responseUid });
     }
 
     // The order was accepted, so any previous backoff no longer applies
@@ -762,6 +783,16 @@ export async function postDiscreteOrder(params: {
         body
       );
 
+      if (
+        feeSwap &&
+        handleErrorResult.result === PollResultCode.DONT_TRY_AGAIN
+      ) {
+        return escalatingRetryResult(
+          consecutiveFailures,
+          blockTimestamp,
+          handleErrorResult.reason ?? "Fee swap rejected"
+        );
+      }
       return handleErrorResult;
     } else if (error.request) {
       // The request was made but no response was received

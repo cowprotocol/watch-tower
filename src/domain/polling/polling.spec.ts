@@ -83,9 +83,11 @@ describe("ORDER_BOOK_API_TIMEOUT_MS", () => {
 });
 
 describe("postDiscreteOrder", () => {
+  const NOW = 1_784_857_003;
   const post = (
     sendOrder: jest.Mock,
-    conditionalOrder: ConditionalOrder = { id: "0xid" } as ConditionalOrder
+    conditionalOrder: ConditionalOrder = { id: "0xid" } as ConditionalOrder,
+    feeSwap?: Parameters<typeof postDiscreteOrder>[0]["feeSwap"]
   ) =>
     postDiscreteOrder({
       conditionalOrder,
@@ -95,10 +97,11 @@ describe("postDiscreteOrder", () => {
         sellAmount: 1n,
         buyAmount: 1n,
         feeAmount: 0n,
-        validTo: 0,
+        validTo: NOW + 12,
       },
       orderBookApi: { sendOrder } as never,
-      blockTimestamp: 1_784_857_003,
+      blockTimestamp: NOW,
+      feeSwap,
       dryRun: false,
       metricLabels: ["8453", "0xhandler", "0xowner", "0xid"],
       chainId: 8453 as never,
@@ -135,6 +138,47 @@ describe("postDiscreteOrder", () => {
       epoch: 1_784_857_003 + 60,
     });
     expect(conditionalOrder.consecutiveApiFailures).toBe(3);
+  });
+
+  it("backs off a rejected fee swap and still drops ordinary orders", async () => {
+    const errorType = "TransferSimulationFailed";
+    const sendOrder = jest.fn().mockRejectedValue({
+      response: { status: 400 },
+      body: { errorType },
+    });
+    const rejectedTwice = {
+      id: "0xid",
+      consecutiveApiFailures: 2,
+      lastApiError: errorType,
+    } as ConditionalOrder;
+
+    await expect(
+      post(sendOrder, { ...rejectedTwice }, { appDataHash: "0xhash" })
+    ).resolves.toMatchObject({
+      result: PollResultCode.TRY_AT_EPOCH,
+      epoch: NOW + 60,
+    });
+    await expect(post(sendOrder, rejectedTwice)).resolves.toMatchObject({
+      result: PollResultCode.DONT_TRY_AGAIN,
+    });
+  });
+
+  it("posts fee swap metadata and retries a mismatched acknowledgement UID", async () => {
+    const sendOrder = jest.fn().mockResolvedValue("0xother");
+    const feeSwap = { appDataHash: "0xhash", quoteId: 123 };
+
+    await expect(post(sendOrder, undefined, feeSwap)).resolves.toMatchObject({
+      result: PollResultCode.TRY_NEXT_BLOCK,
+    });
+    expect(sendOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ...feeSwap,
+        sellAmount: "1",
+        buyAmount: "1",
+        fullBalanceCheck: true,
+      }),
+      { backoffOpts: { numOfAttempts: 1 } }
+    );
   });
 
   it("reports why a non-response failure happened instead of 'undefined'", async () => {

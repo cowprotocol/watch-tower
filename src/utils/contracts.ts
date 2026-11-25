@@ -1,5 +1,7 @@
+import { Order, computeOrderUid, domain } from "@cowprotocol/contracts";
 import {
   COMPOSABLE_COW_CONTRACT_ADDRESS,
+  COW_PROTOCOL_SETTLEMENT_CONTRACT_ADDRESS,
   MAX_UINT32,
   SupportedChainId,
 } from "@cowprotocol/cow-sdk";
@@ -117,6 +119,27 @@ export function composableCowContract(
   return ComposableCoW__factory.connect(
     COMPOSABLE_COW_CONTRACT_ADDRESS[chainId],
     provider
+  );
+}
+
+export function getOrderUid(
+  chainId: SupportedChainId,
+  order: Order,
+  owner: string
+) {
+  return computeOrderUid(
+    domain(
+      chainId,
+      COW_PROTOCOL_SETTLEMENT_CONTRACT_ADDRESS[SupportedChainId.MAINNET]
+    ),
+    {
+      ...order,
+      receiver:
+        order.receiver === ethers.constants.AddressZero
+          ? undefined
+          : order.receiver,
+    },
+    owner
   );
 }
 

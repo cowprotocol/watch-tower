@@ -5,6 +5,7 @@
  * and run json-schema-to-typescript to regenerate this file.
  */
 
+export type Address = string;
 export type FilterAction = "ACCEPT" | "DROP" | "SKIP";
 
 export interface Config {
@@ -19,6 +20,16 @@ export interface Config {
     processEveryNumBlocks?: number;
     orderBookApi?: string;
     pageSize?: number;
+    feeTokenSwaps?: {
+      handler: Address;
+      pricingSigner: Address;
+      appData: string;
+      owners?: Address[];
+      /**
+       * @minItems 1
+       */
+      sellTokens: [Address, ...Address[]];
+    };
     filterPolicy: {
       defaultAction: FilterAction;
       conditionalOrderIds?: {

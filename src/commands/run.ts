@@ -145,8 +145,10 @@ export async function run(options: RunOptions) {
   const log = getLogger({ name: "commands:run" });
   const { oneShot, disableApi, apiPort, databasePath, networks } = options;
 
-  // Open the database
-  const storage = DBService.getInstance(databasePath);
+  // Live fee swaps need the previous database so they can reuse a pending order ID.
+  const requiresExistingDb =
+    !options.dryRun && networks.some((network) => network.feeTokenSwaps);
+  const storage = DBService.getInstance(databasePath, !requiresExistingDb);
 
   // Start the API server if it's not disabled
   let api: ApiService | undefined;
