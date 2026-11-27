@@ -2,9 +2,9 @@ import {
   ConditionalOrder,
   ConditionalOrderParams,
 } from "@cowprotocol/sdk-composable";
-import { BytesLike, ethers } from "ethers";
+import { BytesLike, ethers, providers } from "ethers";
 
-import { ChainContext } from "../../services/chain";
+import { ChainContext, isAaveProtectionOwner } from "../../services/chain";
 import {
   ComposableCoW,
   ComposableCoW__factory,
@@ -26,6 +26,12 @@ import { policy } from "../polling/filtering";
 
 const composableCow = ComposableCoW__factory.createInterface();
 
+export function orderRegistrationTopics(owners?: string[]) {
+  return composableCow.encodeFilterTopics("ConditionalOrderCreated", [
+    owners ?? null,
+  ]);
+}
+
 /**
  * Process a new order event for `ComposableCoW` contract:
  * - `ConditionalOrderCreated`
@@ -36,7 +42,7 @@ const composableCow = ComposableCoW__factory.createInterface();
  */
 export async function processNewOrderEvent(
   context: ChainContext,
-  event: ConditionalOrderCreatedEvent
+  event: providers.Log
 ) {
   const { chainId, registry } = context;
 
@@ -60,7 +66,7 @@ export async function processNewOrderEvent(
       metrics.ownersTotal.labels(network).inc();
       metrics.activeOrdersTotal.labels(network).inc();
       numContractsAdded++;
-    } else {
+    } else if (error) {
       log.error(
         `Failed to register Smart Order from tx ${tx} on block ${blockNumber}. Error: ${error}`
       );
@@ -96,7 +102,7 @@ export async function processNewOrderEvent(
 }
 
 async function decodeAndAddOrder(
-  event: ConditionalOrderCreatedEvent | MerkleRootSetEvent,
+  event: providers.Log,
   context: ChainContext
 ): Promise<{ error: boolean; added: boolean }> {
   const { chainId, registry } = context;
@@ -216,6 +222,17 @@ function addOrder(
   const log = getLogger({ name: "addOrder", chainId, blockNumber });
   const { handler, salt, staticInput } = params;
   const { network, ownerOrders } = registry;
+  // Check the registering contract before deduplication to protect the canonical entry.
+  const aave =
+    context.aaveProtectionHandler?.toLowerCase() === handler.toLowerCase();
+  if (
+    aave &&
+    (proof !== null ||
+      composableCow.toLowerCase() !== context.contract.address.toLowerCase() ||
+      !isAaveProtectionOwner(context, owner))
+  ) {
+    return false;
+  }
 
   const conditionalOrderParams = toConditionalOrderParams(params);
   const conditionalOrderId = ConditionalOrder.leafToId(params);
@@ -253,7 +270,13 @@ function addOrder(
         !!conditionalOrder &&
         getAreConditionalOrderParamsEqual(conditionalOrder.params, params);
 
-      if (areConditionalOrderParamsEqual) {
+      if (
+        areConditionalOrderParamsEqual &&
+        (!aave ||
+          (conditionalOrder.proof === null &&
+            conditionalOrder.composableCow?.toLowerCase() ===
+              composableCow.toLowerCase()))
+      ) {
         exists = true;
         break;
       }

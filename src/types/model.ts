@@ -7,13 +7,15 @@ import {
   ConditionalOrder as ConditionalOrderSdk,
   PollResult,
 } from "@cowprotocol/sdk-composable";
-import { DBService } from "../services";
+import type { OrderCreation } from "@cowprotocol/sdk-order-book";
+import type { DBLevel, DBService } from "../services/storage";
 import { getLogger } from "../utils/logging";
 import * as metrics from "../utils/metrics";
 
 // Standardise the storage key
 const LAST_NOTIFIED_ERROR_STORAGE_KEY = "LAST_NOTIFIED_ERROR";
 const LAST_PROCESSED_BLOCK_STORAGE_KEY = "LAST_PROCESSED_BLOCK";
+const AAVE_ORDER_PAYLOADS_STORAGE_KEY = "AAVE_ORDER_PAYLOADS";
 const CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY = "CONDITIONAL_ORDER_REGISTRY";
 const CONDITIONAL_ORDER_REGISTRY_VERSION_KEY =
   "CONDITIONAL_ORDER_REGISTRY_VERSION";
@@ -48,6 +50,13 @@ export enum OrderStatus {
   FILLED = 2,
 }
 
+export type AaveOrderAttempt = {
+  uid: string;
+  validTo: number;
+  state: "pending" | "lookup-only" | "accepted";
+  payload?: OrderCreation;
+};
+
 export type ConditionalOrder = {
   /**
    * Id of the conditional order (which also happens to be the key used for `ctx` in the ComposableCoW contract).
@@ -75,6 +84,9 @@ export type ConditionalOrder = {
    *  Map of discrete order hashes to their status
    */
   orders: Map<OrderUid, OrderStatus>;
+
+  /** The Aave order UID and the submission payload while acceptance is unknown. */
+  aaveOrderAttempt?: AaveOrderAttempt;
 
   /**
    * the address to poll for orders (may, or **may not** be `ComposableCoW`)
@@ -221,8 +233,19 @@ export class Registry {
     storage: DBService,
     network: string
   ): Promise<string> {
-    const ownerOrders = await loadOwnerOrders(storage, network);
-    return JSON.stringify(ownerOrders, replacer, 2);
+    const ownerOrders = await loadOwnerOrders(storage.getDB(), network);
+    return JSON.stringify(
+      ownerOrders ?? new Map(),
+      (key, value) => {
+        // Also redact inline payloads from local prototype databases.
+        if (key === "aaveOrderAttempt" && value) {
+          const { uid, validTo }: AaveOrderAttempt = value;
+          return { uid, validTo };
+        }
+        return replacer(key, value);
+      },
+      2
+    );
   }
 
   /**
@@ -238,32 +261,44 @@ export class Registry {
     genesisBlockNumber: number
   ): Promise<Registry> {
     const db = storage.getDB();
-    const ownerOrders = await loadOwnerOrders(storage, network).catch(() =>
-      createNewOrderMap()
+    const storedOrders = await loadOwnerOrders(db, network);
+    const savedError = await readOptional(
+      db,
+      LAST_NOTIFIED_ERROR_STORAGE_KEY,
+      network
     );
+    const savedBlock = await readOptional(
+      db,
+      LAST_PROCESSED_BLOCK_STORAGE_KEY,
+      network
+    );
+    if (storedOrders === undefined && savedBlock !== undefined) {
+      throw new Error(
+        `Missing order registry for network ${network} (configured start: ${genesisBlockNumber})`
+      );
+    }
 
-    const lastNotifiedError = await db
-      .get(getNetworkStorageKey(LAST_NOTIFIED_ERROR_STORAGE_KEY, network))
-      .then((isoDate: string | number | Date) =>
-        isoDate ? new Date(isoDate) : null
-      )
-      .catch(() => null);
-
-    const lastProcessedBlock = await db
-      .get(getNetworkStorageKey(LAST_PROCESSED_BLOCK_STORAGE_KEY, network))
-      .then(
-        (block: string): RegistryBlock =>
-          block ? JSON.parse(block) : { number: genesisBlockNumber - 1 }
-      )
-      .catch(() => null);
+    const lastNotifiedError =
+      savedError === undefined ? null : new Date(savedError);
+    if (lastNotifiedError && Number.isNaN(lastNotifiedError.valueOf())) {
+      throw new Error(`Invalid last notified error for network ${network}`);
+    }
+    const lastProcessedBlock: RegistryBlock | null =
+      savedBlock === undefined ? null : JSON.parse(savedBlock);
+    if (
+      savedBlock !== undefined &&
+      !Number.isSafeInteger(lastProcessedBlock?.number)
+    ) {
+      throw new Error(`Invalid saved block for network ${network}`);
+    }
+    const ownerOrders: OrdersPerOwner = storedOrders ?? new Map();
+    await restoreAavePayloads(db, network, ownerOrders);
 
     // Return registry (on its latest version)
     metrics.activeOwnersTotal.labels(network).set(ownerOrders.size);
-    const numOrders = Array.from(ownerOrders.values()).reduce(
-      (acc, o) => acc + o.size,
-      0
-    );
-    metrics.activeOrdersTotal.labels(network).set(numOrders);
+    metrics.activeOrdersTotal
+      .labels(network)
+      .set(getOrdersCountFromOrdersPerOwner(ownerOrders));
 
     return new Registry(
       ownerOrders,
@@ -300,6 +335,7 @@ export class Registry {
   }
 
   public async write(): Promise<void> {
+    const { orders, payloads } = this.serializeOrders();
     const batch = this.storage
       .getDB()
       .batch()
@@ -315,8 +351,19 @@ export class Registry {
           CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY,
           this.network
         ),
-        this.stringifyOrders()
+        orders
       );
+
+    // Older binaries can dump the order registry, so keep signatures in a private key.
+    const payloadKey = getNetworkStorageKey(
+      AAVE_ORDER_PAYLOADS_STORAGE_KEY,
+      this.network
+    );
+    if (Object.keys(payloads).length) {
+      batch.put(payloadKey, JSON.stringify(payloads));
+    } else {
+      batch.del(payloadKey);
+    }
 
     // Write or delete last notified error
     if (this.lastNotifiedError !== null) {
@@ -352,8 +399,20 @@ export class Registry {
     );
   }
 
-  public stringifyOrders(): string {
-    return JSON.stringify(this.ownerOrders, replacer);
+  private serializeOrders() {
+    const payloads: Record<string, OrderCreation> = {};
+    const orders = JSON.stringify(this.ownerOrders, (key, value) => {
+      if (key === "aaveOrderAttempt" && value) {
+        const { uid, validTo, state, payload }: AaveOrderAttempt = value;
+        if (state === "pending" && !payload) {
+          throw new Error(`Missing payload for pending Aave order ${uid}`);
+        }
+        if (payload) payloads[uid] = payload;
+        return { uid, validTo, state };
+      }
+      return replacer(key, value);
+    });
+    return { orders, payloads };
   }
 }
 
@@ -384,32 +443,48 @@ function replacer(_key: any, value: any) {
   }
 }
 
+async function readOptional(db: DBLevel, key: string, network: string) {
+  try {
+    return await db.get(getNetworkStorageKey(key, network));
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "LEVEL_NOT_FOUND"
+    ) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
 async function loadOwnerOrders(
-  storage: DBService,
+  db: DBLevel,
   network: string
-): Promise<OrdersPerOwner> {
-  const loadOwnerOrdersLogger = getLogger({ name: "loadOwnerOrders" });
-  // Get the owner orders
-  const db = storage.getDB();
-  const str = await db.get(
-    getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY, network)
+): Promise<OrdersPerOwner | undefined> {
+  const str = await readOptional(
+    db,
+    CONDITIONAL_ORDER_REGISTRY_STORAGE_KEY,
+    network
   );
-  // Get the persisted registry version
-
+  if (str === undefined) return undefined;
   const version = Number(
-    await db.get(
-      getNetworkStorageKey(CONDITIONAL_ORDER_REGISTRY_VERSION_KEY, network)
-    )
+    (await readOptional(db, CONDITIONAL_ORDER_REGISTRY_VERSION_KEY, network)) ??
+      "1"
   );
+  if (
+    !Number.isInteger(version) ||
+    version < 1 ||
+    version > CONDITIONAL_ORDER_REGISTRY_VERSION
+  ) {
+    throw new Error(`Invalid order registry version for network ${network}`);
+  }
+  const ordersPerOwner = parseConditionalOrders(str, version);
 
-  // Parse conditional orders registry (for the persisted version, converting it to the last version)
-  const ordersPerOwner = parseConditionalOrders(
-    !!str ? str : undefined,
-    version
-  );
-
+  const loadOwnerOrdersLogger = getLogger({ name: "loadOwnerOrders" });
   loadOwnerOrdersLogger.info(
-    `Data size: ${str?.length}`,
+    `Data size: ${str.length}`,
     `Owners: ${ordersPerOwner.size}`,
     `Total orders: ${getOrdersCountFromOrdersPerOwner(ordersPerOwner)}`,
     `Network: ${network}`
@@ -418,23 +493,70 @@ async function loadOwnerOrders(
   return ordersPerOwner;
 }
 
-function parseConditionalOrders(
-  serializedConditionalOrders: string | undefined,
-  _version: number | undefined
-): OrdersPerOwner {
-  if (!serializedConditionalOrders) {
-    return createNewOrderMap();
+async function restoreAavePayloads(
+  db: DBLevel,
+  network: string,
+  ownerOrders: OrdersPerOwner
+) {
+  const stored = await readOptional(
+    db,
+    AAVE_ORDER_PAYLOADS_STORAGE_KEY,
+    network
+  );
+  const payloads: Record<string, OrderCreation> = JSON.parse(stored ?? "{}");
+  if (!payloads || typeof payloads !== "object" || Array.isArray(payloads)) {
+    throw new Error(`Invalid saved Aave payloads for network ${network}`);
   }
+  const pending = new Map(Object.entries(payloads));
 
+  for (const orders of ownerOrders.values()) {
+    for (const { aaveOrderAttempt: attempt } of orders) {
+      if (!attempt) continue;
+      const { uid, validTo, state } = attempt;
+      if (
+        attempt.payload !== undefined ||
+        (state !== "pending" && state !== "lookup-only" && state !== "accepted")
+      ) {
+        throw new Error(`Unsupported saved state for Aave order ${uid}`);
+      }
+      const payload = pending.get(uid);
+      if (state === "pending" && !payload) {
+        throw new Error(`Missing saved payload for Aave order ${uid}`);
+      }
+      if (payload) {
+        if (
+          state === "accepted" ||
+          payload.validTo !== validTo ||
+          typeof payload.signature !== "string"
+        ) {
+          throw new Error(`Invalid saved payload for Aave order ${uid}`);
+        }
+        attempt.payload = payload;
+        pending.delete(uid);
+      }
+    }
+  }
+  if (pending.size > 0)
+    throw new Error(`Untracked Aave payloads for network ${network}`);
+}
+
+function parseConditionalOrders(
+  serializedConditionalOrders: string,
+  version: number
+): OrdersPerOwner {
   const ownerOrders: Map<
     Owner,
     Set<Omit<ConditionalOrder, "id"> & { id?: string }>
   > = JSON.parse(serializedConditionalOrders, reviver);
 
-  // The conditional order id was added in version 2
-  if (_version && _version < 2) {
-    // Migrate model: Add the missing order Id
-    for (const orders of ownerOrders.values()) {
+  if (!(ownerOrders instanceof Map)) {
+    throw new Error("Invalid order registry");
+  }
+
+  for (const orders of ownerOrders.values()) {
+    if (!(orders instanceof Set)) throw new Error("Invalid order registry");
+    // The conditional order id was added in version 2
+    if (version < 2) {
       for (const order of orders.values()) {
         if (!order.id) {
           order.id = ConditionalOrderSdk.leafToId(order.params);
@@ -444,10 +566,6 @@ function parseConditionalOrders(
   }
 
   return ownerOrders as OrdersPerOwner;
-}
-
-function createNewOrderMap(): OrdersPerOwner {
-  return new Map<Owner, Set<ConditionalOrder>>();
 }
 
 function getOrdersCountFromOrdersPerOwner(

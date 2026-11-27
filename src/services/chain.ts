@@ -112,6 +112,7 @@ export class ChainContext {
   readonly dryRun: boolean;
   readonly watchdogTimeout: number;
   readonly addresses?: string[];
+  readonly aaveProtectionHandler?: string;
   readonly processEveryNumBlocks: number;
 
   private sync: ChainSync;
@@ -701,6 +702,15 @@ async function processBlockAndPersist(params: {
   } finally {
     return persistLastProcessedBlock({ context, block: _block, log });
   }
+}
+
+export function isAaveProtectionOwner(
+  { addresses, filterPolicy }: Pick<ChainContext, "addresses" | "filterPolicy">,
+  owner: string
+): boolean {
+  return addresses
+    ? addresses.some((address) => address.toLowerCase() === owner.toLowerCase())
+    : filterPolicy?.acceptsOwner(owner) === true;
 }
 
 async function pollContractForEvents(

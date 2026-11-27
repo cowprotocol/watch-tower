@@ -62,6 +62,14 @@ export async function warmUpChains(
   options: WarmUpOptions = {}
 ): Promise<number> {
   const log = getLogger({ name: "commands:warmUpChains" });
+  const seen = new Set<number>();
+  for (const chain of chains) {
+    if (seen.has(chain.chainId)) {
+      throw new Error(`Duplicate chain ID ${chain.chainId}`);
+    }
+    seen.add(chain.chainId);
+  }
+
   const { oneShot, backoff = WARM_UP_BACKOFF } = options;
 
   // `allSettled` rather than `all`: `warmUpChain` is written not to throw, but

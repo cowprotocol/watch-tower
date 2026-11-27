@@ -40,6 +40,15 @@ describe("warmUpChains", () => {
     });
   });
 
+  it("rejects duplicate chain IDs before warming up either context", async () => {
+    const chains = [healthy(1), healthy(1)];
+
+    await expect(warmUpChains(chains, { backoff })).rejects.toThrow(
+      "Duplicate chain ID 1"
+    );
+    chains.forEach((c) => expect(c.warmUp).not.toHaveBeenCalled());
+  });
+
   it("passes the one-shot flag through to each chain", async () => {
     const chains = [healthy(1), healthy(100)];
 

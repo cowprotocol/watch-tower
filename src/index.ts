@@ -153,13 +153,12 @@ function parseAddressOption(option: string, previous: string[] = []): string[] {
     if (!isHexString(option)) {
       throw new Error();
     }
-    getAddress(option);
+    return [...previous, getAddress(option)];
   } catch (error) {
     throw new InvalidArgumentError(
       `${option} must be a valid '0x' prefixed address`
     );
   }
-  return [...previous, option];
 }
 
 function validateJSON(filePath: string): Config {
