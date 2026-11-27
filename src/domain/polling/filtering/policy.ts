@@ -33,8 +33,8 @@ export class FilterPolicy {
   constructor(config: Config["networks"][number]["filterPolicy"]) {
     this.config = {
       defaultAction: FilterAction[config.defaultAction],
-      owners: this.convertToMap(config.owners),
-      handlers: this.convertToMap(config.handlers),
+      owners: this.convertToMap(config.owners, true),
+      handlers: this.convertToMap(config.handlers, true),
       transactions: this.convertToMap(config.transactions),
       conditionalOrderIds: this.convertToMap(config.conditionalOrderIds),
     };
@@ -67,8 +67,8 @@ export class FilterPolicy {
     const action =
       programmaticOrderIds.get(programmaticOrderId) ||
       transactions.get(transaction) ||
-      owners.get(owner) ||
-      handlers.get(conditionalOrderParams.handler);
+      owners.get(owner.toLowerCase()) ||
+      handlers.get(conditionalOrderParams.handler.toLowerCase());
 
     if (action) {
       return action;
@@ -77,13 +77,18 @@ export class FilterPolicy {
     return this.config.defaultAction;
   }
 
-  private convertToMap(object?: {
-    [k: string]: FilterActionSchema;
-  }): Map<string, FilterAction> {
+  acceptsOwner(owner: string): boolean {
+    return this.config?.owners.get(owner.toLowerCase()) === FilterAction.ACCEPT;
+  }
+
+  private convertToMap(
+    object?: { [k: string]: FilterActionSchema },
+    normalizeAddress = false
+  ): Map<string, FilterAction> {
     return object
       ? new Map(
           Object.entries(object).map(([key, value]) => [
-            key,
+            normalizeAddress ? key.toLowerCase() : key,
             FilterAction[value],
           ])
         )
