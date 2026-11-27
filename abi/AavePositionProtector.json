@@ -1,0 +1,42 @@
+[
+  {
+    "inputs": [{ "name": "ruleId", "type": "bytes32" }],
+    "name": "quoteInputs",
+    "outputs": [
+      {
+        "name": "inputs",
+        "type": "tuple",
+        "components": [
+          { "name": "borrower", "type": "address" },
+          {
+            "name": "config",
+            "type": "tuple",
+            "components": [
+              { "name": "collateralToken", "type": "address" },
+              { "name": "debtToken", "type": "address" },
+              { "name": "triggerHF", "type": "uint256" },
+              { "name": "targetHF", "type": "uint256" },
+              { "name": "cap", "type": "uint256" },
+              { "name": "expiry", "type": "uint32" },
+              { "name": "maxPriceDiscountBps", "type": "uint16" }
+            ]
+          },
+          { "name": "healthFactor", "type": "uint256" },
+          { "name": "allowance", "type": "uint256" },
+          { "name": "flashLender", "type": "address" },
+          { "name": "collateralBalance", "type": "uint256" },
+          { "name": "debtAmount", "type": "uint256" },
+          { "name": "liquidationThreshold", "type": "uint256" },
+          { "name": "premiumBps", "type": "uint128" },
+          { "name": "collateralPrice", "type": "uint256" },
+          { "name": "debtPrice", "type": "uint256" },
+          { "name": "collateralDecimals", "type": "uint8" },
+          { "name": "debtDecimals", "type": "uint8" },
+          { "name": "collateralDebitBuffer", "type": "uint256" }
+        ]
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]
