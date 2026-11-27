@@ -35,6 +35,7 @@ import {
   TimeoutError,
   withTimeout,
 } from "../../utils";
+import { isAaveProtectionOrder, pollAaveProtection } from "./aaveProtection";
 import { badOrder, policy } from "./filtering";
 import { pollConditionalOrder } from "./poll";
 
@@ -155,6 +156,8 @@ const API_ERRORS_DROP: DropApiErrorsArray = [
 // ApiErrors.AppDataHashMismatch - we never submit full appData
 
 const CHUNK_SIZE = 50; // How many orders to process before saving
+// Preview scheduling must not delay live polling after restarting with the same DB.
+const aaveDryRunHints = new WeakMap<ConditionalOrder, PollResult>();
 
 /** `lastApiError` value used to scope a run of consecutive request timeouts */
 const TIMEOUT_ERROR_KEY = "Timeout";
@@ -184,7 +187,9 @@ export async function checkForAndPlaceOrder(
   blockNumberOverride?: number,
   blockTimestampOverride?: number
 ) {
-  const { chainId, registry, filterPolicy } = context;
+  const { chainId, registry, filterPolicy, addresses } = context;
+  const allowedOwners =
+    addresses && new Set(addresses.map((address) => address.toLowerCase()));
   const { ownerOrders, numOrders, numOwners } = registry;
 
   const blockNumber = blockNumberOverride || block.number;
@@ -217,6 +222,7 @@ export async function checkForAndPlaceOrder(
   }
 
   for (const [owner, conditionalOrders] of ownerOrders.entries()) {
+    if (allowedOwners && !allowedOwners.has(owner.toLowerCase())) continue;
     ownerCounter++;
     const log = getLogger({
       ...loggerParams,
@@ -261,7 +267,15 @@ export async function checkForAndPlaceOrder(
 
       const logOrderDetails = `Processing order ${orderCounter}/${numOrders} with ID ${conditionalOrder.id} from TX ${conditionalOrder.tx} with params:`;
 
-      const { result: lastHint } = conditionalOrder.pollResult || {};
+      const aaveDryRun =
+        context.dryRun &&
+        isAaveProtectionOrder(context, conditionalOrder.params.handler);
+      const lastHint = aaveDryRun
+        ? aaveDryRunHints.get(conditionalOrder)
+        : conditionalOrder.pollResult?.result;
+      if (aaveDryRun && lastHint?.result === PollResultCode.DONT_TRY_AGAIN) {
+        continue;
+      }
 
       // Apply filtering policy
       if (filterPolicy) {
@@ -326,17 +340,18 @@ export async function checkForAndPlaceOrder(
         orderCounter
       );
 
-      // Don't try again the same order, in case that's the poll result
-      if (pollResult.result === PollResultCode.DONT_TRY_AGAIN) {
-        ordersPendingDelete.push(conditionalOrder);
+      if (aaveDryRun) {
+        aaveDryRunHints.set(conditionalOrder, pollResult);
+      } else {
+        if (pollResult.result === PollResultCode.DONT_TRY_AGAIN) {
+          ordersPendingDelete.push(conditionalOrder);
+        }
+        conditionalOrder.pollResult = {
+          lastExecutionTimestamp: blockTimestamp,
+          blockNumber,
+          result: pollResult,
+        };
       }
-
-      // Save the latest poll result
-      conditionalOrder.pollResult = {
-        lastExecutionTimestamp: blockTimestamp,
-        blockNumber: blockNumber,
-        result: pollResult,
-      };
       // Order needs saving!
       updatedCount++;
 
@@ -443,6 +458,18 @@ async function processConditionalOrder(
   ];
   try {
     metrics.pollingRunsTotal.labels(...metricLabels).inc();
+
+    if (isAaveProtectionOrder(context, handler)) {
+      return pollAaveProtection(
+        context,
+        owner,
+        conditionalOrder,
+        blockNumber,
+        blockTimestamp,
+        (order) => getOrderUid(chainId, order, owner),
+        metricLabels
+      );
+    }
 
     const proof = conditionalOrder.proof
       ? conditionalOrder.proof.path.map((c) => c.toString())

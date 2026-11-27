@@ -140,6 +140,7 @@ export class ChainContext {
       dryRun,
       watchdogTimeout,
       owners,
+      aaveProtectionHandler,
       orderBookApi: orderBookApiUrl,
       filterPolicy,
     } = options;
@@ -151,6 +152,28 @@ export class ChainContext {
     this.processEveryNumBlocks = options.processEveryNumBlocks ?? 1;
     this.watchdogTimeout = watchdogTimeout ?? WATCHDOG_TIMEOUT_DEFAULT_SECS;
     this.addresses = owners?.map(ethers.utils.getAddress);
+    if (aaveProtectionHandler) {
+      const handler = ethers.utils.getAddress(aaveProtectionHandler);
+      if (
+        chainId !== SupportedChainId.MAINNET ||
+        handler === ethers.constants.AddressZero
+      ) {
+        throw new Error(
+          "Aave protection requires a nonzero handler on Ethereum mainnet"
+        );
+      }
+      if (
+        !(
+          this.addresses?.length ||
+          Object.values(filterPolicy.owners ?? {}).includes("ACCEPT")
+        )
+      ) {
+        throw new Error(
+          "Aave protection requires a protector owner in --only-owner or filterPolicy.owners"
+        );
+      }
+      this.aaveProtectionHandler = handler;
+    }
 
     this.provider = provider;
     this.chainId = chainId;
