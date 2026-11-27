@@ -19,6 +19,10 @@ export interface Config {
     processEveryNumBlocks?: number;
     orderBookApi?: string;
     pageSize?: number;
+    /**
+     * Enables Aave protection for this Ethereum mainnet handler and explicitly allowed protector owners.
+     */
+    aaveProtectionHandler?: string;
     filterPolicy: {
       defaultAction: FilterAction;
       conditionalOrderIds?: {

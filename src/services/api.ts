@@ -52,6 +52,7 @@ export class ApiService {
             pageSize,
             processEveryNumBlocks,
             addresses,
+            aaveProtectionHandler,
           }) => ({
             chainId,
             contract: contract.address,
@@ -61,6 +62,7 @@ export class ApiService {
             pageSize,
             processEveryNumBlocks,
             addresses,
+            aaveProtectionHandler,
           })
         )
       );
