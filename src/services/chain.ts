@@ -7,12 +7,14 @@ import { OrderBookApi } from "@cowprotocol/sdk-order-book";
 import { EthersV5Adapter } from "@cowprotocol/sdk-ethers-v5-adapter";
 import { ethers, providers } from "ethers";
 import { DBService } from ".";
-import { processNewOrderEvent } from "../domain/events";
+import {
+  orderRegistrationTopics,
+  processNewOrderEvent,
+} from "../domain/events";
 import { checkForAndPlaceOrder } from "../domain/polling";
 import { policy } from "../domain/polling/filtering";
 import {
   ComposableCoW,
-  ConditionalOrderCreatedEvent,
   ContextOptions,
   Multicall3,
   Multicall3__factory,
@@ -148,7 +150,7 @@ export class ChainContext {
     this.dryRun = dryRun;
     this.processEveryNumBlocks = options.processEveryNumBlocks ?? 1;
     this.watchdogTimeout = watchdogTimeout ?? WATCHDOG_TIMEOUT_DEFAULT_SECS;
-    this.addresses = owners;
+    this.addresses = owners?.map(ethers.utils.getAddress);
 
     this.provider = provider;
     this.chainId = chainId;
@@ -186,7 +188,7 @@ export class ChainContext {
   ): Promise<ChainContext> {
     const { rpc, deploymentBlock } = options;
 
-    const provider = getProvider(rpc.toLowerCase());
+    const provider = getProvider(rpc);
     const chainId = (await provider.getNetwork()).chainId;
 
     configureSdkAdapters(provider);
@@ -211,7 +213,7 @@ export class ChainContext {
    * @returns the run promises for what needs to be watched
    */
   public async warmUp(oneShot?: boolean) {
-    const { provider, chainId, processEveryNumBlocks } = this;
+    const { provider, chainId } = this;
     const log = getLogger({ name: "warmUp", chainId });
 
     // Warm-up runs before the watchdog starts, and any error escaping here
@@ -231,166 +233,85 @@ export class ChainContext {
             ),
         }
       );
-    let { lastProcessedBlock } = this.registry;
-    const { pageSize } = this;
+    const readBlock = (tag: string | number) =>
+      rpc(() => provider.getBlock(tag), `getBlock ${tag}`);
+    const checkpoint = this.registry.lastProcessedBlock;
+    let head = await readBlock("latest");
+    let fromBlock = checkpoint ? checkpoint.number + 1 : this.deploymentBlock;
+    const network = chainId.toString();
 
-    // Set the sync status metric (Syncing)
-    metrics.syncStatus.labels(chainId.toString()).set(0);
+    this.sync = ChainSync.SYNCING;
+    metrics.syncStatus.labels(network).set(0);
+    metrics.blockHeight.labels(network).set(checkpoint?.number ?? 0);
+    metrics.blockHeightLatest.labels(network).set(head.number);
 
-    // Set the block height metric
-    metrics.blockHeight
-      .labels(chainId.toString())
-      .set(lastProcessedBlock?.number ?? 0);
-
-    // Start watching from (not including) the last processed block (if any)
-    let fromBlock = lastProcessedBlock
-      ? lastProcessedBlock.number + 1
-      : this.deploymentBlock;
-
-    let currentBlock = await rpc(
-      () => provider.getBlock("latest"),
-      "getBlock latest"
-    );
-    metrics.blockHeightLatest
-      .labels(chainId.toString())
-      .set(currentBlock.number);
-
-    let printSyncInfo = true; // Print sync info only once
-    let toBlock: "latest" | number = 0;
-    do {
-      do {
-        toBlock = !pageSize ? "latest" : fromBlock + (pageSize - 1);
-        if (typeof toBlock === "number" && toBlock > currentBlock.number) {
-          // refresh the current block
-          currentBlock = await rpc(
-            () => provider.getBlock("latest"),
-            "getBlock latest"
-          );
-          metrics.blockHeightLatest
-            .labels(chainId.toString())
-            .set(currentBlock.number);
-          toBlock =
-            toBlock > currentBlock.number ? currentBlock.number : toBlock;
-
-          // This happens when the watch-tower has restarted and the last processed block is
-          // the current block. Therefore the `fromBlock` is the current block + 1, which is
-          // greater than the current block number. In this case, we are in sync.
-          if (fromBlock > currentBlock.number) {
-            this.sync = ChainSync.IN_SYNC;
-            break;
-          }
-
-          log.debug(
-            `Reaching tip of chain, current block number: ${currentBlock.number}`
-          );
-        }
-
-        if (printSyncInfo && typeof toBlock === "number") {
-          printSyncInfo = false;
-          log.info(
-            `🔄 Start sync with from block ${fromBlock} to ${toBlock}. Pending ${
-              toBlock - fromBlock
-            } blocks (~${Math.ceil(
-              (toBlock - fromBlock) / pageSize
-            )} pages, processing every ${
-              processEveryNumBlocks > 1
-                ? processEveryNumBlocks + " blocks"
-                : "block"
-            })`
-          );
-        }
-
-        log.debug(
-          `Processing events from block ${fromBlock} to block ${toBlock}`
-        );
-
-        const events = await rpc(
-          () => pollContractForEvents(fromBlock, toBlock, this, log),
-          `getLogs ${fromBlock}..${toBlock}`
-        );
-
-        if (events.length > 0) {
-          log.debug(`Found ${events.length} events`);
-        }
-
-        // Get relevant block numbers to process (the ones with relevant events)
-        const eventsByBlock = events.reduce<
-          Record<number, ConditionalOrderCreatedEvent[]>
-        >((acc, event) => {
-          const events = acc[event.blockNumber];
-          if (events) {
-            events.push(event);
-          } else {
-            acc[event.blockNumber] = [event];
-          }
-
-          return acc;
-        }, {});
-
-        // Process blocks in order
-        for (const blockNumberKey of Object.keys(eventsByBlock).sort()) {
-          const blockNumber = Number(blockNumberKey);
-          await processBlockAndPersist({
-            context: this,
-            blockNumber,
-            events: eventsByBlock[blockNumber],
-            currentBlock,
-            log,
-            provider,
-          });
-        }
-
-        // Persist "toBlock" as the last block (even if there's no events, we are caught up until this block)
-        lastProcessedBlock = await persistLastProcessedBlock({
-          context: this,
-          block: await rpc(
-            () => provider.getBlock(toBlock),
-            `getBlock ${toBlock}`
-          ),
-          log,
-        });
-
-        // only possible string value for toBlock is 'latest'
-        if (typeof toBlock === "number") {
-          fromBlock = toBlock + 1;
-        }
-      } while (toBlock !== "latest" && toBlock !== currentBlock.number);
-
-      // It may have taken some time to process the blocks, so refresh the current block number
-      // and check if we are in sync
-      currentBlock = await rpc(
-        () => provider.getBlock("latest"),
-        "getBlock latest"
+    if (
+      checkpoint?.hash &&
+      (await rpc(
+        () => isReorg(provider, checkpoint, head),
+        "verify previous checkpoint"
+      ))
+    ) {
+      fromBlock = await replayStartBlock(
+        checkpoint,
+        this.deploymentBlock,
+        readBlock
       );
-      metrics.blockHeightLatest
-        .labels(chainId.toString())
-        .set(currentBlock.number);
-
-      // If we are in sync, let it be known
-      const lastProcessedBlockNumber = lastProcessedBlock?.number || 0;
-      if (currentBlock.number === lastProcessedBlockNumber) {
-        this.sync = ChainSync.IN_SYNC;
-      } else {
-        // Otherwise, we need to keep processing blocks
-        fromBlock = lastProcessedBlockNumber + 1;
+      if (fromBlock > head.number) {
+        await persistLastProcessedBlock({ context: this, block: head, log });
       }
-    } while (this.sync === ChainSync.SYNCING);
-
-    metrics.syncStatus.labels(chainId.toString()).set(1);
-    log.info(
-      `☀️ ${
-        oneShot ? "Chain watcher is in sync" : "Chain watcher is warmed up"
-      }`
-    );
-    log.debug(`Last processed block: ${JSON.stringify(lastProcessedBlock)}`);
-
-    // If one-shot, return
-    if (oneShot) {
-      return;
     }
 
-    // Otherwise, run the block watcher
-    return await this.subscribeToNewBlocks(currentBlock);
+    while (fromBlock <= head.number) {
+      await this.indexRegistrationPages(fromBlock, head, log, rpc);
+      fromBlock = head.number + 1;
+      head = await readBlock("latest");
+      metrics.blockHeightLatest.labels(network).set(head.number);
+      const saved = this.registry.lastProcessedBlock;
+      if (
+        saved &&
+        (await rpc(
+          () => isReorg(provider, saved, head),
+          "verify refreshed head"
+        ))
+      ) {
+        throw new Error("Chain head changed while warming up");
+      }
+    }
+
+    this.sync = ChainSync.IN_SYNC;
+    metrics.syncStatus.labels(network).set(1);
+    log.info(
+      oneShot ? "Chain watcher is in sync" : "Chain watcher is warmed up"
+    );
+
+    if (oneShot || head.number % this.processEveryNumBlocks === 0) {
+      await checkForAndPlaceOrder(this, head);
+    }
+    if (oneShot) return;
+    return await this.subscribeToNewBlocks(head);
+  }
+
+  private async indexRegistrationPages(
+    fromBlock: number,
+    head: providers.Block,
+    log: LoggerWithMethods,
+    rpc: BoundedRpc
+  ) {
+    while (fromBlock <= head.number) {
+      const toBlock = this.pageSize
+        ? Math.min(fromBlock + this.pageSize - 1, head.number)
+        : head.number;
+      const page =
+        toBlock === head.number
+          ? head
+          : await rpc(
+              () => this.provider.getBlock(toBlock),
+              `getBlock ${toBlock}`
+            );
+      await indexRegistrationPage(this, fromBlock, page, log, rpc);
+      fromBlock = toBlock + 1;
+    }
   }
 
   /**
@@ -405,7 +326,14 @@ export class ChainContext {
     // Watch for new blocks
     log.info(`👀 Start block watcher`);
     log.debug(`Watchdog timeout: ${watchdogTimeout} seconds`);
-    let lastBlockReceived = lastProcessedBlock;
+    const savedHead = () =>
+      registry.lastProcessedBlock?.hash
+        ? registry.lastProcessedBlock
+        : lastProcessedBlock;
+    const rpc: BoundedRpc = (operation, description) =>
+      withTimeout(operation(), RPC_TIMEOUT_MS, description);
+    const readBlock = (tag: string | number) =>
+      rpc(() => provider.getBlock(tag), `getBlock ${tag}`);
     // Chain callbacks onto a resolved promise so blocks are processed sequentially.
     let processing = Promise.resolve();
     provider.on("block", (blockNumber: number) => {
@@ -420,50 +348,44 @@ export class ChainContext {
           });
           log.debug("New block received");
 
-          const block = await provider.getBlock(blockNumber);
-          const reorg = await isReorg(provider, lastBlockReceived, block);
-          if (!reorg && block.number < lastBlockReceived.number) {
+          const block = await readBlock(blockNumber);
+          const lastBlockReceived = savedHead();
+          const reorg = await rpc(
+            () => isReorg(provider, lastBlockReceived, block),
+            "verify previous block"
+          );
+          if (!reorg && block.number <= lastBlockReceived.number) {
             log.debug(`Ignoring stale block ${block.number}`);
             return;
           }
 
-          // Set the block time metric
-          const _blockTime = block.timestamp - lastBlockReceived.timestamp;
-          metrics.blockProducingRate.labels(chainId.toString()).set(_blockTime);
-          const [fromBlock, toBlock] = getEventPollingRange(
-            lastBlockReceived.number,
-            block.number
-          );
-
+          metrics.blockProducingRate
+            .labels(chainId.toString())
+            .set(block.timestamp - lastBlockReceived.timestamp);
+          let fromBlock = lastBlockReceived.number + 1;
           if (reorg) {
             metrics.reorgsTotal.labels(chainId.toString()).inc();
-            log.warn(`Re-org detected at block ${blockNumber}`);
+            fromBlock = await replayStartBlock(
+              lastBlockReceived,
+              this.deploymentBlock,
+              readBlock
+            );
+            log.warn(
+              `Re-org detected at block ${blockNumber}, replaying from ${fromBlock}`
+            );
             metrics.reorgDepth
               .labels(chainId.toString())
-              .set(Math.max(lastBlockReceived.number - block.number + 1, 1));
+              .set(Math.max(lastBlockReceived.number - fromBlock + 1, 1));
           }
 
-          // Bound the RPC call here rather than inside `pollContractForEvents`
-          // - block processing is serialised, so a hung `getLogs` stalls every
-          // block queued behind it and must fail fast. Warm-up shares that
-          // helper but bounds it far more loosely (`WARM_UP_RPC_TIMEOUT_MS`),
-          // because paging over thousands of blocks is legitimately slow and
-          // there is no watchdog to satisfy.
-          const events = await withTimeout(
-            pollContractForEvents(fromBlock, toBlock, this, log),
-            RPC_TIMEOUT_MS,
-            `getLogs ${fromBlock}..${toBlock}`
-          );
-
-          await processBlockAndPersist({
-            context: this,
-            block,
-            blockNumber,
-            events,
-            log,
-            provider,
-          });
-          lastBlockReceived = block;
+          if (fromBlock > block.number) {
+            await persistLastProcessedBlock({ context: this, block, log });
+          } else {
+            await this.indexRegistrationPages(fromBlock, block, log, rpc);
+          }
+          if (block.number % this.processEveryNumBlocks === 0) {
+            await checkForAndPlaceOrder(this, block);
+          }
         } catch (error) {
           log.error(`Error processing block ${blockNumber}`, error);
         }
@@ -477,7 +399,7 @@ export class ChainContext {
       // sleep for 5 seconds
       await asyncSleep(WATCHDOG_FREQUENCY_SECS * 1000);
       const now = Math.floor(new Date().getTime() / 1000);
-      const timeElapsed = now - lastBlockReceived.timestamp;
+      const timeElapsed = now - savedHead().timestamp;
 
       log.debug(`Time since last block processed: ${timeElapsed}s`);
 
@@ -568,90 +490,6 @@ export class ChainContext {
   }
 }
 
-/**
- * Process events in a block.
- * @param context of the chain who's block is being processed
- * @param block from which the events were emitted
- * @param events an array of conditional order created events
- * @param blockNumberOverride to override the block number when polling the SDK
- * @param blockTimestampOverride  to override the block timestamp when polling the SDK
- */
-async function processBlockEvent(
-  context: ChainContext,
-  block: providers.Block,
-  events: ConditionalOrderCreatedEvent[],
-  blockNumberOverride?: number,
-  blockTimestampOverride?: number
-) {
-  const { provider, chainId, processEveryNumBlocks } = context;
-  const timer = metrics.processBlockDurationSeconds
-    .labels(context.chainId.toString())
-    .startTimer();
-
-  const log = getLogger({
-    name: "processBlockEvent",
-    chainId,
-    blockNumber: block.number,
-  });
-
-  // Transaction watcher for adding new contracts
-  let hasErrors = false;
-  for (const event of events) {
-    const receipt = await provider.getTransactionReceipt(event.transactionHash);
-
-    if (receipt) {
-      // run action
-      log.debug(`Process new order event of TX ${event.transactionHash}`);
-      const result = await processNewOrderEvent(context, event)
-        .then(() => true)
-        .catch((e) => {
-          hasErrors = true;
-          log.error(
-            `Error processing new order event of TX ${event.transactionHash}:`,
-            e
-          );
-          return false;
-        });
-      log.info(
-        `Result of processing new order event of TX ${
-          event.transactionHash
-        }: ${_formatResult(result)}`
-      );
-      metrics.eventsProcessedTotal.labels(chainId.toString()).inc();
-    }
-  }
-
-  // Decide if we should process this block
-  const shouldProcessBlock = block.number % processEveryNumBlocks === 0;
-
-  // Check programmatic  orders and place orders if necessary
-  if (shouldProcessBlock) {
-    const result = await checkForAndPlaceOrder(
-      context,
-      block,
-      blockNumberOverride,
-      blockTimestampOverride
-    )
-      .then(() => true)
-      .catch(() => {
-        hasErrors = true;
-        log.error(`Error running "checkForAndPlaceOrder" action`);
-        return false;
-      });
-    log.debug(
-      `Result of "checkForAndPlaceOrder" action for block ${
-        block.number
-      }: ${_formatResult(result)}`
-    );
-  }
-
-  timer();
-
-  if (hasErrors) {
-    throw new Error("Errors found in processing block");
-  }
-}
-
 async function persistLastProcessedBlock(params: {
   context: ChainContext;
   block: ethers.providers.Block;
@@ -659,49 +497,93 @@ async function persistLastProcessedBlock(params: {
 }) {
   const { context, block, log } = params;
 
-  // Set the last processed block to the current block number
+  const previous = context.registry.lastProcessedBlock;
   context.registry.lastProcessedBlock = blockToRegistryBlock(block);
-
-  // Save the registry
-  await context.registry.write();
+  try {
+    await context.registry.write();
+  } catch (error) {
+    context.registry.lastProcessedBlock = previous;
+    throw error;
+  }
   log.debug(`Block has been processed`);
 
   // Set the block metrics
   const chain = context.chainId.toString();
   metrics.blockTimestamp.labels(chain).set(block.timestamp);
   metrics.blockHeight.labels(chain).set(block.number);
-
-  return context.registry.lastProcessedBlock;
 }
 
-async function processBlockAndPersist(params: {
-  context: ChainContext;
-  block?: providers.Block;
-  blockNumber: number;
-  events: ConditionalOrderCreatedEvent[];
-  currentBlock?: providers.Block;
-  log: LoggerWithMethods;
-  provider: ethers.providers.Provider;
-}) {
-  const { context, block, blockNumber, events, currentBlock, log, provider } =
-    params;
+type BoundedRpc = <T>(
+  operation: () => Promise<T>,
+  description: string
+) => Promise<T>;
 
-  // Accept optional block object, in case it was already fetched
-  const _block = block || (await provider.getBlock(blockNumber));
+async function indexRegistrationPage(
+  context: ChainContext,
+  fromBlock: number,
+  page: providers.Block,
+  log: LoggerWithMethods,
+  rpc: BoundedRpc
+) {
+  const { provider, chainId, registry } = context;
+  const timer = metrics.processBlockDurationSeconds
+    .labels(chainId.toString())
+    .startTimer();
 
   try {
-    await processBlockEvent(
-      context,
-      _block,
-      events,
-      currentBlock?.number,
-      currentBlock?.timestamp
+    const events = await rpc(
+      () => pollContractForEvents(fromBlock, page.number, context),
+      `getLogs ${fromBlock}..${page.number}`
     );
-  } catch (err) {
-    log.error(`Error processing block ${_block.number}`, err);
+    const checkpoint = registry.lastProcessedBlock;
+    // Replays can intentionally start at or before a displaced checkpoint.
+    if (
+      checkpoint?.hash &&
+      fromBlock === checkpoint.number + 1 &&
+      (await rpc(
+        () => isReorg(provider, checkpoint, page),
+        "verify forward checkpoint"
+      ))
+    ) {
+      throw new Error(
+        `Checkpoint block ${checkpoint.number} changed while scanning registrations`
+      );
+    }
+    const canonical = await rpc(
+      () => provider.getBlock(page.number),
+      `verify block ${page.number}`
+    );
+    if (canonical?.hash !== page.hash) {
+      throw new Error(
+        `Block ${page.number} changed while scanning registrations`
+      );
+    }
+
+    for (const event of events) {
+      await processNewOrderEvent(context, event);
+      metrics.eventsProcessedTotal.labels(chainId.toString()).inc();
+    }
+
+    await persistLastProcessedBlock({ context, block: page, log });
   } finally {
-    return persistLastProcessedBlock({ context, block: _block, log });
+    timer();
   }
+}
+
+async function replayStartBlock(
+  previous: RegistryBlock,
+  deploymentBlock: number,
+  readBlock: (tag: string | number) => Promise<providers.Block | null>
+): Promise<number> {
+  // Follow the old fork back to a block whose hash still matches the chain.
+  let displaced = await readBlock(previous.hash);
+  while (displaced && displaced.number >= deploymentBlock) {
+    if ((await readBlock(displaced.number))?.hash === displaced.hash) {
+      return displaced.number + 1;
+    }
+    displaced = await readBlock(displaced.parentHash);
+  }
+  return deploymentBlock;
 }
 
 export function isAaveProtectionOwner(
@@ -713,57 +595,31 @@ export function isAaveProtectionOwner(
     : filterPolicy?.acceptsOwner(owner) === true;
 }
 
-async function pollContractForEvents(
+export async function pollContractForEvents(
   fromBlock: number,
-  toBlock: number | "latest",
-  context: ChainContext,
-  log: LoggerWithMethods
-): Promise<ConditionalOrderCreatedEvent[]> {
-  const { provider, chainId, addresses } = context;
-  const composableCow = composableCowContract(provider, chainId);
-  const eventName = "ConditionalOrderCreated(address,(address,bytes32,bytes))";
-  const topic = ethers.utils.id(eventName);
-
+  toBlock: number,
+  { provider, addresses }: Pick<ChainContext, "provider" | "addresses">
+): Promise<providers.Log[]> {
+  if (addresses?.length === 0) return [];
+  const topics = orderRegistrationTopics(addresses);
+  const ownerTopics = Array.isArray(topics[1]) ? new Set(topics[1]) : undefined;
   const logs = await provider.getLogs({
     fromBlock,
     toBlock,
-    topics: [topic],
+    topics,
   });
-
-  return logs.reduce<ConditionalOrderCreatedEvent[]>((acc, event) => {
-    try {
-      const decoded = composableCow.interface.decodeEventLog(
-        topic,
-        event.data,
-        event.topics
-      ) as unknown as ConditionalOrderCreatedEvent;
-
-      if (!addresses || addresses.includes(decoded.args.owner)) {
-        acc.push({
-          ...decoded,
-          ...event,
-        });
-      }
-    } catch (error) {
-      log.error(
-        "Failed to decode ConditionalOrderCreated RPC log",
-        { fromBlock, toBlock, rpcLog: event },
-        error
-      );
-    }
-    return acc;
-  }, []);
-}
-
-function _formatResult(result: boolean) {
-  return result ? "✅" : "❌";
+  return logs.filter(
+    (event) =>
+      !event.removed &&
+      (!ownerTopics || ownerTopics.has(event.topics[1]?.toLowerCase()))
+  );
 }
 
 function getProvider(rpcUrl: string): providers.Provider {
-  const log = getLogger({ name: "getProvider", args: [rpcUrl] });
+  const log = getLogger({ name: "getProvider" });
 
   // if the rpcUrl is a websocket url, use the WebSocketProvider
-  if (rpcUrl.startsWith("ws")) {
+  if (rpcUrl.toLowerCase().startsWith("ws")) {
     log.debug("Instantiating WS");
     return new providers.WebSocketProvider(rpcUrl);
   }
@@ -788,7 +644,7 @@ function blockToRegistryBlock(block: ethers.providers.Block): RegistryBlock {
 
 export async function isReorg(
   provider: providers.Provider,
-  previousBlock: providers.Block,
+  previousBlock: Pick<RegistryBlock, "hash" | "number">,
   block: providers.Block
 ): Promise<boolean> {
   if (block.number === previousBlock.number) {
@@ -800,7 +656,7 @@ export async function isReorg(
   }
 
   return (
-    (await provider.getBlock(previousBlock.number)).hash !== previousBlock.hash
+    (await provider.getBlock(previousBlock.number))?.hash !== previousBlock.hash
   );
 }
 
@@ -813,11 +669,4 @@ export function watchdogSyncState(
   watchdogTimeout: number
 ): ChainSync {
   return timeElapsed >= watchdogTimeout ? ChainSync.UNKNOWN : ChainSync.IN_SYNC;
-}
-
-export function getEventPollingRange(
-  previousBlockNumber: number,
-  blockNumber: number
-): [number, number] {
-  return [Math.min(previousBlockNumber + 1, blockNumber), blockNumber];
 }

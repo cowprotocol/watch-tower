@@ -31,7 +31,8 @@
             "format": "uri"
           },
           "pageSize": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 0
           },
           "filterPolicy": {
             "type": "object",
