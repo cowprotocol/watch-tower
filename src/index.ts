@@ -52,7 +52,7 @@ const apiPortOption = new Option(
 
 const oneShotOption = new Option(
   "--one-shot",
-  "Run the watch-tower once and exit"
+  "Catch up, check stored rules at the current head, and exit"
 )
   .default(false)
   .env("ONE_SHOT");
